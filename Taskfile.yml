@@ -1,0 +1,35 @@
+version: "3"
+
+vars:
+  APP_NAME: deepseek-harness-desktop{{exeExt}}
+  VERSION: "0.2.1"
+  RELEASE_API: "https://api.github.com/repos/deepseek-ai/deepseek-harness-desktop/releases/latest"
+
+tasks:
+  test:
+    desc: Run platform-independent unit and Node fixture tests
+    cmds:
+      - go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
+
+  build:windows:
+    desc: Cross-build the Windows x64 desktop executable
+    env:
+      GOOS: windows
+      GOARCH: amd64
+      CGO_ENABLED: "0"
+    cmds:
+      - powershell -NoProfile -Command "New-Item -ItemType Directory -Force 'dist/windows/stage' | Out-Null"
+      - go build -tags production -trimpath -ldflags="-s -w -H windowsgui -X github.com/deepseek-ai/deepseek-harness-desktop/internal/buildinfo.Version={{.VERSION}} -X github.com/deepseek-ai/deepseek-harness-desktop/internal/buildinfo.ReleaseAPIURL={{.RELEASE_API}}" -o dist/windows/stage/{{.APP_NAME}} ./cmd/dsh-desktop
+
+  seed:windows:
+    desc: Download, verify and build the locked offline Windows seed
+    platforms: [windows]
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-seed.ps1
+
+  package:windows:
+    desc: Build the per-user NSIS x64 installer
+    platforms: [windows]
+    deps: [seed:windows, build:windows]
+    cmds:
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1

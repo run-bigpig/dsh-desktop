@@ -1,0 +1,31 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <meta name="color-scheme" content="dark">
+  <title>DeepSeek Harness Desktop</title>
+  <link rel="stylesheet" href="styles.css">
+  <script src="/wails/runtime.js" type="module"></script>
+</head>
+<body data-phase="starting">
+  <div class="atmosphere" aria-hidden="true">
+    <i class="glow glow-one"></i>
+    <i class="glow glow-two"></i>
+  </div>
+
+  <main class="app-frame">
+    <section class="boot-view" aria-label="Harness 启动进度">
+      <div class="progress-shell">
+        <div class="progress-track">
+          <i id="progressBar"></i>
+          <span class="progress-fish" id="progressFish" aria-hidden="true"><img src="deepseek-fish.svg" alt=""></span>
+        </div>
+        <p id="progressText" aria-live="polite">正在启动 Harness · 08%</p>
+      </div>
+    </section>
+
+  </main>
+  <script src="app.js"></script>
+</body>
+</html>
