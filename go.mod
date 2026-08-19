@@ -1,4 +1,4 @@
-module github.com/deepseek-ai/deepseek-harness-desktop
+module github.com/run-bigpig/dsh-desktop
 
 go 1.25.0
 

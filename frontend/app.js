@@ -1,4 +1,4 @@
-const service="github.com/deepseek-ai/deepseek-harness-desktop/internal/desktop.RecoveryService.";
+const service="github.com/run-bigpig/dsh-desktop/internal/desktop.RecoveryService.";
 const phases={
   idle:{text:"正在唤醒桌面核心",progress:8},
   starting:{text:"正在启动 Harness",progress:68},
@@ -37,9 +37,21 @@ function animateProgress(){
   const value=Math.max(0,Math.min(100,Math.round(visibleProgress)));
   const meta=phases[currentPhase]||phases.idle;
   $("progressText").textContent=`${meta.text} · ${String(value).padStart(2,"0")}%`;
-  $("progressBar").style.width=`${Math.max(2,visibleProgress)}%`;
-  $("progressFish").style.left=`${Math.max(2,visibleProgress)}%`;
+  paintAbsorption(visibleProgress);
   requestAnimationFrame(animateProgress);
+}
+
+function paintAbsorption(progress){
+  const ratio=Math.max(0,Math.min(1,progress/100));
+  const root=document.documentElement;
+  root.style.setProperty("--water-scale",(1.16-ratio*.9).toFixed(4));
+  root.style.setProperty("--water-opacity",Math.max(.025,1-ratio*.975).toFixed(4));
+  root.style.setProperty("--ring-scale",Math.max(.18,.98-ratio*.8).toFixed(4));
+  root.style.setProperty("--bubble-opacity",Math.max(0,.76-ratio*.8).toFixed(4));
+  root.style.setProperty("--fish-scale",(.78+ratio*.72).toFixed(4));
+  root.style.setProperty("--fish-brightness",Math.max(.035,1-ratio*.965).toFixed(4));
+  root.style.setProperty("--fish-glow",Math.max(.08,.78-ratio*.7).toFixed(4));
+  root.style.setProperty("--ambient-opacity",Math.max(.035,.42-ratio*.385).toFixed(4));
 }
 
 async function refresh(){
@@ -56,16 +68,11 @@ function resetSplash(){
   currentPhase="idle";
   document.body.dataset.phase="idle";
   document.body.classList.remove("handoff");
-  const bar=$("progressBar");
-  const fish=$("progressFish");
-  bar.style.transition="none";
-  fish.style.transition="none";
-  bar.style.width="6%";
-  fish.style.left="6%";
+  document.body.classList.add("instant");
+  paintAbsorption(6);
   $("progressText").textContent="正在唤醒桌面核心 · 06%";
-  void bar.offsetWidth;
-  bar.style.transition="";
-  fish.style.transition="";
+  void document.body.offsetWidth;
+  document.body.classList.remove("instant");
 }
 window.parkSplash=()=>{splashActive=false;resetSplash()};
 window.activateSplash=()=>{splashActive=true;resetSplash();refresh()};

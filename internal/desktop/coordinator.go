@@ -2,7 +2,9 @@ package desktop
 
 import (
 	"context"
+	"crypto/ed25519"
 	_ "embed"
+	"encoding/base64"
 	"errors"
 	"fmt"
 	"io"
@@ -14,32 +16,37 @@ import (
 	"sync"
 	"time"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/backup"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/buildinfo"
-	harnessruntime "github.com/deepseek-ai/deepseek-harness-desktop/internal/runtime"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/seed"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/selfupdate"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/update"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/backup"
+	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
+	"github.com/run-bigpig/dsh-desktop/internal/marketplace"
+	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
+	"github.com/run-bigpig/dsh-desktop/internal/seed"
+	"github.com/run-bigpig/dsh-desktop/internal/selfupdate"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/update"
+	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
 //go:embed child-control.mjs
 var childControl []byte
 
 type Coordinator struct {
-	mu         sync.Mutex
-	paths      appconfig.Paths
-	cfg        appconfig.Config
-	store      *state.Store
-	backups    *backup.Manager
-	appUpdates *selfupdate.Manager
-	tools      update.Toolchain
-	log        io.Writer
-	process    *harnessruntime.Process
-	busy       bool
-	onReady    func(string)
-	onRecovery func()
+	mu           sync.Mutex
+	paths        appconfig.Paths
+	cfg          appconfig.Config
+	store        *state.Store
+	backups      *backup.Manager
+	appUpdates   *selfupdate.Manager
+	marketplace  *marketplace.Manager
+	marketBridge *marketplace.Bridge
+	window       *windowController
+	tools        update.Toolchain
+	log          io.Writer
+	process      *harnessruntime.Process
+	busy         bool
+	onReady      func(string)
+	onRecovery   func()
 }
 
 func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
@@ -64,15 +71,51 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	if err != nil {
 		store.SetRuntimeInfo(state.Failed, err.Error(), "")
 	}
-	c := &Coordinator{paths: paths, cfg: cfg, store: store, backups: backup.New(paths), tools: tools, log: logWriter}
+	c := &Coordinator{paths: paths, cfg: cfg, store: store, backups: backup.New(paths), tools: tools, log: logWriter, window: &windowController{}}
 	c.appUpdates = selfupdate.New(paths, store, buildinfo.Version, buildinfo.ReleaseAPIURL, nil)
+	catalogKey, err := base64.StdEncoding.DecodeString(buildinfo.MarketplaceCatalogPublicKey)
+	if err != nil || len(catalogKey) != ed25519.PublicKeySize {
+		return nil, errors.New("invalid Marketplace catalog public key in build configuration")
+	}
+	market, err := marketplace.New(marketplace.Options{
+		Paths: paths, Tools: tools, Log: logWriter,
+		CatalogURL: buildinfo.MarketplaceCatalogURL, CatalogSignatureURL: buildinfo.MarketplaceCatalogSignatureURL,
+		TrustedCatalogKey: ed25519.PublicKey(catalogKey),
+	})
+	if err != nil {
+		return nil, err
+	}
+	bridge, err := marketplace.StartBridge(market)
+	if err != nil {
+		return nil, err
+	}
+	c.marketplace, c.marketBridge = market, bridge
+	bridge.SetDesktopController(c.window)
+	market.SetControl(bridge.URL(), bridge.Token())
+	market.SetLifecycle(marketplace.Lifecycle{Stop: c.Stop, Start: c.Start})
 	return c, nil
 }
 
 func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledToolchain(c.paths) }
 
+func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
+
 func installBundledToolchain(paths appconfig.Paths) error {
-	required := []string{filepath.Join(paths.Toolchain, "node")}
+	executableName := func(name string) string {
+		if runtime.GOOS == "windows" {
+			return name + ".exe"
+		}
+		return name
+	}
+	git := filepath.Join(paths.Toolchain, "git", "bin", executableName("git"))
+	if runtime.GOOS == "windows" {
+		git = filepath.Join(paths.Toolchain, "git", "cmd", executableName("git"))
+	}
+	required := []string{
+		filepath.Join(paths.Toolchain, "node", executableName("node")),
+		filepath.Join(paths.Toolchain, "pnpm", executableName("pnpm")),
+		git,
+	}
 	complete := true
 	for _, path := range required {
 		if _, err := os.Stat(path); err != nil {
@@ -164,10 +207,18 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 		return name
 	}
 	fromRoot := func(root string) update.Toolchain {
-		return update.Toolchain{Node: filepath.Join(root, "node", exe("node")), NodeVersion: manifest.Node}
+		git := filepath.Join(root, "git", "bin", exe("git"))
+		if runtime.GOOS == "windows" {
+			git = filepath.Join(root, "git", "cmd", exe("git"))
+		}
+		return update.Toolchain{
+			Node: filepath.Join(root, "node", exe("node")),
+			PNPM: filepath.Join(root, "pnpm", exe("pnpm")),
+			Git:  git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM,
+		}
 	}
 	complete := func(tools update.Toolchain) bool {
-		for _, path := range []string{tools.Node} {
+		for _, path := range []string{tools.Node, tools.PNPM, tools.Git} {
 			if _, err := os.Stat(path); err != nil {
 				return false
 			}
@@ -183,8 +234,10 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 		return tools, nil
 	}
 	node, nodeErr := exec.LookPath("node")
-	tools := update.Toolchain{Node: node, NodeVersion: manifest.Node}
-	if nodeErr != nil {
+	pnpm, pnpmErr := exec.LookPath("pnpm")
+	git, gitErr := exec.LookPath("git")
+	tools := update.Toolchain{Node: node, PNPM: pnpm, Git: git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM}
+	if nodeErr != nil || pnpmErr != nil || gitErr != nil {
 		return tools, fmt.Errorf("embedded toolchain is incomplete; reinstall the desktop package")
 	}
 	return tools, nil
@@ -222,6 +275,13 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		_ = c.backups.Prune(5)
 		_ = update.PruneVersions(c.paths, c.store.Snapshot())
 	}
+	go func() {
+		refreshCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		defer cancel()
+		if refreshErr := c.marketplace.RefreshCatalog(refreshCtx); refreshErr != nil && c.log != nil {
+			_, _ = fmt.Fprintln(c.log, "refresh Marketplace catalog after startup:", refreshErr)
+		}
+	}()
 	c.mu.Lock()
 	ready := c.onReady
 	c.mu.Unlock()
@@ -240,8 +300,12 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
+	c.marketplace.SetRuntime(runtimeDir, snap.Active.Current.Commit)
+	if err := c.marketplace.EnsureBundle(ctx); err != nil {
+		return "", err
+	}
 	toolPath := strings.Join([]string{filepath.Dir(c.tools.Node), os.Getenv("PATH")}, string(os.PathListSeparator))
-	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: []string{"PATH=" + toolPath}, OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
+	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: []string{"PATH=" + toolPath, "DSH_DESKTOP_CONTROL_URL=" + c.marketBridge.URL(), "DSH_DESKTOP_CONTROL_TOKEN=" + c.marketBridge.Token()}, OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
 	c.mu.Lock()
 	c.process = p
 	c.mu.Unlock()
@@ -263,6 +327,13 @@ func (c *Coordinator) Stop(ctx context.Context) error {
 		return nil
 	}
 	return p.Stop(ctx)
+}
+func (c *Coordinator) Close(ctx context.Context) error {
+	err := c.Stop(ctx)
+	if bridgeErr := c.marketBridge.Close(); err == nil {
+		err = bridgeErr
+	}
+	return err
 }
 func (c *Coordinator) Restart(ctx context.Context) error {
 	c.store.SetRuntimeInfo(state.Starting, "正在重启 Harness", "")

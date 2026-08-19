@@ -15,9 +15,9 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/buildinfo"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
 const maxReleaseResponse = 2 << 20

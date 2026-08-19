@@ -4,6 +4,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"io/fs"
 	"os"
 	"path/filepath"
 	"sync"
@@ -143,20 +144,24 @@ func readJSON[T any](path string) (*T, error) {
 }
 
 func AtomicWriteJSON(path string, value any) error {
-	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
-		return err
-	}
 	b, err := json.MarshalIndent(value, "", "  ")
 	if err != nil {
 		return err
 	}
 	b = append(b, '\n')
-	f, err := os.OpenFile(path+".tmp", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, 0o600)
+	return AtomicWriteFile(path, b, 0o600)
+}
+
+func AtomicWriteFile(path string, data []byte, permissions fs.FileMode) error {
+	if err := os.MkdirAll(filepath.Dir(path), 0o700); err != nil {
+		return err
+	}
+	f, err := os.OpenFile(path+".tmp", os.O_WRONLY|os.O_CREATE|os.O_TRUNC, permissions)
 	if err != nil {
 		return err
 	}
 	cleanup := func(e error) error { _ = f.Close(); _ = os.Remove(path + ".tmp"); return e }
-	if _, err := f.Write(b); err != nil {
+	if _, err := f.Write(data); err != nil {
 		return cleanup(err)
 	}
 	if err := f.Sync(); err != nil {

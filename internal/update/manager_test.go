@@ -6,8 +6,8 @@ import (
 	"io"
 	"testing"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
 type fakeRunner struct {

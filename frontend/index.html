@@ -16,15 +16,21 @@
 
   <main class="app-frame">
     <section class="boot-view" aria-label="Harness 启动进度">
-      <div class="progress-shell">
-        <div class="progress-track">
-          <i id="progressBar"></i>
-          <span class="progress-fish" id="progressFish" aria-hidden="true"><img src="deepseek-fish.svg" alt=""></span>
+      <div class="absorption-stage" id="absorptionStage">
+        <div class="water-mass" aria-hidden="true">
+          <i class="water-ring ring-outer"></i>
+          <i class="water-ring ring-middle"></i>
+          <i class="water-ring ring-inner"></i>
+          <span class="bubble bubble-a"></span>
+          <span class="bubble bubble-b"></span>
+          <span class="bubble bubble-c"></span>
+          <span class="bubble bubble-d"></span>
+          <span class="bubble bubble-e"></span>
         </div>
-        <p id="progressText" aria-live="polite">正在启动 Harness · 08%</p>
+        <span class="fish-core" aria-hidden="true"><img src="deepseek-fish.svg" alt=""></span>
+        <p id="progressText" aria-live="polite">正在唤醒桌面核心 · 06%</p>
       </div>
     </section>
-
   </main>
   <script src="app.js"></script>
 </body>

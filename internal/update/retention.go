@@ -5,8 +5,8 @@ import (
 	"path/filepath"
 	"strings"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
 func PruneVersions(paths appconfig.Paths, snapshot state.Snapshot) error {

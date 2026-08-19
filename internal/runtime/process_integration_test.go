@@ -10,7 +10,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
 func TestNodeFixtureGracefulShutdownAndUnexpectedExit(t *testing.T) {

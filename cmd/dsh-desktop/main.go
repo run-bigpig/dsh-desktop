@@ -9,13 +9,13 @@ import (
 	"sync/atomic"
 	"time"
 
-	desktopassets "github.com/deepseek-ai/deepseek-harness-desktop"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/buildinfo"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/desktop"
-	appLog "github.com/deepseek-ai/deepseek-harness-desktop/internal/logging"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/selfupdate"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	desktopassets "github.com/run-bigpig/dsh-desktop"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
+	"github.com/run-bigpig/dsh-desktop/internal/desktop"
+	appLog "github.com/run-bigpig/dsh-desktop/internal/logging"
+	"github.com/run-bigpig/dsh-desktop/internal/selfupdate"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 	"github.com/wailsapp/wails/v3/pkg/application"
 	"github.com/wailsapp/wails/v3/pkg/events"
 	"github.com/wailsapp/wails/v3/pkg/icons"
@@ -148,13 +148,20 @@ func main() {
 		ShouldQuit: func() bool { return true }, OnShutdown: func() {
 			ctx, cancel := context.WithTimeout(context.Background(), 15*time.Second)
 			defer cancel()
-			_ = coordinator.Stop(ctx)
+			_ = coordinator.Close(ctx)
 		},
 	})
 	service = desktop.NewRecoveryService(coordinator, app)
 	app.RegisterService(application.NewService(service))
-	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "DeepSeek Harness Desktop", Width: 1280, Height: 840, MinWidth: 760, MinHeight: 620, InitialPosition: application.WindowCentered, Hidden: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
-	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "DeepSeek Harness Desktop", Width: 1280, Height: 840, MinWidth: 760, MinHeight: 620, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
+	windowHeight, minWindowHeight := 840, 620
+	if runtime.GOOS == "windows" {
+		const desktopChromeHeight = 38
+		windowHeight += desktopChromeHeight
+		minWindowHeight += desktopChromeHeight
+	}
+	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "DeepSeek Harness Desktop", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
+	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "DeepSeek Harness Desktop", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
+	coordinator.SetWindow(mainWindow)
 	service.SetWindow(splashWindow)
 	finishHarnessNavigation := func(*application.WindowEvent) {
 		if awaitingHarnessNavigation.CompareAndSwap(true, false) {

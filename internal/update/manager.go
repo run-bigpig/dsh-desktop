@@ -10,9 +10,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	harnessruntime "github.com/deepseek-ai/deepseek-harness-desktop/internal/runtime"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
 type Toolchain struct{ Git, Node, PNPM, NodeVersion, PNPMVersion string }

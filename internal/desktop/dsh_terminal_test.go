@@ -5,9 +5,9 @@ import (
 	"path/filepath"
 	"testing"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/appconfig"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/update"
+	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
 func TestDSHTerminalConfigUsesActiveRuntime(t *testing.T) {

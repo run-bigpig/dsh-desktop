@@ -15,7 +15,7 @@
 - Harness 版本随桌面发行包升级，不在用户机器上 fetch 源码、安装依赖或执行构建；切换内置 runtime 前备份 `harness-home`，新版本未就绪会自动恢复旧代码选择和旧数据。
 - 恢复页是纯离线静态资源；Harness 页面不导入恢复页的 Wails bindings。
 
-桌面更新源固定为 `https://api.github.com/repos/deepseek-ai/deepseek-harness-desktop/releases/latest`。Windows x64 Release 必须同时发布 `DeepSeek-Harness-Desktop-Setup-x64.exe` 和对应的 `.sha256` 文件；如果 GitHub API 已提供资产 digest，也会直接使用该 SHA-256。
+桌面更新源固定为 `https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest`。Windows x64 Release 必须同时发布 `DeepSeek-Harness-Desktop-Setup-x64.exe` 和对应的 `.sha256` 文件；如果 GitHub API 已提供资产 digest，也会直接使用该 SHA-256。
 
 ## 开发验证
 

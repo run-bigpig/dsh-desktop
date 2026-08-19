@@ -3,41 +3,63 @@
   --bg-deep: #090c12;
   --brand: #4d6bfe;
   --brand-light: #6799fe;
-  --brand-deep: #3157b8;
   --text: #fff;
   --secondary: rgba(255,255,255,.62);
+  --water-scale: 1.1;
+  --water-opacity: .94;
+  --ring-scale: .95;
+  --bubble-opacity: .7;
+  --fish-scale: .82;
+  --fish-brightness: .94;
+  --fish-glow: .72;
+  --ambient-opacity: .38;
 }
 
 * { box-sizing: border-box; }
 html, body { width: 100%; height: 100%; min-width: 320px; margin: 0; overflow: hidden; }
 body { color: var(--text); background: var(--bg); font-family: "DM Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif; -webkit-font-smoothing: antialiased; }
 .atmosphere { position: fixed; inset: 0; overflow: hidden; pointer-events: none; background: linear-gradient(145deg,#15233a 0%,var(--bg) 54%,var(--bg-deep) 100%); }
-.atmosphere::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center,rgba(77,107,254,.07),transparent 42%); }
-.glow { position: absolute; display: block; border-radius: 50%; filter: blur(100px); opacity: .42; animation: float 9s ease-in-out infinite alternate; }
+.atmosphere::after { content: ""; position: absolute; inset: 0; background: radial-gradient(circle at center,rgba(77,107,254,var(--ambient-opacity)) 0,rgba(30,65,142,.08) 30%,transparent 58%); transition: background .24s linear; }
+.glow { position: absolute; display: block; border-radius: 50%; filter: blur(100px); opacity: calc(var(--ambient-opacity) * .72); animation: float 9s ease-in-out infinite alternate; transition: opacity .24s linear; }
 .glow-one { width: 54vw; height: 32vw; left: 23%; top: -20%; background: rgba(77,107,254,.3); }
 .glow-two { width: 32vw; height: 24vw; right: -7%; bottom: -10%; background: rgba(200,218,255,.13); animation-delay: -4s; }
 
 .app-frame { position: relative; z-index: 1; width: 100%; height: 100vh; min-height: 420px; }
-.boot-view { width: 100%; height: 100%; display: grid; place-items: center; animation: enter .45s ease-out both; }
-.progress-shell { width: min(680px,68vw); opacity: 1; transform: translateY(-2vh); transition: opacity .14s ease-out,transform .14s ease-out; }
-body.handoff .progress-shell { opacity: 0; transform: translateY(calc(-2vh - 4px)) scale(.992); }
-.progress-track { position: relative; height: 3px; background: rgba(255,255,255,.1); }
-.progress-track > i { display: block; width: 8%; height: 100%; background: linear-gradient(90deg,var(--brand-deep),var(--brand-light)); box-shadow: 0 0 14px rgba(103,153,254,.68); transition: width .35s ease-out; }
-.progress-fish { position: absolute; z-index: 2; left: 8%; top: 50%; width: 68px; height: 68px; transform: translate(-48%,-52%); transition: left .35s ease-out; filter: drop-shadow(0 0 11px rgba(103,153,254,.76)); }
-.progress-fish::before,.progress-fish::after { content: ""; position: absolute; top: 48%; right: 87%; border-radius: 50%; background: rgba(103,153,254,.68); }
-.progress-fish::before { width: 4px; height: 4px; }
-.progress-fish::after { width: 2px; height: 2px; right: 105%; top: 61%; opacity: .5; }
-.progress-fish img { display: block; width: 100%; height: 100%; animation: fishSwim 1.25s ease-in-out infinite; transform-origin: 62% 52%; }
-#progressText { margin: 42px 0 0; color: var(--secondary); font-size: 12px; font-weight: 400; letter-spacing: .02em; text-align: center; }
+.boot-view { position: relative; width: 100%; height: 100%; animation: enter .45s ease-out both; }
+.absorption-stage { position: absolute; inset: 0; opacity: 1; transition: opacity .14s ease-out,transform .14s ease-out; }
+body.handoff .absorption-stage { opacity: 0; transform: scale(1.015); }
+.water-mass { position: absolute; left: 50%; top: 50%; width: clamp(270px,31vw,430px); aspect-ratio: 1; border-radius: 44% 56% 51% 49% / 53% 43% 57% 47%; opacity: var(--water-opacity); transform: translate(-50%,-50%) scale(var(--water-scale)) rotate(-5deg); background: radial-gradient(circle at 46% 42%,rgba(157,210,255,.54) 0 3%,rgba(103,153,254,.42) 18%,rgba(46,99,208,.36) 43%,rgba(15,48,112,.24) 67%,rgba(8,25,65,.04) 76%); box-shadow: inset 18px 12px 52px rgba(176,220,255,.16),inset -28px -30px 60px rgba(8,20,57,.44),0 0 80px rgba(77,107,254,.24); filter: saturate(1.15); transition: opacity .22s linear,transform .22s ease-out; animation: waterBody 7s ease-in-out infinite alternate; }
+.water-mass::before { content: ""; position: absolute; inset: 9%; border-radius: 54% 46% 58% 42%; background: conic-gradient(from 35deg,transparent 0 12%,rgba(207,234,255,.16) 17%,transparent 25% 54%,rgba(86,150,255,.22) 61%,transparent 70%); mix-blend-mode: screen; animation: waterTurn 8s linear infinite; }
+.water-mass::after { content: ""; position: absolute; inset: 28%; border-radius: 50%; background: radial-gradient(circle,rgba(3,8,19,.02),rgba(3,8,19,.42) 72%); box-shadow: 0 0 35px rgba(4,9,22,.38); }
+.water-ring { position: absolute; left: 50%; top: 50%; border: 1px solid rgba(141,193,255,.3); border-radius: 50%; transform: translate(-50%,-50%) scale(var(--ring-scale)); opacity: var(--water-opacity); }
+.ring-outer { width: 90%; height: 68%; animation: ringTurn 6s linear infinite; }
+.ring-middle { width: 72%; height: 88%; animation: ringTurn 4.6s linear infinite reverse; }
+.ring-inner { width: 54%; height: 46%; border-color: rgba(202,230,255,.26); animation: ringTurn 3.8s linear infinite; }
+.bubble { position: absolute; display: block; border: 1px solid rgba(201,230,255,.5); border-radius: 50%; opacity: var(--bubble-opacity); box-shadow: inset 1px 1px 2px rgba(255,255,255,.22); animation: bubbleDraw 2.8s ease-in-out infinite; }
+.bubble-a { width: 11px; height: 11px; left: 18%; top: 28%; animation-delay: -.4s; }
+.bubble-b { width: 6px; height: 6px; right: 17%; top: 22%; animation-delay: -1.2s; }
+.bubble-c { width: 8px; height: 8px; right: 12%; bottom: 31%; animation-delay: -2s; }
+.bubble-d { width: 5px; height: 5px; left: 25%; bottom: 18%; animation-delay: -1.6s; }
+.bubble-e { width: 4px; height: 4px; left: 11%; top: 52%; animation-delay: -.8s; }
+.fish-core { position: absolute; z-index: 3; left: 50%; top: 50%; width: clamp(96px,10vw,142px); aspect-ratio: 1; transform: translate(-50%,-50%) scale(var(--fish-scale)); transform-origin: 50% 52%; transition: transform .22s ease-out,filter .22s linear; filter: drop-shadow(0 0 calc(30px * var(--fish-glow)) rgba(103,153,254,var(--fish-glow))); }
+.fish-core::before { content: ""; position: absolute; inset: -22%; border: 1px solid rgba(113,171,255,calc(var(--water-opacity) * .34)); border-radius: 50%; transform: scale(var(--ring-scale)); animation: pulse 1.8s ease-in-out infinite; }
+.fish-core img { display: block; width: 100%; height: 100%; filter: brightness(var(--fish-brightness)); transition: filter .22s linear; animation: fishBreathe 1.7s ease-in-out infinite; }
+#progressText { position: absolute; z-index: 4; left: 50%; top: calc(50% + clamp(126px,14vw,180px)); width: min(420px,80vw); margin: 0; transform: translateX(-50%); color: var(--secondary); font-size: 12px; font-weight: 400; letter-spacing: .02em; text-align: center; }
+.instant,.instant * { transition: none!important; }
 
 @keyframes float { to { transform: translate3d(2vw,2vh,0) scale(1.06); } }
 @keyframes enter { from { opacity: 0; transform: translateY(7px); } to { opacity: 1; transform: none; } }
-@keyframes fishSwim { 0%,100% { transform: translateY(1px) rotate(-1.5deg); } 50% { transform: translateY(-2px) rotate(1.5deg); } }
+@keyframes waterBody { from { border-radius: 44% 56% 51% 49% / 53% 43% 57% 47%; } to { border-radius: 56% 44% 43% 57% / 46% 58% 42% 54%; } }
+@keyframes waterTurn { to { transform: rotate(360deg); } }
+@keyframes ringTurn { to { transform: translate(-50%,-50%) scale(var(--ring-scale)) rotate(360deg); } }
+@keyframes bubbleDraw { 0%,100% { transform: translate3d(0,4px,0) scale(.8); } 50% { transform: translate3d(8px,-8px,0) scale(1.08); } }
+@keyframes pulse { 50% { transform: scale(calc(var(--ring-scale) * 1.08)); opacity: .45; } }
+@keyframes fishBreathe { 0%,100% { transform: rotate(-1deg); } 50% { transform: rotate(1deg); } }
 
 @media(max-width:700px) {
-  .progress-shell { width: 76vw; }
-  .progress-fish { width: 58px; height: 58px; }
-  #progressText { margin-top: 36px; font-size: 11px; }
+  .water-mass { width: min(76vw,340px); }
+  .fish-core { width: clamp(88px,24vw,116px); }
+  #progressText { top: calc(50% + 132px); font-size: 11px; }
 }
 
 @media(prefers-reduced-motion:reduce) {

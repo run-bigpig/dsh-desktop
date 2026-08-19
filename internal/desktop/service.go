@@ -5,8 +5,8 @@ import (
 	"fmt"
 	"sync"
 
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/backup"
-	"github.com/deepseek-ai/deepseek-harness-desktop/internal/state"
+	"github.com/run-bigpig/dsh-desktop/internal/backup"
+	"github.com/run-bigpig/dsh-desktop/internal/state"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 

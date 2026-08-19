@@ -11,19 +11,23 @@ import (
 const AppDirName = "DeepSeekHarnessDesktop"
 
 type Paths struct {
-	Root         string `json:"root"`
-	Toolchain    string `json:"toolchain"`
-	Repository   string `json:"repository"`
-	Versions     string `json:"versions"`
-	PNPMStore    string `json:"pnpmStore"`
-	HarnessHome  string `json:"harnessHome"`
-	Backups      string `json:"backups"`
-	Logs         string `json:"logs"`
-	Updates      string `json:"updates"`
-	State        string `json:"state"`
-	Locks        string `json:"locks"`
-	Workspaces   string `json:"workspaces"`
-	ChildControl string `json:"childControl"`
+	Root          string `json:"root"`
+	Toolchain     string `json:"toolchain"`
+	Repository    string `json:"repository"`
+	Versions      string `json:"versions"`
+	PNPMStore     string `json:"pnpmStore"`
+	HarnessHome   string `json:"harnessHome"`
+	Backups       string `json:"backups"`
+	Logs          string `json:"logs"`
+	Updates       string `json:"updates"`
+	Marketplace   string `json:"marketplace"`
+	PluginCache   string `json:"pluginCache"`
+	PluginTxns    string `json:"pluginTransactions"`
+	PluginBackups string `json:"pluginBackups"`
+	State         string `json:"state"`
+	Locks         string `json:"locks"`
+	Workspaces    string `json:"workspaces"`
+	ChildControl  string `json:"childControl"`
 }
 
 func DefaultRoot() (string, error) {
@@ -46,13 +50,15 @@ func NewPaths(root string) Paths {
 		Repository: filepath.Join(root, "repository.git"), Versions: filepath.Join(root, "versions"),
 		PNPMStore: filepath.Join(root, "pnpm-store"), HarnessHome: filepath.Join(root, "harness-home"),
 		Backups: filepath.Join(root, "backups"), Logs: filepath.Join(root, "logs"), Updates: filepath.Join(root, "updates"),
+		Marketplace: filepath.Join(root, "marketplace"), PluginCache: filepath.Join(root, "marketplace", "downloads"),
+		PluginTxns: filepath.Join(root, "marketplace", "transactions"), PluginBackups: filepath.Join(root, "marketplace", "backups"),
 		State: filepath.Join(root, "state"), Locks: filepath.Join(root, "locks"),
 		Workspaces: filepath.Join(root, "workspaces"), ChildControl: filepath.Join(root, "state", "child-control.mjs"),
 	}
 }
 
 func (p Paths) Ensure() error {
-	for _, dir := range []string{p.Root, p.Toolchain, p.Versions, p.PNPMStore, p.HarnessHome, p.Backups, p.Logs, p.Updates, p.State, p.Locks, p.Workspaces} {
+	for _, dir := range []string{p.Root, p.Toolchain, p.Versions, p.PNPMStore, p.HarnessHome, p.Backups, p.Logs, p.Updates, p.Marketplace, p.PluginCache, p.PluginTxns, p.PluginBackups, p.State, p.Locks, p.Workspaces} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create private directory %s: %w", dir, err)
 		}

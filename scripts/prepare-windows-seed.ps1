@@ -1,3 +1,5 @@
+param([string]$MarketplaceSource = "")
+
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
@@ -9,6 +11,7 @@ $downloads = Join-Path $repoRoot "dist/windows/downloads"
 $buildRoot = Join-Path $repoRoot "dist/windows/seed-build"
 $tools = Join-Path $buildRoot "toolchain"
 $runtimeTools = Join-Path $stage "resources/toolchain"
+$marketplaceTarget = Join-Path $stage "resources/marketplace"
 $seedTarget = Join-Path $stage ("resources/seed/runtime/" + $seedLock.commit)
 Remove-Item -Recurse -Force $tools -ErrorAction SilentlyContinue
 Remove-Item -Recurse -Force $runtimeTools -ErrorAction SilentlyContinue
@@ -93,6 +96,8 @@ if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit checkout failed" }
 if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit reset failed" }
 & $git -C $checkout clean -fdx -e node_modules/
 if ($LASTEXITCODE -ne 0) { throw "Harness worktree cleanup failed" }
+$desktopOverlay = Join-Path $checkout "packages/desktop"
+if (Test-Path $desktopOverlay) { & cmd.exe /d /c rmdir /s /q $desktopOverlay }
 $resolved = (& $git -C $checkout rev-parse HEAD).Trim()
 if ($resolved -ne $seedLock.commit) { throw "Harness commit mismatch: $resolved" }
 $pkg = Get-Content (Join-Path $checkout "package.json") -Raw | ConvertFrom-Json
@@ -209,7 +214,43 @@ $smoke.StandardInput.WriteLine('{"type":"shutdown","source":"release-smoke"}'); 
 if (-not $smoke.WaitForExit(10000)) { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke did not shut down gracefully" }
 if ($smoke.ExitCode -ne 0) { throw "Seed smoke exited with code $($smoke.ExitCode)" }
 
+if (-not $MarketplaceSource) {
+  $MarketplaceSource = $env:DSH_DESKTOP_MARKETPLACE_SOURCE
+}
+if (-not $MarketplaceSource) {
+  $MarketplaceSource = Join-Path (Split-Path -Parent $repoRoot) "deepseek-harness-plugins"
+}
+$marketplaceBuild = Join-Path $MarketplaceSource "scripts/build-against-harness.mjs"
+$marketplaceDist = Join-Path $MarketplaceSource "dist"
+$marketplaceCatalog = Join-Path $MarketplaceSource "catalog/catalog.json"
+foreach ($required in $marketplaceBuild,$marketplaceCatalog) {
+  if (-not (Test-Path $required)) { throw "Marketplace source is incomplete: $required" }
+}
+& $node $marketplaceBuild --harness $checkout --out $marketplaceDist
+if ($LASTEXITCODE -ne 0) { throw "Marketplace Bundle build failed" }
+$marketplaceVersion = (Get-Content (Join-Path $MarketplaceSource "packages/marketplace-bundle/package.json") -Raw | ConvertFrom-Json).version
+$marketplaceArtifacts = @(
+  "run-bigpig-dsh-desktop-marketplace-host-$marketplaceVersion.tgz",
+  "run-bigpig-dsh-desktop-marketplace-client-$marketplaceVersion.tgz",
+  "run-bigpig-dsh-desktop-marketplace-$marketplaceVersion.tgz"
+)
+if (Test-Path $marketplaceTarget) { & cmd.exe /d /c rmdir /s /q $marketplaceTarget }
+New-Item -ItemType Directory -Force $marketplaceTarget | Out-Null
+foreach ($artifact in $marketplaceArtifacts) {
+  $source = Join-Path $marketplaceDist $artifact
+  if (-not (Test-Path $source)) { throw "Marketplace artifact is missing: $source" }
+  Copy-Item -Force $source (Join-Path $marketplaceTarget $artifact)
+}
+Get-Content $marketplaceCatalog -Raw | ConvertFrom-Json | Out-Null
+Copy-Item -Force $marketplaceCatalog (Join-Path $marketplaceTarget "catalog.json")
+$marketplaceSignature = Join-Path $MarketplaceSource "catalog/catalog.sig"
+if (Test-Path $marketplaceSignature) {
+  Copy-Item -Force $marketplaceSignature (Join-Path $marketplaceTarget "catalog.sig")
+}
+
 New-Item -ItemType Directory -Force $runtimeTools | Out-Null
 Copy-Item -Recurse -Force (Join-Path $tools "node") (Join-Path $runtimeTools "node")
+Copy-Item -Recurse -Force (Join-Path $tools "pnpm") (Join-Path $runtimeTools "pnpm")
+Copy-Item -Recurse -Force (Join-Path $tools "git") (Join-Path $runtimeTools "git")
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
-Write-Host "Verified offline seed staged at $seedTarget"
+Write-Host "Verified offline seed and Marketplace Bundle staged at $seedTarget"
