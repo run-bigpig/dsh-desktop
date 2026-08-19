@@ -1,4 +1,4 @@
-# DeepSeek Harness Desktop
+# DSH-DeskTop
 
 独立的 Wails 3 桌面运行时管理器。它不 fork、不复制、不修改 DeepSeek Harness 源码；桌面壳只负责管理官方 `dsh --profile web` 子进程，并在严格验证 loopback 页面后让 WebView 顶层导航到官方 Harness Web 界面。
 
@@ -15,7 +15,7 @@
 - Harness 版本随桌面发行包升级，不在用户机器上 fetch 源码、安装依赖或执行构建；切换内置 runtime 前备份 `harness-home`，新版本未就绪会自动恢复旧代码选择和旧数据。
 - 恢复页是纯离线静态资源；Harness 页面不导入恢复页的 Wails bindings。
 
-桌面更新源固定为 `https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest`。Windows x64 Release 必须同时发布 `DeepSeek-Harness-Desktop-Setup-x64.exe` 和对应的 `.sha256` 文件；如果 GitHub API 已提供资产 digest，也会直接使用该 SHA-256。
+桌面更新源固定为 `https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest`。Windows x64 Release 必须同时发布 `DSH-DeskTop-Setup-x64.exe` 和对应的 `.sha256` 文件；如果 GitHub API 已提供资产 digest，也会直接使用该 SHA-256。
 
 ## 开发验证
 

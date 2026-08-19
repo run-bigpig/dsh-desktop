@@ -4,7 +4,7 @@ import (
 	"errors"
 	"sync"
 
-	"github.com/run-bigpig/dsh-desktop/internal/marketplace"
+	"github.com/run-bigpig/dsh-desktop/internal/plugin"
 	"github.com/wailsapp/wails/v3/pkg/application"
 )
 
@@ -28,12 +28,12 @@ func (c *windowController) current() (*application.WebviewWindow, error) {
 	return c.window, nil
 }
 
-func (c *windowController) WindowState() (marketplace.WindowState, error) {
+func (c *windowController) WindowState() (plugin.WindowState, error) {
 	window, err := c.current()
 	if err != nil {
-		return marketplace.WindowState{}, err
+		return plugin.WindowState{}, err
 	}
-	return marketplace.WindowState{
+	return plugin.WindowState{
 		Maximized:  window.IsMaximised(),
 		Fullscreen: window.IsFullscreen(),
 	}, nil
@@ -48,10 +48,10 @@ func (c *windowController) MinimizeWindow() error {
 	return nil
 }
 
-func (c *windowController) ToggleMaximizeWindow() (marketplace.WindowState, error) {
+func (c *windowController) ToggleMaximizeWindow() (plugin.WindowState, error) {
 	window, err := c.current()
 	if err != nil {
-		return marketplace.WindowState{}, err
+		return plugin.WindowState{}, err
 	}
 	window.ToggleMaximise()
 	return c.WindowState()

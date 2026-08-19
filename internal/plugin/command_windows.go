@@ -1,6 +1,6 @@
 //go:build windows
 
-package marketplace
+package plugin
 
 import (
 	"os/exec"

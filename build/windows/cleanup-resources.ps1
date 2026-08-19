@@ -16,7 +16,7 @@ if (-not $Worker) {
 
 $oldPath = $env:DSH_DESKTOP_CLEAN_OLD
 $emptyPath = $env:DSH_DESKTOP_CLEAN_EMPTY
-$logDir = Join-Path $env:APPDATA "DeepSeekHarnessDesktop\logs"
+$logDir = Join-Path $env:APPDATA "DSH-DeskTop\logs"
 $logPath = Join-Path $logDir "installer-cleanup.log"
 
 New-Item -ItemType Directory -Force $logDir | Out-Null

@@ -1,4 +1,4 @@
-param([string]$MarketplaceSource = "")
+param([Alias("MarketplaceSource")][string]$PluginSource = "")
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
@@ -11,6 +11,7 @@ $downloads = Join-Path $repoRoot "dist/windows/downloads"
 $buildRoot = Join-Path $repoRoot "dist/windows/seed-build"
 $tools = Join-Path $buildRoot "toolchain"
 $runtimeTools = Join-Path $stage "resources/toolchain"
+$pluginTarget = Join-Path $stage "resources/plugin"
 $marketplaceTarget = Join-Path $stage "resources/marketplace"
 $seedTarget = Join-Path $stage ("resources/seed/runtime/" + $seedLock.commit)
 Remove-Item -Recurse -Force $tools -ErrorAction SilentlyContinue
@@ -214,36 +215,40 @@ $smoke.StandardInput.WriteLine('{"type":"shutdown","source":"release-smoke"}'); 
 if (-not $smoke.WaitForExit(10000)) { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke did not shut down gracefully" }
 if ($smoke.ExitCode -ne 0) { throw "Seed smoke exited with code $($smoke.ExitCode)" }
 
-if (-not $MarketplaceSource) {
-  $MarketplaceSource = $env:DSH_DESKTOP_MARKETPLACE_SOURCE
+if (-not $PluginSource) {
+  $PluginSource = $env:DSH_DESKTOP_PLUGIN_SOURCE
 }
-if (-not $MarketplaceSource) {
-  $MarketplaceSource = Join-Path (Split-Path -Parent $repoRoot) "deepseek-harness-plugins"
+if (-not $PluginSource) {
+  $PluginSource = $env:DSH_DESKTOP_MARKETPLACE_SOURCE
 }
-$marketplaceBuild = Join-Path $MarketplaceSource "scripts/build-against-harness.mjs"
-$marketplaceDist = Join-Path $MarketplaceSource "dist"
-$marketplaceCatalog = Join-Path $MarketplaceSource "catalog/catalog.json"
-foreach ($required in $marketplaceBuild,$marketplaceCatalog) {
-  if (-not (Test-Path $required)) { throw "Marketplace source is incomplete: $required" }
+if (-not $PluginSource) {
+  $PluginSource = Join-Path (Split-Path -Parent $repoRoot) "deepseek-harness-plugins"
 }
-& $node $marketplaceBuild --harness $checkout --out $marketplaceDist
-if ($LASTEXITCODE -ne 0) { throw "Marketplace Bundle build failed" }
-$marketplaceVersion = (Get-Content (Join-Path $MarketplaceSource "packages/marketplace-bundle/package.json") -Raw | ConvertFrom-Json).version
-$marketplaceArtifacts = @(
-  "run-bigpig-dsh-desktop-marketplace-host-$marketplaceVersion.tgz",
-  "run-bigpig-dsh-desktop-marketplace-client-$marketplaceVersion.tgz",
-  "run-bigpig-dsh-desktop-marketplace-$marketplaceVersion.tgz"
+$pluginBuild = Join-Path $PluginSource "scripts/build-against-harness.mjs"
+$pluginDist = Join-Path $PluginSource "dist"
+$marketplaceCatalog = Join-Path $PluginSource "catalog/catalog.json"
+foreach ($required in $pluginBuild,$marketplaceCatalog) {
+  if (-not (Test-Path $required)) { throw "Desktop plugin source is incomplete: $required" }
+}
+& $node $pluginBuild --harness $checkout --out $pluginDist
+if ($LASTEXITCODE -ne 0) { throw "Desktop Plugin build failed" }
+$pluginVersion = (Get-Content (Join-Path $PluginSource "packages/plugin-bundle/package.json") -Raw | ConvertFrom-Json).version
+$pluginArtifacts = @(
+  "run-bigpig-dsh-desktop-plugin-host-$pluginVersion.tgz",
+  "run-bigpig-dsh-desktop-plugin-client-$pluginVersion.tgz",
+  "run-bigpig-dsh-desktop-plugin-$pluginVersion.tgz"
 )
+if (Test-Path $pluginTarget) { & cmd.exe /d /c rmdir /s /q $pluginTarget }
 if (Test-Path $marketplaceTarget) { & cmd.exe /d /c rmdir /s /q $marketplaceTarget }
-New-Item -ItemType Directory -Force $marketplaceTarget | Out-Null
-foreach ($artifact in $marketplaceArtifacts) {
-  $source = Join-Path $marketplaceDist $artifact
-  if (-not (Test-Path $source)) { throw "Marketplace artifact is missing: $source" }
-  Copy-Item -Force $source (Join-Path $marketplaceTarget $artifact)
+New-Item -ItemType Directory -Force $pluginTarget,$marketplaceTarget | Out-Null
+foreach ($artifact in $pluginArtifacts) {
+  $source = Join-Path $pluginDist $artifact
+  if (-not (Test-Path $source)) { throw "Desktop plugin artifact is missing: $source" }
+  Copy-Item -Force $source (Join-Path $pluginTarget $artifact)
 }
 Get-Content $marketplaceCatalog -Raw | ConvertFrom-Json | Out-Null
 Copy-Item -Force $marketplaceCatalog (Join-Path $marketplaceTarget "catalog.json")
-$marketplaceSignature = Join-Path $MarketplaceSource "catalog/catalog.sig"
+$marketplaceSignature = Join-Path $PluginSource "catalog/catalog.sig"
 if (Test-Path $marketplaceSignature) {
   Copy-Item -Force $marketplaceSignature (Join-Path $marketplaceTarget "catalog.sig")
 }
@@ -253,4 +258,4 @@ Copy-Item -Recurse -Force (Join-Path $tools "node") (Join-Path $runtimeTools "no
 Copy-Item -Recurse -Force (Join-Path $tools "pnpm") (Join-Path $runtimeTools "pnpm")
 Copy-Item -Recurse -Force (Join-Path $tools "git") (Join-Path $runtimeTools "git")
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
-Write-Host "Verified offline seed and Marketplace Bundle staged at $seedTarget"
+Write-Host "Verified offline seed, Desktop Plugin, and Marketplace catalog staged at $seedTarget"

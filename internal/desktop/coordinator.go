@@ -19,7 +19,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
 	"github.com/run-bigpig/dsh-desktop/internal/backup"
 	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
-	"github.com/run-bigpig/dsh-desktop/internal/marketplace"
+	"github.com/run-bigpig/dsh-desktop/internal/plugin"
 	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
 	"github.com/run-bigpig/dsh-desktop/internal/seed"
 	"github.com/run-bigpig/dsh-desktop/internal/selfupdate"
@@ -38,8 +38,8 @@ type Coordinator struct {
 	store        *state.Store
 	backups      *backup.Manager
 	appUpdates   *selfupdate.Manager
-	marketplace  *marketplace.Manager
-	marketBridge *marketplace.Bridge
+	plugins      *plugin.Manager
+	pluginBridge *plugin.Bridge
 	window       *windowController
 	tools        update.Toolchain
 	log          io.Writer
@@ -77,7 +77,7 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	if err != nil || len(catalogKey) != ed25519.PublicKeySize {
 		return nil, errors.New("invalid Marketplace catalog public key in build configuration")
 	}
-	market, err := marketplace.New(marketplace.Options{
+	plugins, err := plugin.New(plugin.Options{
 		Paths: paths, Tools: tools, Log: logWriter,
 		CatalogURL: buildinfo.MarketplaceCatalogURL, CatalogSignatureURL: buildinfo.MarketplaceCatalogSignatureURL,
 		TrustedCatalogKey: ed25519.PublicKey(catalogKey),
@@ -85,14 +85,14 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	if err != nil {
 		return nil, err
 	}
-	bridge, err := marketplace.StartBridge(market)
+	bridge, err := plugin.StartBridge(plugins)
 	if err != nil {
 		return nil, err
 	}
-	c.marketplace, c.marketBridge = market, bridge
+	c.plugins, c.pluginBridge = plugins, bridge
 	bridge.SetDesktopController(c.window)
-	market.SetControl(bridge.URL(), bridge.Token())
-	market.SetLifecycle(marketplace.Lifecycle{Stop: c.Stop, Start: c.Start})
+	plugins.SetControl(bridge.URL(), bridge.Token())
+	plugins.SetLifecycle(plugin.Lifecycle{Stop: c.Stop, Start: c.Start})
 	return c, nil
 }
 
@@ -278,7 +278,7 @@ func (c *Coordinator) Start(ctx context.Context) error {
 	go func() {
 		refreshCtx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
-		if refreshErr := c.marketplace.RefreshCatalog(refreshCtx); refreshErr != nil && c.log != nil {
+		if refreshErr := c.plugins.RefreshCatalog(refreshCtx); refreshErr != nil && c.log != nil {
 			_, _ = fmt.Fprintln(c.log, "refresh Marketplace catalog after startup:", refreshErr)
 		}
 	}()
@@ -300,12 +300,12 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", err
 	}
-	c.marketplace.SetRuntime(runtimeDir, snap.Active.Current.Commit)
-	if err := c.marketplace.EnsureBundle(ctx); err != nil {
+	c.plugins.SetRuntime(runtimeDir, snap.Active.Current.Commit)
+	if err := c.plugins.EnsureDesktopPlugin(ctx); err != nil {
 		return "", err
 	}
 	toolPath := strings.Join([]string{filepath.Dir(c.tools.Node), os.Getenv("PATH")}, string(os.PathListSeparator))
-	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: []string{"PATH=" + toolPath, "DSH_DESKTOP_CONTROL_URL=" + c.marketBridge.URL(), "DSH_DESKTOP_CONTROL_TOKEN=" + c.marketBridge.Token()}, OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
+	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: []string{"PATH=" + toolPath, "DSH_DESKTOP_CONTROL_URL=" + c.pluginBridge.URL(), "DSH_DESKTOP_CONTROL_TOKEN=" + c.pluginBridge.Token()}, OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
 	c.mu.Lock()
 	c.process = p
 	c.mu.Unlock()
@@ -330,7 +330,7 @@ func (c *Coordinator) Stop(ctx context.Context) error {
 }
 func (c *Coordinator) Close(ctx context.Context) error {
 	err := c.Stop(ctx)
-	if bridgeErr := c.marketBridge.Close(); err == nil {
+	if bridgeErr := c.pluginBridge.Close(); err == nil {
 		err = bridgeErr
 	}
 	return err

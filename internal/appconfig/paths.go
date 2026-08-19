@@ -8,7 +8,10 @@ import (
 	"strings"
 )
 
-const AppDirName = "DeepSeekHarnessDesktop"
+const (
+	AppDirName       = "DSH-DeskTop"
+	legacyAppDirName = "DeepSeekHarnessDesktop"
+)
 
 type Paths struct {
 	Root          string `json:"root"`
@@ -20,6 +23,7 @@ type Paths struct {
 	Backups       string `json:"backups"`
 	Logs          string `json:"logs"`
 	Updates       string `json:"updates"`
+	Plugin        string `json:"plugin"`
 	Marketplace   string `json:"marketplace"`
 	PluginCache   string `json:"pluginCache"`
 	PluginTxns    string `json:"pluginTransactions"`
@@ -44,13 +48,41 @@ func DefaultRoot() (string, error) {
 	return filepath.Join(base, AppDirName), nil
 }
 
+// MigrateLegacyRoot moves the previous default data directory to the current
+// one. Custom data directories and existing destinations are never changed.
+func MigrateLegacyRoot() (bool, error) {
+	if os.Getenv("DSH_DESKTOP_DATA_DIR") != "" || runtime.GOOS == "darwin" {
+		return false, nil
+	}
+	base, err := os.UserConfigDir()
+	if err != nil {
+		return false, fmt.Errorf("resolve user config directory: %w", err)
+	}
+	oldRoot := filepath.Join(base, legacyAppDirName)
+	newRoot := filepath.Join(base, AppDirName)
+	if _, err := os.Stat(newRoot); err == nil {
+		return false, nil
+	} else if !os.IsNotExist(err) {
+		return false, fmt.Errorf("inspect current data directory: %w", err)
+	}
+	if _, err := os.Stat(oldRoot); os.IsNotExist(err) {
+		return false, nil
+	} else if err != nil {
+		return false, fmt.Errorf("inspect legacy data directory: %w", err)
+	}
+	if err := os.Rename(oldRoot, newRoot); err != nil {
+		return false, fmt.Errorf("migrate legacy data directory: %w", err)
+	}
+	return true, nil
+}
+
 func NewPaths(root string) Paths {
 	return Paths{
 		Root: root, Toolchain: filepath.Join(root, "toolchain"),
 		Repository: filepath.Join(root, "repository.git"), Versions: filepath.Join(root, "versions"),
 		PNPMStore: filepath.Join(root, "pnpm-store"), HarnessHome: filepath.Join(root, "harness-home"),
 		Backups: filepath.Join(root, "backups"), Logs: filepath.Join(root, "logs"), Updates: filepath.Join(root, "updates"),
-		Marketplace: filepath.Join(root, "marketplace"), PluginCache: filepath.Join(root, "marketplace", "downloads"),
+		Plugin: filepath.Join(root, "plugin"), Marketplace: filepath.Join(root, "marketplace"), PluginCache: filepath.Join(root, "marketplace", "downloads"),
 		PluginTxns: filepath.Join(root, "marketplace", "transactions"), PluginBackups: filepath.Join(root, "marketplace", "backups"),
 		State: filepath.Join(root, "state"), Locks: filepath.Join(root, "locks"),
 		Workspaces: filepath.Join(root, "workspaces"), ChildControl: filepath.Join(root, "state", "child-control.mjs"),
@@ -58,7 +90,7 @@ func NewPaths(root string) Paths {
 }
 
 func (p Paths) Ensure() error {
-	for _, dir := range []string{p.Root, p.Toolchain, p.Versions, p.PNPMStore, p.HarnessHome, p.Backups, p.Logs, p.Updates, p.Marketplace, p.PluginCache, p.PluginTxns, p.PluginBackups, p.State, p.Locks, p.Workspaces} {
+	for _, dir := range []string{p.Root, p.Toolchain, p.Versions, p.PNPMStore, p.HarnessHome, p.Backups, p.Logs, p.Updates, p.Plugin, p.Marketplace, p.PluginCache, p.PluginTxns, p.PluginBackups, p.State, p.Locks, p.Workspaces} {
 		if err := os.MkdirAll(dir, 0o700); err != nil {
 			return fmt.Errorf("create private directory %s: %w", dir, err)
 		}

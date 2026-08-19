@@ -1,4 +1,4 @@
-package marketplace
+package plugin
 
 import (
 	"crypto/ed25519"

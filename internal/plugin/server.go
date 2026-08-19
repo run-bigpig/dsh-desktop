@@ -1,4 +1,4 @@
-package marketplace
+package plugin
 
 import (
 	"crypto/rand"
@@ -54,11 +54,11 @@ type DesktopController interface {
 func StartBridge(manager *Manager) (*Bridge, error) {
 	raw := make([]byte, 32)
 	if _, err := rand.Read(raw); err != nil {
-		return nil, fmt.Errorf("generate marketplace bridge token: %w", err)
+		return nil, fmt.Errorf("generate desktop plugin bridge token: %w", err)
 	}
 	listener, err := net.Listen("tcp4", "127.0.0.1:0")
 	if err != nil {
-		return nil, fmt.Errorf("listen for marketplace bridge: %w", err)
+		return nil, fmt.Errorf("listen for desktop plugin bridge: %w", err)
 	}
 	b := &Bridge{manager: manager, listener: listener, token: base64.RawURLEncoding.EncodeToString(raw)}
 	b.url = "http://" + listener.Addr().String() + "/"

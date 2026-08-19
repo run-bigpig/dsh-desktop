@@ -6,7 +6,7 @@ Set-StrictMode -Version Latest
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $installer = Join-Path $repoRoot "build/windows/installer.nsi"
-if (-not (Test-Path (Join-Path $stage "deepseek-harness-desktop.exe"))) {
+if (-not (Test-Path (Join-Path $stage "dsh-desktop.exe"))) {
   throw "Windows stage is missing the desktop executable"
 }
 
@@ -27,6 +27,6 @@ try {
   & subst.exe $drive /D 2>$null
 }
 
-$output = Join-Path $repoRoot "dist/windows/DeepSeek-Harness-Desktop-Setup-x64.exe"
+$output = Join-Path $repoRoot "dist/windows/DSH-DeskTop-Setup-x64.exe"
 $checksum = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
 Set-Content -Encoding ASCII -NoNewline -Path ($output + ".sha256") -Value ($checksum + "  " + [IO.Path]::GetFileName($output))

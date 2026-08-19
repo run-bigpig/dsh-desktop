@@ -88,7 +88,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	}
 	if !newer {
 		m.store.SetAvailableUpdate(nil)
-		m.set(state.Ready, "DeepSeek Harness Desktop "+m.currentVersion+" 已是最新版本")
+		m.set(state.Ready, "DSH-DeskTop "+m.currentVersion+" 已是最新版本")
 		return nil, nil
 	}
 	assetName, err := platformAssetName()

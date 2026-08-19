@@ -1,4 +1,4 @@
-package marketplace
+package plugin
 
 import (
 	"context"
@@ -26,24 +26,37 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const marketplaceVersion = "0.1.9"
+const desktopPluginVersion = "0.1.9"
 
 var bundledArtifacts = []string{
-	"run-bigpig-dsh-desktop-marketplace-host-" + marketplaceVersion + ".tgz",
-	"run-bigpig-dsh-desktop-marketplace-client-" + marketplaceVersion + ".tgz",
-	"run-bigpig-dsh-desktop-marketplace-" + marketplaceVersion + ".tgz",
+	"run-bigpig-dsh-desktop-plugin-host-" + desktopPluginVersion + ".tgz",
+	"run-bigpig-dsh-desktop-plugin-client-" + desktopPluginVersion + ".tgz",
+	"run-bigpig-dsh-desktop-plugin-" + desktopPluginVersion + ".tgz",
 }
 
 var managedBundlePackages = []string{
-	"@run-bigpig/dsh-desktop-marketplace-host",
-	"@run-bigpig/dsh-desktop-marketplace-client",
-	"@run-bigpig/dsh-desktop-marketplace",
+	"@run-bigpig/dsh-desktop-plugin-host",
+	"@run-bigpig/dsh-desktop-plugin-client",
+	"@run-bigpig/dsh-desktop-plugin",
+}
+
+var legacyManagedBundlePackageSets = [][]string{
+	{
+		"@deepseek-ai/dsh-desktop-marketplace-host",
+		"@deepseek-ai/dsh-desktop-marketplace-client",
+		"@deepseek-ai/dsh-desktop-marketplace",
+	},
+	{
+		"@run-bigpig/dsh-desktop-marketplace-host",
+		"@run-bigpig/dsh-desktop-marketplace-client",
+		"@run-bigpig/dsh-desktop-marketplace",
+	},
 }
 
 var stableBundleArtifacts = []string{
-	"marketplace-host.tgz",
-	"marketplace-client.tgz",
-	"marketplace-bundle.tgz",
+	"plugin-host.tgz",
+	"plugin-client.tgz",
+	"plugin-bundle.tgz",
 }
 
 type Lifecycle struct {
@@ -136,25 +149,25 @@ func (m *Manager) SetLifecycle(lifecycle Lifecycle) {
 	m.mu.Unlock()
 }
 
-func (m *Manager) EnsureBundle(ctx context.Context) error {
-	installed := installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-marketplace")
+func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
+	installed := installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-plugin")
 	artifacts, ok := m.bundleArtifacts()
 	if !ok {
 		if m.log != nil {
-			_, _ = fmt.Fprintln(m.log, "desktop marketplace bundle is not available in this development build")
+			_, _ = fmt.Fprintln(m.log, "desktop plugin bundle is not available in this development build")
 		}
 		return nil
 	}
 	artifacts, err := m.publishBundleArtifacts(artifacts)
 	if err != nil {
-		return fmt.Errorf("publish desktop marketplace bundle: %w", err)
+		return fmt.Errorf("publish desktop plugin bundle: %w", err)
 	}
 	profile := filepath.Join(m.paths.HarnessHome, "profiles", "web")
 	originalManifest, changed, err := rewriteManagedBundleSpecs(filepath.Join(profile, "package.json"), artifacts)
 	if err != nil {
-		return fmt.Errorf("migrate desktop marketplace bundle paths: %w", err)
+		return fmt.Errorf("migrate desktop plugin bundle paths: %w", err)
 	}
-	if installed != nil && *installed == marketplaceVersion && !changed {
+	if installed != nil && *installed == desktopPluginVersion && !changed {
 		return nil
 	}
 	args := []string{"plugin", "--profile", "web", "add"}
@@ -164,20 +177,20 @@ func (m *Manager) EnsureBundle(ctx context.Context) error {
 		if changed {
 			_ = replaceFile(filepath.Join(profile, "package.json"), originalManifest, 0o600)
 		}
-		return fmt.Errorf("install desktop marketplace bundle: %w", err)
+		return fmt.Errorf("install desktop plugin bundle: %w", err)
 	}
-	installed = installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-marketplace")
-	if installed == nil || *installed != marketplaceVersion {
-		return fmt.Errorf("desktop marketplace bundle version %s was not installed", marketplaceVersion)
+	installed = installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-plugin")
+	if installed == nil || *installed != desktopPluginVersion {
+		return fmt.Errorf("desktop plugin bundle version %s was not installed", desktopPluginVersion)
 	}
 	return nil
 }
 
 func (m *Manager) publishBundleArtifacts(sources []string) ([]string, error) {
 	if len(sources) != len(stableBundleArtifacts) {
-		return nil, errors.New("desktop marketplace bundle artifact list is invalid")
+		return nil, errors.New("desktop plugin bundle artifact list is invalid")
 	}
-	directory := filepath.Join(m.paths.Marketplace, "bundle")
+	directory := filepath.Join(m.paths.Plugin, "bundle")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
 		return nil, err
 	}
@@ -210,12 +223,16 @@ func (m *Manager) publishBundleArtifacts(sources []string) ([]string, error) {
 		}
 		targets[index] = target
 	}
+	legacyDirectory := filepath.Join(m.paths.Marketplace, "bundle")
+	if err := os.RemoveAll(legacyDirectory); err != nil && m.log != nil {
+		_, _ = fmt.Fprintln(m.log, "remove legacy desktop Marketplace bundle directory:", err)
+	}
 	return targets, nil
 }
 
 func rewriteManagedBundleSpecs(path string, artifacts []string) ([]byte, bool, error) {
 	if len(artifacts) != len(managedBundlePackages) {
-		return nil, false, errors.New("desktop marketplace bundle package list is invalid")
+		return nil, false, errors.New("desktop plugin bundle package list is invalid")
 	}
 	original, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
@@ -236,13 +253,70 @@ func rewriteManagedBundleSpecs(path string, artifacts []string) ([]byte, bool, e
 	}
 	changed := false
 	for index, packageName := range managedBundlePackages {
-		if _, managed := dependencies[packageName]; !managed {
+		_, current := dependencies[packageName]
+		legacy := false
+		for _, legacyPackages := range legacyManagedBundlePackageSets {
+			if _, ok := dependencies[legacyPackages[index]]; ok {
+				legacy = true
+			}
+		}
+		if !current && !legacy {
 			continue
 		}
 		spec := "file:" + filepath.ToSlash(artifacts[index])
 		if dependencies[packageName] != spec {
 			dependencies[packageName] = spec
 			changed = true
+		}
+		for _, legacyPackages := range legacyManagedBundlePackageSets {
+			if _, ok := dependencies[legacyPackages[index]]; ok {
+				delete(dependencies, legacyPackages[index])
+				changed = true
+			}
+		}
+	}
+	if raw := document["dsh"]; len(raw) != 0 {
+		var dsh map[string]json.RawMessage
+		if err := json.Unmarshal(raw, &dsh); err != nil {
+			return nil, false, err
+		}
+		if rawProfile := dsh["profile"]; len(rawProfile) != 0 {
+			var profile map[string]json.RawMessage
+			if err := json.Unmarshal(rawProfile, &profile); err != nil {
+				return nil, false, err
+			}
+			if rawBundles := profile["bundles"]; len(rawBundles) != 0 {
+				var bundles []string
+				if err := json.Unmarshal(rawBundles, &bundles); err != nil {
+					return nil, false, err
+				}
+				for index, bundle := range bundles {
+					for _, legacyPackages := range legacyManagedBundlePackageSets {
+						if bundle == legacyPackages[2] {
+							bundles[index] = managedBundlePackages[2]
+							changed = true
+							break
+						}
+					}
+				}
+				if changed {
+					encodedBundles, err := json.Marshal(bundles)
+					if err != nil {
+						return nil, false, err
+					}
+					profile["bundles"] = encodedBundles
+					encodedProfile, err := json.Marshal(profile)
+					if err != nil {
+						return nil, false, err
+					}
+					dsh["profile"] = encodedProfile
+					encodedDSH, err := json.Marshal(dsh)
+					if err != nil {
+						return nil, false, err
+					}
+					document["dsh"] = encodedDSH
+				}
+			}
 		}
 	}
 	if !changed {
@@ -521,11 +595,11 @@ func (m *Manager) catalogPath() string {
 
 func (m *Manager) bundleArtifacts() ([]string, bool) {
 	var directory string
-	if root := os.Getenv("DSH_DESKTOP_MARKETPLACE_DIR"); root != "" {
+	if root := os.Getenv("DSH_DESKTOP_PLUGIN_DIR"); root != "" {
 		directory = filepath.Join(root, "dist")
 	} else {
 		exe, _ := os.Executable()
-		directory = filepath.Join(filepath.Dir(exe), "resources", "marketplace")
+		directory = filepath.Join(filepath.Dir(exe), "resources", "plugin")
 	}
 	paths := make([]string, 0, len(bundledArtifacts))
 	for _, name := range bundledArtifacts {
@@ -634,7 +708,7 @@ func (m *Manager) download(ctx context.Context, entry catalogPlugin) (string, er
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", "DeepSeek-Harness-Desktop-Marketplace/"+marketplaceVersion)
+	request.Header.Set("User-Agent", "DSH-DeskTop-Marketplace/"+desktopPluginVersion)
 	response, err := m.httpClient.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download plugin release: %w", err)
