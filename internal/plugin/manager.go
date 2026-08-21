@@ -1,6 +1,7 @@
 package plugin
 
 import (
+	"bytes"
 	"context"
 	"crypto/ed25519"
 	"crypto/rand"
@@ -26,12 +27,14 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.9"
+const desktopPluginVersion = "0.1.24"
 
-var bundledArtifacts = []string{
-	"run-bigpig-dsh-desktop-plugin-host-" + desktopPluginVersion + ".tgz",
-	"run-bigpig-dsh-desktop-plugin-client-" + desktopPluginVersion + ".tgz",
-	"run-bigpig-dsh-desktop-plugin-" + desktopPluginVersion + ".tgz",
+const maxPluginArchiveBytes int64 = 64 << 20
+
+var bundledPackageDirectories = []string{
+	"plugin-host",
+	"plugin-client",
+	"plugin-bundle",
 }
 
 var managedBundlePackages = []string{
@@ -53,7 +56,13 @@ var legacyManagedBundlePackageSets = [][]string{
 	},
 }
 
-var stableBundleArtifacts = []string{
+var stableBundleDirectories = []string{
+	"plugin-host",
+	"plugin-client",
+	"plugin-bundle",
+}
+
+var legacyStableBundleArtifacts = []string{
 	"plugin-host.tgz",
 	"plugin-client.tgz",
 	"plugin-bundle.tgz",
@@ -150,20 +159,27 @@ func (m *Manager) SetLifecycle(lifecycle Lifecycle) {
 }
 
 func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
+	profile := filepath.Join(m.paths.HarnessHome, "profiles", "web")
+	legacyRoot := filepath.Join(filepath.Dir(m.paths.Root), "DeepSeekHarnessDesktop")
+	if err := migrateLegacyProfilePaths(profile, legacyRoot, m.paths.Root); err != nil {
+		return fmt.Errorf("migrate legacy plugin paths: %w", err)
+	}
+	if err := m.detachMismatchedProfileStore(profile); err != nil {
+		return fmt.Errorf("repair migrated pnpm profile: %w", err)
+	}
 	installed := installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-plugin")
-	artifacts, ok := m.bundleArtifacts()
+	packages, ok := m.bundledPackages()
 	if !ok {
 		if m.log != nil {
 			_, _ = fmt.Fprintln(m.log, "desktop plugin bundle is not available in this development build")
 		}
 		return nil
 	}
-	artifacts, err := m.publishBundleArtifacts(artifacts)
+	packages, err := m.publishBundlePackages(packages)
 	if err != nil {
 		return fmt.Errorf("publish desktop plugin bundle: %w", err)
 	}
-	profile := filepath.Join(m.paths.HarnessHome, "profiles", "web")
-	originalManifest, changed, err := rewriteManagedBundleSpecs(filepath.Join(profile, "package.json"), artifacts)
+	originalManifest, changed, err := rewriteManagedBundleSpecs(filepath.Join(profile, "package.json"), packages)
 	if err != nil {
 		return fmt.Errorf("migrate desktop plugin bundle paths: %w", err)
 	}
@@ -171,24 +187,134 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 		return nil
 	}
 	args := []string{"plugin", "--profile", "web", "add"}
-	args = append(args, artifacts...)
-	args = append(args, "--save-exact", "--force", "--ignore-scripts", "--offline", "--store-dir", m.paths.PNPMStore, "--virtual-store-dir", m.profileVirtualStore(profile))
+	for _, directory := range packages {
+		args = append(args, "file:"+filepath.ToSlash(directory))
+	}
+	args = append(args, "--save-exact", "--force", "--ignore-scripts", "--offline", "--store-dir", m.paths.PNPMStore)
+	if err := dropProfileLockfile(profile); err != nil {
+		return fmt.Errorf("discard position-dependent profile lockfile: %w", err)
+	}
+	previousModules, err := m.detachProfileModules(profile, "profile-upgrade")
+	if err != nil {
+		return fmt.Errorf("detach current profile dependencies: %w", err)
+	}
 	if err := m.runCLI(ctx, m.paths.HarnessHome, args...); err != nil {
 		if changed {
 			_ = replaceFile(filepath.Join(profile, "package.json"), originalManifest, 0o600)
 		}
+		_ = restoreProfileModules(profile, previousModules)
 		return fmt.Errorf("install desktop plugin bundle: %w", err)
+	}
+	if err := dropProfileLockfile(profile); err != nil {
+		return fmt.Errorf("discard regenerated profile lockfile: %w", err)
 	}
 	installed = installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-plugin")
 	if installed == nil || *installed != desktopPluginVersion {
+		_ = restoreProfileModules(profile, previousModules)
 		return fmt.Errorf("desktop plugin bundle version %s was not installed", desktopPluginVersion)
+	}
+	if previousModules != "" {
+		go func() { _ = os.RemoveAll(previousModules) }()
 	}
 	return nil
 }
 
-func (m *Manager) publishBundleArtifacts(sources []string) ([]string, error) {
-	if len(sources) != len(stableBundleArtifacts) {
-		return nil, errors.New("desktop plugin bundle artifact list is invalid")
+func migrateLegacyProfilePaths(profile, legacyRoot, currentRoot string) error {
+	replacements := [][2][]byte{
+		{[]byte(filepath.ToSlash(legacyRoot)), []byte(filepath.ToSlash(currentRoot))},
+		{[]byte(legacyRoot), []byte(currentRoot)},
+		{[]byte(strings.ReplaceAll(legacyRoot, `\`, `\\`)), []byte(strings.ReplaceAll(currentRoot, `\`, `\\`))},
+	}
+	for _, name := range []string{"package.json", "pnpm-lock.yaml"} {
+		path := filepath.Join(profile, name)
+		original, err := os.ReadFile(path)
+		if errors.Is(err, os.ErrNotExist) {
+			continue
+		}
+		if err != nil {
+			return err
+		}
+		updated := original
+		for _, replacement := range replacements {
+			updated = bytes.ReplaceAll(updated, replacement[0], replacement[1])
+		}
+		if bytes.Equal(updated, original) {
+			continue
+		}
+		if err := replaceFile(path, updated, 0o600); err != nil {
+			return err
+		}
+	}
+	return nil
+}
+
+func (m *Manager) detachMismatchedProfileStore(profile string) error {
+	modules := filepath.Join(profile, "node_modules")
+	data, err := os.ReadFile(filepath.Join(modules, ".modules.yaml"))
+	if errors.Is(err, os.ErrNotExist) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	var metadata struct {
+		StoreDir string `json:"storeDir"`
+	}
+	if json.Unmarshal(data, &metadata) != nil || metadata.StoreDir == "" {
+		return nil
+	}
+	desired := filepath.Clean(m.paths.PNPMStore)
+	actual := filepath.Clean(metadata.StoreDir)
+	sameStore := actual == desired
+	if runtime.GOOS == "windows" {
+		sameStore = strings.EqualFold(actual, desired)
+	}
+	if sameStore || appconfig.IsOwnedPath(desired, actual) {
+		return nil
+	}
+	stale, err := m.detachProfileModules(profile, "profile-store")
+	if err != nil {
+		return err
+	}
+	if m.log != nil {
+		_, _ = fmt.Fprintf(m.log, "detached profile dependencies linked to previous pnpm store %s\n", metadata.StoreDir)
+	}
+	go func() { _ = os.RemoveAll(stale) }()
+	return nil
+}
+
+func (m *Manager) detachProfileModules(profile, label string) (string, error) {
+	modules := filepath.Join(profile, "node_modules")
+	if _, err := os.Stat(modules); errors.Is(err, os.ErrNotExist) {
+		return "", nil
+	} else if err != nil {
+		return "", err
+	}
+	cleanupRoot := filepath.Join(m.paths.Marketplace, "cleanup")
+	if err := os.MkdirAll(cleanupRoot, 0o700); err != nil {
+		return "", err
+	}
+	stale := filepath.Join(cleanupRoot, fmt.Sprintf("%s-node_modules-%d", label, time.Now().UnixNano()))
+	if err := os.Rename(modules, stale); err != nil {
+		return "", err
+	}
+	return stale, nil
+}
+
+func restoreProfileModules(profile, previous string) error {
+	modules := filepath.Join(profile, "node_modules")
+	if err := os.RemoveAll(modules); err != nil {
+		return err
+	}
+	if previous == "" {
+		return nil
+	}
+	return os.Rename(previous, modules)
+}
+
+func (m *Manager) publishBundlePackages(sources []string) ([]string, error) {
+	if len(sources) != len(stableBundleDirectories) {
+		return nil, errors.New("desktop plugin bundle package list is invalid")
 	}
 	directory := filepath.Join(m.paths.Plugin, "bundle")
 	if err := os.MkdirAll(directory, 0o700); err != nil {
@@ -196,32 +322,29 @@ func (m *Manager) publishBundleArtifacts(sources []string) ([]string, error) {
 	}
 	targets := make([]string, len(sources))
 	for index, source := range sources {
-		target := filepath.Join(directory, stableBundleArtifacts[index])
-		input, err := os.Open(source)
-		if err != nil {
-			return nil, err
-		}
+		target := filepath.Join(directory, stableBundleDirectories[index])
 		temporary := target + ".tmp"
-		output, err := os.OpenFile(temporary, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
-		if err != nil {
-			_ = input.Close()
+		if err := os.RemoveAll(temporary); err != nil {
 			return nil, err
 		}
-		_, copyErr := io.Copy(output, input)
-		inputErr, syncErr, closeErr := input.Close(), output.Sync(), output.Close()
-		if copyErr != nil || inputErr != nil || syncErr != nil || closeErr != nil {
-			_ = os.Remove(temporary)
-			return nil, errors.Join(copyErr, inputErr, syncErr, closeErr)
+		if err := os.CopyFS(temporary, os.DirFS(source)); err != nil {
+			_ = os.RemoveAll(temporary)
+			return nil, err
 		}
-		if err := os.Remove(target); err != nil && !errors.Is(err, os.ErrNotExist) {
-			_ = os.Remove(temporary)
+		if err := os.RemoveAll(target); err != nil {
+			_ = os.RemoveAll(temporary)
 			return nil, err
 		}
 		if err := os.Rename(temporary, target); err != nil {
-			_ = os.Remove(temporary)
+			_ = os.RemoveAll(temporary)
 			return nil, err
 		}
 		targets[index] = target
+	}
+	for _, name := range legacyStableBundleArtifacts {
+		if err := os.Remove(filepath.Join(directory, name)); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return nil, err
+		}
 	}
 	legacyDirectory := filepath.Join(m.paths.Marketplace, "bundle")
 	if err := os.RemoveAll(legacyDirectory); err != nil && m.log != nil {
@@ -388,9 +511,6 @@ func (m *Manager) Begin(request MutationRequest) (Operation, error) {
 	if plugin == nil {
 		return Operation{}, ErrNotFound
 	}
-	if request.Action != Uninstall && !plugin.Compatible {
-		return Operation{}, fmt.Errorf("%w: plugin is incompatible with this Harness commit", ErrInvalid)
-	}
 	if !snapshot.CatalogVerified && os.Getenv("DSH_DESKTOP_MARKETPLACE_ALLOW_UNSIGNED") != "1" {
 		return Operation{}, fmt.Errorf("%w: plugin installation is disabled until the catalog signature is verified", ErrInvalid)
 	}
@@ -399,6 +519,9 @@ func (m *Manager) Begin(request MutationRequest) (Operation, error) {
 	}
 	if request.Action == Update && plugin.InstalledVersion == nil {
 		return Operation{}, fmt.Errorf("%w: plugin is not installed", ErrInvalid)
+	}
+	if request.Action == Update && !plugin.UpdateAvailable {
+		return Operation{}, fmt.Errorf("%w: catalog version is not newer than the installed plugin", ErrInvalid)
 	}
 	if request.Action == Uninstall && plugin.InstalledVersion == nil {
 		return Operation{}, fmt.Errorf("%w: plugin is not installed", ErrInvalid)
@@ -428,6 +551,16 @@ func (m *Manager) Operation(id string) (Operation, bool) {
 	defer m.mu.Unlock()
 	record, ok := m.operations[id]
 	if !ok {
+		return Operation{}, false
+	}
+	return record.Operation, true
+}
+
+func (m *Manager) ActiveOperation() (Operation, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	record := m.operations[m.activeOperation]
+	if record == nil || record.terminal() {
 		return Operation{}, false
 	}
 	return record.Operation, true
@@ -475,7 +608,7 @@ func (m *Manager) executeOperation(ctx context.Context, id string, plugin Plugin
 	m.set(id, Staging, 48, "正在创建隔离安装环境")
 	currentProfile := filepath.Join(m.paths.HarnessHome, "profiles", "web")
 	stagedProfile := filepath.Join(txn, "home", "profiles", "web")
-	if err := copyProfile(currentProfile, stagedProfile); err != nil {
+	if err := stageProfile(currentProfile, stagedProfile); err != nil {
 		return err
 	}
 	m.set(id, Installing, 60, "正在隔离安装插件依赖")
@@ -492,6 +625,9 @@ func (m *Manager) executeOperation(ctx context.Context, id string, plugin Plugin
 	m.set(id, Validating, 72, "正在验证插件配置")
 	if err := m.runCLI(ctx, filepath.Join(txn, "home"), "--profile", "web", "--dump-config"); err != nil {
 		return fmt.Errorf("validate plugin profile: %w", err)
+	}
+	if err := dropProfileLockfile(stagedProfile); err != nil {
+		return fmt.Errorf("discard staged profile lockfile: %w", err)
 	}
 
 	m.set(id, ReadyToRestart, 84, "验证通过，正在切换插件配置")
@@ -593,18 +729,19 @@ func (m *Manager) catalogPath() string {
 	return filepath.Join(filepath.Dir(exe), "resources", "marketplace", "catalog.json")
 }
 
-func (m *Manager) bundleArtifacts() ([]string, bool) {
+func (m *Manager) bundledPackages() ([]string, bool) {
 	var directory string
 	if root := os.Getenv("DSH_DESKTOP_PLUGIN_DIR"); root != "" {
-		directory = filepath.Join(root, "dist")
+		directory = root
 	} else {
 		exe, _ := os.Executable()
 		directory = filepath.Join(filepath.Dir(exe), "resources", "plugin")
 	}
-	paths := make([]string, 0, len(bundledArtifacts))
-	for _, name := range bundledArtifacts {
+	paths := make([]string, 0, len(bundledPackageDirectories))
+	for _, name := range bundledPackageDirectories {
 		path := filepath.Join(directory, name)
-		if _, err := os.Stat(path); err != nil {
+		info, err := os.Stat(path)
+		if err != nil || !info.IsDir() {
 			return nil, false
 		}
 		paths = append(paths, path)
@@ -649,19 +786,6 @@ func (m *Manager) virtualStore(name string) string {
 	return filepath.Join(m.paths.Marketplace, "virtual-stores", name)
 }
 
-func (m *Manager) profileVirtualStore(profile string) string {
-	data, err := os.ReadFile(filepath.Join(profile, "node_modules", ".modules.yaml"))
-	if err == nil {
-		var metadata struct {
-			VirtualStoreDir string `json:"virtualStoreDir"`
-		}
-		if json.Unmarshal(data, &metadata) == nil && appconfig.IsOwnedPath(m.paths.Marketplace, metadata.VirtualStoreDir) {
-			return metadata.VirtualStoreDir
-		}
-	}
-	return m.virtualStore("profile")
-}
-
 func (m *Manager) commandEnvironment(home string) []string {
 	allowed := map[string]bool{
 		"SYSTEMROOT": true, "WINDIR": true, "COMSPEC": true, "PATHEXT": true,
@@ -675,7 +799,11 @@ func (m *Manager) commandEnvironment(home string) []string {
 			env = append(env, item)
 		}
 	}
-	path := strings.Join([]string{filepath.Dir(m.tools.Node), filepath.Dir(m.tools.PNPM), filepath.Dir(m.tools.Git)}, string(os.PathListSeparator))
+	binDirs := []string{filepath.Dir(m.tools.Node), filepath.Dir(m.tools.PNPM)}
+	if m.tools.Git != "" {
+		binDirs = append(binDirs, filepath.Dir(m.tools.Git))
+	}
+	path := strings.Join(binDirs, string(os.PathListSeparator))
 	env = append(env, "PATH="+path, "DSH_HOME="+home, "PNPM_HOME="+filepath.Dir(m.tools.PNPM),
 		"NPM_CONFIG_UPDATE_NOTIFIER=false", "GIT_TERMINAL_PROMPT=0", "CI=1")
 	if runtime.GOOS != "windows" {
@@ -722,7 +850,7 @@ func (m *Manager) download(ctx context.Context, entry catalogPlugin) (string, er
 	if err != nil {
 		return "", err
 	}
-	_, copyErr := io.Copy(file, io.LimitReader(response.Body, int64(256<<20)+1))
+	_, copyErr := io.Copy(file, io.LimitReader(response.Body, maxPluginArchiveBytes+1))
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(temporary)
@@ -733,9 +861,9 @@ func (m *Manager) download(ctx context.Context, entry catalogPlugin) (string, er
 		return "", closeErr
 	}
 	info, err := os.Stat(temporary)
-	if err != nil || info.Size() > 256<<20 {
+	if err != nil || info.Size() > maxPluginArchiveBytes {
 		_ = os.Remove(temporary)
-		return "", errors.New("plugin release exceeds 256 MiB")
+		return "", errors.New("plugin release exceeds 64 MiB")
 	}
 	if err := verifyFileSHA256(temporary, entry.Release.SHA256); err != nil {
 		_ = os.Remove(temporary)
@@ -838,6 +966,23 @@ func copyProfile(source, target string) error {
 		}
 		return closeErr
 	})
+}
+
+func stageProfile(source, target string) error {
+	if err := copyProfile(source, target); err != nil {
+		return err
+	}
+	return dropProfileLockfile(target)
+}
+
+func dropProfileLockfile(profile string) error {
+	// pnpm stores local file dependency resolutions relative to the lockfile.
+	// Plugin profiles move between live and transaction directories, so keeping
+	// a generated lockfile makes those paths resolve from the wrong directory.
+	if err := os.Remove(filepath.Join(profile, "pnpm-lock.yaml")); err != nil && !errors.Is(err, os.ErrNotExist) {
+		return err
+	}
+	return nil
 }
 
 func swapProfile(current, staged, previous string) error {

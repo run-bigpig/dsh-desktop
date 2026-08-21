@@ -8,6 +8,7 @@ if (-not $Worker) {
   $startInfo.Arguments = "-NoProfile -NonInteractive -ExecutionPolicy Bypass -File `"$PSCommandPath`" -Worker"
   $startInfo.UseShellExecute = $false
   $startInfo.CreateNoWindow = $true
+  $startInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
   if (-not [Diagnostics.Process]::Start($startInfo)) {
     exit 3
   }
@@ -28,10 +29,22 @@ try {
     exit 2
   }
   New-Item -ItemType Directory -Force $emptyPath | Out-Null
-  & "$env:SystemRoot\System32\robocopy.exe" `
-    $emptyPath $oldPath /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS /NP | Out-Null
-  Add-Content -LiteralPath $logPath -Value "robocopy exit code: $LASTEXITCODE"
-  if ($LASTEXITCODE -lt 8) {
+  $robocopyInfo = [Diagnostics.ProcessStartInfo]::new()
+  $robocopyInfo.FileName = "$env:SystemRoot\System32\robocopy.exe"
+  $robocopyInfo.Arguments = "`"$emptyPath`" `"$oldPath`" /MIR /R:0 /W:0 /NFL /NDL /NJH /NJS /NP"
+  $robocopyInfo.UseShellExecute = $false
+  $robocopyInfo.CreateNoWindow = $true
+  $robocopyInfo.WindowStyle = [Diagnostics.ProcessWindowStyle]::Hidden
+  $robocopy = [Diagnostics.Process]::Start($robocopyInfo)
+  if ($null -eq $robocopy) {
+    Add-Content -LiteralPath $logPath -Value "cleanup failed: unable to start robocopy"
+    exit 3
+  }
+  $robocopy.WaitForExit()
+  $robocopyExitCode = $robocopy.ExitCode
+  $robocopy.Dispose()
+  Add-Content -LiteralPath $logPath -Value "robocopy exit code: $robocopyExitCode"
+  if ($robocopyExitCode -lt 8) {
     Remove-Item -LiteralPath $oldPath -Force
     Add-Content -LiteralPath $logPath -Value "cleanup complete"
   }

@@ -1,0 +1,436 @@
+.section {
+  display: flex;
+  width: 100%;
+  max-width: 820px;
+  flex-direction: column;
+  gap: 14px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.status,
+.failure p,
+.heading h3,
+.hint,
+.notice,
+.form h4,
+.field label {
+  margin: 0;
+}
+
+.status,
+.failure,
+.hint,
+.notice {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 13px;
+  line-height: 20px;
+}
+
+.failure {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.toolbar,
+.heading,
+.cardHeader,
+.cardMeta,
+.actions,
+.buttonGroup,
+.checkRow,
+.providerMeta {
+  display: flex;
+  align-items: center;
+}
+
+.toolbar,
+.cardHeader,
+.actions {
+  justify-content: space-between;
+}
+
+.toolbar,
+.cardHeader,
+.actions,
+.providerMeta {
+  gap: 10px;
+}
+
+.heading {
+  gap: 7px;
+}
+
+.heading h3,
+.form h4 {
+  font-size: 14px;
+  font-weight: 600;
+  line-height: 20px;
+}
+
+.heading span,
+.providerMeta,
+.cardMeta,
+.keyList {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 18px;
+}
+
+.cards,
+.groups {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr);
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.serverCards {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px;
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+.serverCard {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 10px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  padding: 14px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.serverIdentity {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+}
+
+.serverIdentity strong {
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.serverIdentity span,
+.serverMeta,
+.serverStatus {
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 11px;
+  line-height: 17px;
+}
+
+.serverDescription {
+  display: -webkit-box;
+  min-height: 40px;
+  margin: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 20px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.serverMeta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px 10px;
+}
+
+.serverActions {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-top: auto;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 10px;
+}
+
+.serverStatus {
+  display: inline-flex;
+  min-width: 0;
+  align-items: center;
+  gap: 6px;
+}
+
+.serverStatus > span {
+  width: 7px;
+  height: 7px;
+  flex: none;
+  border-radius: 50%;
+  background: var(--dsw-alias-label-tertiary);
+}
+
+.serverStatus[data-kind='active'] {
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.serverStatus[data-kind='active'] > span {
+  background: var(--dsw-alias-state-success-primary);
+}
+
+.serverStatus[data-kind='failed'] {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.serverStatus[data-kind='failed'] > span {
+  background: var(--dsw-alias-state-error-primary);
+}
+
+.card,
+.form,
+.endpoint {
+  overflow: hidden;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 10px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.cardHeader {
+  min-height: 48px;
+  padding: 11px 14px;
+}
+
+.cardTitle {
+  min-width: 0;
+  overflow: hidden;
+  font-size: 14px;
+  line-height: 20px;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.cardMeta {
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.tag {
+  display: inline-flex;
+  min-height: 20px;
+  align-items: center;
+  border-radius: 5px;
+  padding: 1px 6px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 11px;
+  line-height: 16px;
+  white-space: nowrap;
+}
+
+.tag[data-kind='active'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-success-primary) 10%, transparent);
+  color: var(--dsw-alias-state-success-primary);
+}
+
+.tag[data-kind='failed'] {
+  background: color-mix(in srgb, var(--dsw-alias-state-error-primary) 9%, transparent);
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.cardBody,
+.models {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+}
+
+.cardBody {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 10px 14px 12px;
+}
+
+.keyList {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 5px 10px;
+}
+
+.form,
+.endpoint {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+  padding: 14px;
+}
+
+.formGrid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 12px;
+}
+
+.field {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.field[data-wide='true'] {
+  grid-column: 1 / -1;
+}
+
+.field label {
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.field input,
+.field select,
+.field textarea {
+  box-sizing: border-box;
+  width: 100%;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  outline: none;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 13px;
+}
+
+.field input,
+.field select {
+  height: 36px;
+  padding: 0 10px;
+}
+
+.field textarea {
+  min-height: 76px;
+  padding: 8px 10px;
+  resize: vertical;
+}
+
+.field input:focus-visible,
+.field select:focus-visible,
+.field textarea:focus-visible {
+  border-color: var(--dsw-alias-state-business-primary);
+  box-shadow: 0 0 0 2px color-mix(in srgb, var(--dsw-alias-state-business-primary) 18%, transparent);
+}
+
+.checkRow {
+  gap: 8px;
+  font-size: 13px;
+}
+
+.actions {
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding-top: 10px;
+}
+
+.buttonGroup {
+  gap: 7px;
+}
+
+.button,
+.dangerButton,
+.primaryButton {
+  min-height: 30px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 7px;
+  padding: 4px 12px;
+  background: var(--dsw-alias-bg-layer-1);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.primaryButton {
+  border-color: var(--dsw-alias-state-business-primary);
+  background: var(--dsw-alias-state-business-primary);
+  color: white;
+}
+
+.dangerButton {
+  color: var(--dsw-alias-state-error-primary);
+}
+
+.button:not(:disabled):hover,
+.dangerButton:not(:disabled):hover {
+  border-color: var(--dsw-alias-border-l1);
+  background: var(--dsw-alias-interactive-bg-hover);
+}
+
+.button:disabled,
+.dangerButton:disabled,
+.primaryButton:disabled {
+  cursor: not-allowed;
+  opacity: .48;
+}
+
+.notice[data-kind='ok'] { color: var(--dsw-alias-state-success-primary); }
+.notice[data-kind='error'] { color: var(--dsw-alias-state-error-primary); }
+
+.providerButton {
+  display: flex;
+  width: 100%;
+  min-height: 46px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  border: 0;
+  padding: 10px 14px;
+  background: transparent;
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+
+.providerButton:hover { background: var(--dsw-alias-bg-layer-1); }
+.providerButton[aria-expanded='true'] { border-bottom: 1px solid var(--dsw-alias-border-l2); }
+
+.models {
+  display: flex;
+  flex-direction: column;
+  padding: 4px 0;
+}
+
+.modelRow {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  font-size: 13px;
+}
+
+.modelRow:hover { background: var(--dsw-alias-bg-layer-1); }
+.modelName { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.modelRow .tag { margin-left: auto; }
+
+@media (prefers-reduced-motion: no-preference) {
+  .button,
+  .dangerButton,
+  .card,
+  .serverCard,
+  .providerButton { transition: background 140ms var(--ds-ease-in-out), border-color 140ms var(--ds-ease-in-out); }
+}
+
+@media (max-width: 720px) {
+  .toolbar,
+  .cardHeader,
+  .actions { align-items: stretch; flex-direction: column; }
+  .cardMeta { justify-content: flex-start; }
+  .serverCards { grid-template-columns: minmax(0, 1fr); }
+  .serverActions { align-items: stretch; flex-direction: column; }
+  .serverActions .buttonGroup { align-self: flex-end; }
+  .formGrid { grid-template-columns: minmax(0, 1fr); }
+  .field[data-wide='true'] { grid-column: auto; }
+}

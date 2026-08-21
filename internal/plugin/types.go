@@ -35,8 +35,7 @@ type Plugin struct {
 	RepositoryURL    string   `json:"repositoryURL"`
 	Version          string   `json:"version"`
 	InstalledVersion *string  `json:"installedVersion"`
-	Compatible       bool     `json:"compatible"`
-	Verified         bool     `json:"verified"`
+	UpdateAvailable  bool     `json:"updateAvailable"`
 	Permissions      []string `json:"permissions"`
 	License          string   `json:"license"`
 }
@@ -81,7 +80,6 @@ type catalogPlugin struct {
 	Publisher     string `json:"publisher"`
 	PackageName   string `json:"packageName"`
 	Repository    struct {
-		ID  int64  `json:"id"`
 		URL string `json:"url"`
 	} `json:"repository"`
 	Release struct {
@@ -89,12 +87,8 @@ type catalogPlugin struct {
 		AssetURL string `json:"assetUrl"`
 		SHA256   string `json:"sha256"`
 	} `json:"release"`
-	Compatibility struct {
-		HarnessCommits []string `json:"harnessCommits"`
-	} `json:"compatibility"`
 	Permissions []string `json:"permissions"`
 	License     string   `json:"license"`
-	Verified    bool     `json:"verified"`
 }
 
 type operationRecord struct {

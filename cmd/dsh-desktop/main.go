@@ -134,7 +134,7 @@ func main() {
 		showSplash()
 	}
 	var app *application.App
-	app = application.New(application.Options{Name: "DSH-DeskTop", Description: "Independent desktop runtime for the official DeepSeek Harness web UI", Icon: icons.ApplicationLightMode256, Logger: logger,
+	app = application.New(application.Options{Name: "DSH-DeskTop", Description: "Independent desktop runtime for the official DeepSeek Harness web UI", Icon: desktopassets.AppIcon, Logger: logger,
 		Assets:  application.AssetOptions{Handler: application.BundledAssetFileServer(desktopassets.Frontend)},
 		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true, WebviewUserDataPath: paths.State + string(os.PathSeparator) + "webview2"}, Linux: application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "deepseek-harness-desktop"},
 		SingleInstance: &application.SingleInstanceOptions{UniqueID: "ai.deepseek.harness-desktop", OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
@@ -198,8 +198,8 @@ func main() {
 	if runtime.GOOS == "darwin" {
 		tray.SetTemplateIcon(icons.SystrayMacTemplate)
 	} else {
-		tray.SetIcon(icons.SystrayLight)
-		tray.SetDarkModeIcon(icons.SystrayDark)
+		tray.SetIcon(desktopassets.AppIcon)
+		tray.SetDarkModeIcon(desktopassets.AppIcon)
 	}
 	menu := app.NewMenu()
 	menu.Add("打开 Harness").OnClick(func(*application.Context) { openHarness() })

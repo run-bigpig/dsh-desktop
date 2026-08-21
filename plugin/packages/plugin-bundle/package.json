@@ -1,0 +1,13 @@
+{
+  "name": "@run-bigpig/dsh-desktop-plugin",
+  "description": "Profile Bundle mounting the trusted DSH-DeskTop integration",
+  "version": "0.1.24",
+  "type": "module",
+  "license": "MIT",
+  "files": ["cordis.patch.yml", "THIRD_PARTY_NOTICES.md", "LICENSES/**/*.txt"],
+  "dsh": { "bundle": { "patch": "./cordis.patch.yml" } },
+  "peerDependencies": {
+    "@run-bigpig/dsh-desktop-plugin-host": "workspace:^",
+    "@run-bigpig/dsh-desktop-plugin-client": "workspace:^"
+  }
+}

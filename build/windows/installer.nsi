@@ -1,7 +1,7 @@
 Unicode true
 RequestExecutionLevel user
 Name "DSH-DeskTop"
-OutFile "..\..\dist\windows\DSH-DeskTop-Setup-x64.exe"
+OutFile "../../dist/windows/DSH-DeskTop-Setup-x64.exe"
 InstallDir "$LOCALAPPDATA\Programs\DSH-DeskTop"
 InstallDirRegKey HKCU "Software\DSH-DeskTop" "InstallDir"
 SetCompressor /SOLID lzma
@@ -20,17 +20,39 @@ VIAddVersionKey "LegalCopyright" "MIT"
 !ifndef STAGE_DIR
 !define STAGE_DIR "..\..\dist\windows\stage"
 !endif
+!ifndef SEED_COMMIT
+!error "SEED_COMMIT must be provided by the packaging script"
+!endif
 
 !include "MUI2.nsh"
+!include "nsDialogs.nsh"
 !include "x64.nsh"
+!ifndef PBS_MARQUEE
+!define PBS_MARQUEE 0x00000008
+!endif
+!ifndef PBM_SETPOS
+!define PBM_SETPOS 0x0402
+!endif
+!ifndef PBM_SETMARQUEE
+!define PBM_SETMARQUEE 0x040A
+!endif
+!define MUI_ICON "icon.ico"
+!define MUI_UNICON "icon.ico"
 Var OldResourcesDir
 Var CleanupProcessID
 Var EmptyCleanupDir
 Var CleanupScript
 Var LegacyInstallDir
+Var FailedResourcesDir
+Var RegistryURL
+Var OfficialRegistryRadio
+Var ChinaRegistryRadio
+Var InstallProgressBar
+Var InstallProgressStyle
 !define MUI_ABORTWARNING
 !insertmacro MUI_PAGE_WELCOME
 !insertmacro MUI_PAGE_DIRECTORY
+Page Custom RegistryPageCreate RegistryPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\dsh-desktop.exe"
 !insertmacro MUI_PAGE_FINISH
@@ -38,6 +60,7 @@ Var LegacyInstallDir
 !insertmacro MUI_LANGUAGE "English"
 
 Function .onInit
+  StrCpy $RegistryURL "https://registry.npmjs.org/"
   ReadRegStr $LegacyInstallDir HKCU "Software\DeepSeekHarnessDesktop" "InstallDir"
   FindWindow $1 "" "DSH-DeskTop"
   ${If} $1 == 0
@@ -68,8 +91,10 @@ Function .onInit
       IntOp $2 $2 + 1
       IntCmp $2 50 force_close_desktop wait_for_desktop force_close_desktop
     force_close_desktop:
-      ExecWait '"$SYSDIR\taskkill.exe" /IM dsh-desktop.exe /T /F' $0
-      ExecWait '"$SYSDIR\taskkill.exe" /IM deepseek-harness-desktop.exe /T /F' $0
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /IM dsh-desktop.exe /T /F'
+      Pop $0
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /IM deepseek-harness-desktop.exe /T /F'
+      Pop $0
       Sleep 300
       FindWindow $1 "" "DSH-DeskTop"
       ${If} $1 == 0
@@ -84,8 +109,10 @@ Function .onInit
       ${EndIf}
     desktop_closed:
       Sleep 1000
-      ExecWait '"$SYSDIR\taskkill.exe" /IM dsh-desktop.exe /T /F' $0
-      ExecWait '"$SYSDIR\taskkill.exe" /IM deepseek-harness-desktop.exe /T /F' $0
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /IM dsh-desktop.exe /T /F'
+      Pop $0
+      nsExec::Exec '"$SYSDIR\taskkill.exe" /IM deepseek-harness-desktop.exe /T /F'
+      Pop $0
   ${EndIf}
   ${IfNot} ${RunningX64}
     MessageBox MB_ICONSTOP "DSH-DeskTop 首版仅支持 Windows x64。"
@@ -107,6 +134,57 @@ Function .onInit
   webview_found:
 FunctionEnd
 
+Function RegistryPageCreate
+  nsDialogs::Create 1018
+  Pop $0
+  ${If} $0 == error
+    Abort
+  ${EndIf}
+
+  ${NSD_CreateLabel} 0 0 100% 24u "请选择 Harness 依赖下载源。该选择仅用于本次安装，不会修改系统 npm 或 pnpm 配置。"
+  Pop $0
+  ${NSD_CreateRadioButton} 0 34u 100% 14u "官方 npm 源（registry.npmjs.org）"
+  Pop $OfficialRegistryRadio
+  ${NSD_CreateRadioButton} 0 56u 100% 14u "国内镜像（registry.npmmirror.com，失败时自动切换官方源）"
+  Pop $ChinaRegistryRadio
+
+  StrCmp $RegistryURL "https://registry.npmmirror.com/" 0 registry_select_official
+  ${NSD_Check} $ChinaRegistryRadio
+  Goto registry_page_ready
+  registry_select_official:
+  ${NSD_Check} $OfficialRegistryRadio
+  registry_page_ready:
+  nsDialogs::Show
+FunctionEnd
+
+Function BeginDependencyProgress
+  GetDlgItem $InstallProgressBar $HWNDPARENT 1004
+  StrCmp $InstallProgressBar 0 dependency_progress_begin_done
+  System::Call 'user32::GetWindowLongW(i $InstallProgressBar, i ${GWL_STYLE}) i .r0'
+  StrCpy $InstallProgressStyle $0
+  IntOp $0 $0 | ${PBS_MARQUEE}
+  System::Call 'user32::SetWindowLongW(i $InstallProgressBar, i ${GWL_STYLE}, i r0)'
+  SendMessage $InstallProgressBar ${PBM_SETMARQUEE} 1 45
+  dependency_progress_begin_done:
+FunctionEnd
+
+Function EndDependencyProgress
+  StrCmp $InstallProgressBar 0 dependency_progress_end_done
+  SendMessage $InstallProgressBar ${PBM_SETMARQUEE} 0 0
+  System::Call 'user32::SetWindowLongW(i $InstallProgressBar, i ${GWL_STYLE}, i $InstallProgressStyle)'
+  SendMessage $InstallProgressBar ${PBM_SETPOS} 100 0
+  dependency_progress_end_done:
+FunctionEnd
+
+Function RegistryPageLeave
+  ${NSD_GetState} $ChinaRegistryRadio $0
+  ${If} $0 == ${BST_CHECKED}
+    StrCpy $RegistryURL "https://registry.npmmirror.com/"
+  ${Else}
+    StrCpy $RegistryURL "https://registry.npmjs.org/"
+  ${EndIf}
+FunctionEnd
+
 Section "Install"
   IfFileExists "$APPDATA\DSH-DeskTop\*.*" data_migration_done
   IfFileExists "$APPDATA\DeepSeekHarnessDesktop\*.*" 0 data_migration_done
@@ -120,28 +198,84 @@ Section "Install"
   legacy_install_fallback:
     RMDir /r "$LegacyInstallDir"
   legacy_install_removed:
-  StrCpy $OldResourcesDir ""
-  IfFileExists "$INSTDIR\resources\*.*" 0 install_resources_detached
   System::Call 'kernel32::GetCurrentProcessId() i.r0'
   StrCpy $CleanupProcessID $0
+  StrCpy $OldResourcesDir ""
+  IfFileExists "$INSTDIR\resources\*.*" 0 install_resources_detached
   StrCpy $OldResourcesDir "$INSTDIR.resources-old-$CleanupProcessID"
+  IfFileExists "$OldResourcesDir\*.*" install_backup_failed 0
   ClearErrors
   Rename "$INSTDIR\resources" "$OldResourcesDir"
-  IfErrors install_resources_fallback install_resources_detached
-  install_resources_fallback:
-    StrCpy $OldResourcesDir ""
-    RMDir /r "$INSTDIR\resources"
+  IfErrors install_backup_failed install_resources_detached
   install_resources_detached:
   CreateDirectory "$APPDATA\DSH-DeskTop\logs"
   FileOpen $1 "$APPDATA\DSH-DeskTop\logs\installer-cleanup.log" a
   FileWrite $1 "nsis install detached: old=$OldResourcesDir$\r$\n"
   FileClose $1
+  Delete "$INSTDIR\dsh-desktop.exe.previous"
+  IfFileExists "$INSTDIR\dsh-desktop.exe" 0 install_executable_detached
+  ClearErrors
+  Rename "$INSTDIR\dsh-desktop.exe" "$INSTDIR\dsh-desktop.exe.previous"
+  IfErrors install_executable_backup_failed install_executable_detached
+  install_executable_backup_failed:
+    StrCmp $OldResourcesDir "" install_backup_failed
+    Rename "$OldResourcesDir" "$INSTDIR\resources"
+  install_backup_failed:
+    IfSilent +2
+    MessageBox MB_ICONSTOP "无法安全备份当前安装，安装已取消。请确认 DSH-DeskTop 已完全退出后重试。"
+    SetErrorLevel 3
+    Abort
+  install_executable_detached:
+  SetOutPath "$INSTDIR"
+  File /r "${STAGE_DIR}\*"
+  DetailPrint "正在安装 Harness 运行依赖..."
+  InitPluginsDir
+  SetOutPath "$PLUGINSDIR"
+  File /oname=install-runtime.ps1 "install-runtime.ps1"
+  File /oname=materialize-workspace-runtime.mjs "..\..\scripts\materialize-workspace-runtime.mjs"
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_SOURCE_ROOT", t "$INSTDIR\resources\seed\source\${SEED_COMMIT}") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_RUNTIME_ROOT", t "$INSTDIR\resources\seed\runtime\${SEED_COMMIT}") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_PNPM", t "$INSTDIR\resources\toolchain\pnpm\pnpm.exe") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_NODE_DIR", t "$INSTDIR\resources\toolchain\node") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_MATERIALIZER", t "$PLUGINSDIR\materialize-workspace-runtime.mjs") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_PNPM_STORE", t "$APPDATA\DSH-DeskTop\pnpm-store") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_PLUGIN_ROOT", t "$INSTDIR\resources\plugin") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_INSTALL_LOG", t "$APPDATA\DSH-DeskTop\logs\installer-dependencies.log") i.r0'
+  System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_REGISTRY", t "$RegistryURL") i.r0'
+  Call BeginDependencyProgress
+  nsExec::ExecToLog '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$PLUGINSDIR\install-runtime.ps1"'
+  Pop $0
+  Call EndDependencyProgress
+  StrCmp $0 "0" install_dependencies_ready install_dependencies_failed
+  install_dependencies_failed:
+    DetailPrint "Harness 运行依赖安装失败，正在恢复原版本..."
+    StrCpy $FailedResourcesDir "$INSTDIR.resources-failed-$CleanupProcessID"
+    Rename "$INSTDIR\resources" "$FailedResourcesDir"
+    StrCmp $OldResourcesDir "" +2
+    Rename "$OldResourcesDir" "$INSTDIR\resources"
+    Delete "$INSTDIR\dsh-desktop.exe"
+    Rename "$INSTDIR\dsh-desktop.exe.previous" "$INSTDIR\dsh-desktop.exe"
+    StrCpy $EmptyCleanupDir "$TEMP\dsh-empty-failed-$CleanupProcessID"
+    StrCpy $CleanupScript "$TEMP\DSH-DeskTop-cleanup-failed-$CleanupProcessID.ps1"
+    File /oname=cleanup-resources-failed.ps1 "cleanup-resources.ps1"
+    CopyFiles /SILENT "$PLUGINSDIR\cleanup-resources-failed.ps1" "$CleanupScript"
+    System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_OLD", t "$FailedResourcesDir") i.r0'
+    System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_EMPTY", t "$EmptyCleanupDir") i.r0'
+    nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$CleanupScript"'
+    Pop $1
+    IfSilent +2
+    MessageBox MB_ICONSTOP "Harness 运行依赖安装失败。请检查网络后重试。详细日志：$APPDATA\DSH-DeskTop\logs\installer-dependencies.log"
+    SetErrorLevel 3
+    Abort
+  install_dependencies_ready:
+  DetailPrint "Harness 运行依赖安装完成。"
+  Delete "$INSTDIR\dsh-desktop.exe.previous"
+  Delete "$INSTDIR\deepseek-harness-desktop.exe"
+  Delete "$INSTDIR\Uninstall.exe"
   StrCmp $OldResourcesDir "" install_cleanup_started
   StrCpy $EmptyCleanupDir "$TEMP\dsh-empty-$CleanupProcessID"
   StrCpy $CleanupScript "$TEMP\DSH-DeskTop-cleanup-$CleanupProcessID.ps1"
-  InitPluginsDir
-  SetOutPath "$PLUGINSDIR"
-  File /oname=cleanup-resources.ps1 "${__FILEDIR__}\cleanup-resources.ps1"
+  File /oname=cleanup-resources.ps1 "cleanup-resources.ps1"
   CopyFiles /SILENT "$PLUGINSDIR\cleanup-resources.ps1" "$CleanupScript"
   FileOpen $1 "$APPDATA\DSH-DeskTop\logs\installer-cleanup.log" a
   FileWrite $1 "nsis install launcher: script=$CleanupScript$\r$\n"
@@ -149,7 +283,8 @@ Section "Install"
   IfFileExists "$CleanupScript" 0 install_cleanup_fallback
   System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_OLD", t "$OldResourcesDir") i.r0'
   System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_EMPTY", t "$EmptyCleanupDir") i.r0'
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$CleanupScript"' $0
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$CleanupScript"'
+  Pop $0
   FileOpen $1 "$APPDATA\DSH-DeskTop\logs\installer-cleanup.log" a
   FileWrite $1 "nsis install launcher exit: code=$0$\r$\n"
   FileClose $1
@@ -159,14 +294,10 @@ Section "Install"
     RMDir /r "$OldResourcesDir"
     StrCpy $OldResourcesDir ""
   install_cleanup_started:
-  Delete "$INSTDIR\dsh-desktop.exe"
-  Delete "$INSTDIR\deepseek-harness-desktop.exe"
-  Delete "$INSTDIR\Uninstall.exe"
-  SetOutPath "$INSTDIR"
-  File /r "${STAGE_DIR}\*"
   WriteUninstaller "$INSTDIR\Uninstall.exe"
   WriteRegStr HKCU "Software\DSH-DeskTop" "InstallDir" "$INSTDIR"
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSH-DeskTop" "DisplayName" "DSH-DeskTop"
+  WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSH-DeskTop" "DisplayIcon" '"$INSTDIR\dsh-desktop.exe",0'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSH-DeskTop" "UninstallString" '"$INSTDIR\Uninstall.exe"'
   WriteRegStr HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSH-DeskTop" "DisplayVersion" "${APP_VERSION}"
   WriteRegDWORD HKCU "Software\Microsoft\Windows\CurrentVersion\Uninstall\DSH-DeskTop" "NoModify" 1
@@ -197,12 +328,13 @@ Section "Uninstall"
   StrCpy $CleanupScript "$TEMP\DSH-DeskTop-cleanup-$CleanupProcessID.ps1"
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"
-  File /oname=cleanup-resources.ps1 "${__FILEDIR__}\cleanup-resources.ps1"
+  File /oname=cleanup-resources.ps1 "cleanup-resources.ps1"
   CopyFiles /SILENT "$PLUGINSDIR\cleanup-resources.ps1" "$CleanupScript"
   IfFileExists "$CleanupScript" 0 uninstall_cleanup_fallback
   System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_OLD", t "$OldResourcesDir") i.r0'
   System::Call 'kernel32::SetEnvironmentVariable(t "DSH_DESKTOP_CLEAN_EMPTY", t "$EmptyCleanupDir") i.r0'
-  ExecWait '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$CleanupScript"' $0
+  nsExec::Exec '"$SYSDIR\WindowsPowerShell\v1.0\powershell.exe" -NoProfile -NonInteractive -ExecutionPolicy Bypass -WindowStyle Hidden -File "$CleanupScript"'
+  Pop $0
   IntCmp $0 0 uninstall_cleanup_started uninstall_cleanup_fallback uninstall_cleanup_fallback
   uninstall_cleanup_fallback:
     Delete "$CleanupScript"

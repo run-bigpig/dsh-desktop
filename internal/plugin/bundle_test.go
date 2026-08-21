@@ -31,9 +31,9 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 		t.Fatal(err)
 	}
 	artifacts := []string{
-		filepath.Join(directory, "plugin-host.tgz"),
-		filepath.Join(directory, "plugin-client.tgz"),
-		filepath.Join(directory, "plugin-bundle.tgz"),
+		filepath.Join(directory, "plugin-host"),
+		filepath.Join(directory, "plugin-client"),
+		filepath.Join(directory, "plugin-bundle"),
 	}
 	backup, changed, err := rewriteManagedBundleSpecs(manifest, artifacts)
 	if err != nil {
@@ -74,8 +74,17 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 	}
 }
 
-func TestPublishBundleArtifactsUsesPluginDirectoryAndRemovesLegacyBundle(t *testing.T) {
+func TestPublishBundlePackagesUsesPluginDirectoryAndRemovesLegacyBundle(t *testing.T) {
 	paths := appconfig.NewPaths(t.TempDir())
+	pluginBundleDirectory := filepath.Join(paths.Plugin, "bundle")
+	if err := os.MkdirAll(pluginBundleDirectory, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	for _, name := range legacyStableBundleArtifacts {
+		if err := os.WriteFile(filepath.Join(pluginBundleDirectory, name), []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
 	legacyDirectory := filepath.Join(paths.Marketplace, "bundle")
 	if err := os.MkdirAll(legacyDirectory, 0o700); err != nil {
 		t.Fatal(err)
@@ -83,23 +92,34 @@ func TestPublishBundleArtifactsUsesPluginDirectoryAndRemovesLegacyBundle(t *test
 	if err := os.WriteFile(filepath.Join(legacyDirectory, "old.tgz"), []byte("old"), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	sources := make([]string, len(stableBundleArtifacts))
+	sources := make([]string, len(stableBundleDirectories))
 	for index := range sources {
-		sources[index] = filepath.Join(t.TempDir(), stableBundleArtifacts[index])
-		if err := os.WriteFile(sources[index], []byte("plugin"), 0o600); err != nil {
+		sources[index] = filepath.Join(t.TempDir(), stableBundleDirectories[index])
+		if err := os.MkdirAll(sources[index], 0o700); err != nil {
+			t.Fatal(err)
+		}
+		if err := os.WriteFile(filepath.Join(sources[index], "package.json"), []byte("{}"), 0o600); err != nil {
 			t.Fatal(err)
 		}
 	}
-	targets, err := (&Manager{paths: paths}).publishBundleArtifacts(sources)
+	targets, err := (&Manager{paths: paths}).publishBundlePackages(sources)
 	if err != nil {
 		t.Fatal(err)
 	}
 	for _, target := range targets {
 		if !appconfig.IsOwnedPath(paths.Plugin, target) {
-			t.Fatalf("published artifact escaped plugin directory: %s", target)
+			t.Fatalf("published package escaped plugin directory: %s", target)
+		}
+		if _, err := os.Stat(filepath.Join(target, "package.json")); err != nil {
+			t.Fatalf("published package is incomplete: %v", err)
 		}
 	}
 	if _, err := os.Stat(legacyDirectory); !os.IsNotExist(err) {
 		t.Fatalf("legacy Marketplace bundle directory still exists: %v", err)
+	}
+	for _, name := range legacyStableBundleArtifacts {
+		if _, err := os.Stat(filepath.Join(pluginBundleDirectory, name)); !os.IsNotExist(err) {
+			t.Fatalf("legacy Desktop Plugin archive still exists: %s", name)
+		}
 	}
 }

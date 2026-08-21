@@ -190,6 +190,13 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusAccepted, operation)
+	case r.Method == http.MethodGet && r.URL.Path == "/v1/marketplace/operations/active":
+		operation, ok := b.manager.ActiveOperation()
+		if !ok {
+			writeJSON(w, http.StatusOK, nil)
+			return
+		}
+		writeJSON(w, http.StatusOK, operation)
 	case r.Method == http.MethodGet && strings.HasPrefix(r.URL.Path, "/v1/marketplace/operations/"):
 		id := strings.TrimPrefix(r.URL.Path, "/v1/marketplace/operations/")
 		operation, ok := b.manager.Operation(id)

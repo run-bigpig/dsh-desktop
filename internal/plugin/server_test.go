@@ -56,6 +56,35 @@ func TestBridgeRejectsOversizedOrUnknownMutationFields(t *testing.T) {
 	}
 }
 
+func TestBridgeReturnsActiveMarketplaceOperation(t *testing.T) {
+	record := &operationRecord{Operation: Operation{
+		ID: "operation-id", PluginID: "plugin-id", Action: Install,
+		Phase: Downloading, Progress: 20, Message: "downloading",
+	}}
+	manager := &Manager{
+		operations:      map[string]*operationRecord{"operation-id": record},
+		activeOperation: "operation-id",
+	}
+	bridge := &Bridge{manager: manager, token: "secret"}
+
+	request := httptest.NewRequest(http.MethodGet, "/v1/marketplace/operations/active", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+	bridge.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"id":"operation-id"`) {
+		t.Fatalf("active operation response = %d %s", response.Code, response.Body.String())
+	}
+
+	record.Phase = Completed
+	request = httptest.NewRequest(http.MethodGet, "/v1/marketplace/operations/active", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response = httptest.NewRecorder()
+	bridge.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || strings.TrimSpace(response.Body.String()) != "null" {
+		t.Fatalf("terminal operation response = %d %s", response.Code, response.Body.String())
+	}
+}
+
 func TestBridgeExposesOnlyAuthenticatedDesktopWindowActions(t *testing.T) {
 	controller := &fakeDesktopController{}
 	bridge := &Bridge{manager: &Manager{operations: map[string]*operationRecord{}}, token: "secret", desktop: controller}

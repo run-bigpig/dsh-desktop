@@ -5,7 +5,8 @@
 ## 当前实现
 
 - Wails `v3.0.0-beta.9`、Go 1.25，Windows x64 为首发平台。
-- 安装包只携带运行所需的固定 Node 和指定 Harness commit 的已构建 seed runtime；pnpm 与 PortableGit 仅用于发布机构建，不分发给普通用户。
+- 构建流程使用锁定的 PortableGit 获取指定 Harness commit；安装包只携带固定 Node、pnpm 和官方 workspace 包的已编译产物，第三方依赖在安装时按官方 `pnpm-lock.yaml` 下载并部署。
+- 交互式安装可选择官方 npm 源或国内 npmmirror；该选择仅作用于本次依赖部署，不修改用户的全局 npm/pnpm 配置，静默安装默认使用官方源。
 - 首次启动离线运行；不读取系统 Node。
 - Harness 运行时目录以完整 commit SHA 命名且发布后不再原地更新。
 - 就绪门禁要求精确的 `dsh web: http://127.0.0.1:<port>`，并验证首页含 `window.__DSH_BOOT__`。
@@ -36,7 +37,7 @@ task package:windows
 
 发布流程读取 [toolchain.lock.json](release/toolchain.lock.json) 和 [seed.lock.json](release/seed.lock.json)，下载后先校验 SHA-256，再构建并冒烟验证 seed。输出安装器及同名 `.sha256` 文件。安装器为每用户 NSIS，并在安装前检测 Evergreen WebView2。
 
-大型工具链、Harness checkout、`node_modules` 和 seed runtime 只存在于 `dist/` 发布暂存区，不进入本仓库。
+Harness checkout、完整 `node_modules` 和安装后 runtime 只存在于 `dist/` 发布暂存区或用户安装目录，不进入本仓库；安装包中的 seed source 仅包含官方 workspace manifest、编译产物、锁文件和 patch。
 
 ## 私有数据布局
 

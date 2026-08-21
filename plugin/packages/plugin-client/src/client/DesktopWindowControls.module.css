@@ -1,0 +1,78 @@
+:global(.dsh-desktop-chrome-frame) {
+  --dsh-desktop-chrome-height: 38px;
+}
+
+:global(.dsh-desktop-chrome-frame) > :first-child {
+  border-right: 0;
+}
+
+:global(.dsh-desktop-chrome-frame) > :nth-child(2),
+:global(.dsh-desktop-chrome-frame) > :nth-child(3) {
+  box-sizing: border-box;
+  padding-top: var(--dsh-desktop-chrome-height);
+}
+
+.desktopChrome {
+  position: absolute;
+  top: 0;
+  right: 0;
+  left: var(--dsh-desktop-sidebar-width);
+  height: var(--dsh-desktop-chrome-height);
+  background: var(--dsw-alias-bg-base);
+  pointer-events: none;
+}
+
+.dragRegion {
+  position: absolute;
+  inset: 0 138px 0 0;
+  app-region: drag;
+  -webkit-app-region: drag;
+  --wails-draggable: drag;
+  pointer-events: auto;
+}
+
+.controls {
+  position: absolute;
+  inset: 0 0 0 auto;
+  display: flex;
+  height: var(--dsh-desktop-chrome-height);
+  pointer-events: auto;
+  app-region: no-drag;
+  -webkit-app-region: no-drag;
+}
+
+.controls button {
+  display: grid;
+  width: 46px;
+  height: var(--dsh-desktop-chrome-height);
+  place-items: center;
+  border: 0;
+  outline: none;
+  background: transparent;
+  color: var(--dsw-alias-label-secondary);
+  cursor: default;
+}
+
+.controls svg {
+  width: 12px;
+  height: 12px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: square;
+  stroke-linejoin: miter;
+  stroke-width: 1.1;
+}
+
+.controls button:hover {
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-primary);
+}
+
+.controls button:focus-visible {
+  box-shadow: inset 0 0 0 2px var(--dsw-alias-state-business-primary);
+}
+
+.controls .close:hover {
+  background: #c42b1c;
+  color: white;
+}

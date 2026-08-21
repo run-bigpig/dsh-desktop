@@ -64,7 +64,7 @@ func (p *Process) Start(ctx context.Context) (string, error) {
 		p.mu.Unlock()
 		return "", fmt.Errorf("resolve child-control module: %w", err)
 	}
-	cmd := exec.Command(p.cfg.Node, "--import", controlImport, cli, "--profile", "web", "--host", "127.0.0.1", "--port", "0")
+	cmd := exec.Command(p.cfg.Node, harnessLaunchArgs(controlImport, cli)...)
 	cmd.Dir = p.cfg.WorkingDir
 	if p.cfg.CleanEnvironment {
 		cmd.Env = append([]string(nil), p.cfg.Environment...)
@@ -150,6 +150,10 @@ func (p *Process) Start(ctx context.Context) (string, error) {
 			return raw, nil
 		}
 	}
+}
+
+func harnessLaunchArgs(controlImport, cli string) []string {
+	return []string{"--import", controlImport, cli, "--profile", "web", "--no-open", "--host", "127.0.0.1", "--port", "0"}
 }
 
 func nodeImportSpecifier(path string) (string, error) {

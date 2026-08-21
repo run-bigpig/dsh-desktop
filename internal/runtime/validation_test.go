@@ -41,6 +41,14 @@ func TestNodeImportSpecifierIsFileURL(t *testing.T) {
 	}
 }
 
+func TestHarnessLaunchArgsDisableBrowser(t *testing.T) {
+	got := strings.Join(harnessLaunchArgs("file:///child-control.mjs", "C:/runtime/apps/cli/lib/bin.js"), " ")
+	want := "--import file:///child-control.mjs C:/runtime/apps/cli/lib/bin.js --profile web --no-open --host 127.0.0.1 --port 0"
+	if got != want {
+		t.Fatalf("unexpected Harness launch arguments:\n got: %s\nwant: %s", got, want)
+	}
+}
+
 func TestProbeBootManifest(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		_, _ = w.Write([]byte(`<script>window.__DSH_BOOT__={}</script>`))

@@ -1,0 +1,228 @@
+.dock {
+  box-sizing: border-box;
+  width: calc(
+    100% -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-side-clearance) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset)
+  );
+  max-width: calc(
+    var(--dsh-composer-card-max-width) -
+    var(--dsh-composer-dock-inset) -
+    var(--dsh-composer-dock-inset)
+  );
+  margin: 0 auto calc(0px - var(--dsh-composer-stack-gap) - 3px);
+  padding: 0 var(--dsh-composer-dock-inset);
+}
+
+.dock[data-empty='true'] {
+  display: none;
+}
+
+.railPanel {
+  position: relative;
+  overflow: hidden;
+  padding: 10px 12px 13px;
+  border-radius: 12px 12px 0 0;
+  background: var(--dsw-specific-input-major);
+}
+
+.railPanel::after {
+  position: absolute;
+  inset: 0;
+  border: 1px solid var(--dsw-alias-border-l1);
+  border-bottom: 0;
+  border-radius: inherit;
+  content: '';
+  pointer-events: none;
+}
+
+.rail {
+  display: flex;
+  gap: 10px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scrollbar-width: none;
+}
+
+.rail::-webkit-scrollbar {
+  display: none;
+}
+
+.document {
+  position: relative;
+  flex: 0 0 190px;
+  width: 190px;
+  height: 64px;
+}
+
+.thumbnail {
+  display: flex;
+  width: 190px;
+  height: 64px;
+  box-sizing: border-box;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 28px 8px 8px;
+  border: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
+  border-radius: 12px;
+  background: var(--dsw-alias-interactive-bg-hover);
+  color: var(--dsw-alias-label-secondary);
+}
+
+.preview {
+  display: flex;
+  width: 46px;
+  height: 46px;
+  box-sizing: border-box;
+  flex: none;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border-radius: 9px;
+  background: var(--dsw-specific-input-major);
+}
+
+.fileIcon {
+  width: 19px;
+  height: 23px;
+  fill: color-mix(in srgb, var(--dsw-alias-state-business-primary) 12%, transparent);
+  stroke: var(--dsw-alias-state-business-primary);
+  stroke-width: 1.5;
+  stroke-linejoin: round;
+}
+
+.extension {
+  max-width: 38px;
+  overflow: hidden;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 8px;
+  font-weight: 600;
+  line-height: 9px;
+  letter-spacing: .04em;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.documentName {
+  display: -webkit-box;
+  min-width: 0;
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 13px;
+  font-weight: 500;
+  line-height: 18px;
+  overflow-wrap: anywhere;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+}
+
+.remove {
+  position: absolute;
+  top: 4px;
+  right: 4px;
+  z-index: 2;
+  display: grid;
+  width: 18px;
+  height: 18px;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 50%;
+  background: var(--dsw-alias-button-contrast-fill);
+  color: var(--dsw-alias-label-primary-inverted);
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity .2s ease-in-out;
+}
+
+.document:hover .remove,
+.remove:focus-visible {
+  opacity: 1;
+}
+
+.hidden {
+  position: fixed;
+  width: 1px;
+  height: 1px;
+  overflow: hidden;
+  clip-path: inset(50%);
+  opacity: 0;
+  pointer-events: none;
+}
+
+.uploadButton {
+  display: grid;
+  width: 28px;
+  height: 28px;
+  place-items: center;
+  flex: none;
+  order: -1;
+  padding: 0;
+  border: none;
+  border-radius: 999px;
+  background: var(--dsw-specific-selector);
+  color: var(--dsw-alias-label-primary);
+  cursor: pointer;
+}
+
+.uploadButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.uploadButton:disabled {
+  opacity: .5;
+  cursor: default;
+}
+
+:global([data-composer-card] :has(> [data-slot='conversation.input.left']) > button[aria-haspopup='listbox']) {
+  order: -2;
+}
+
+:global([data-desktop-document-chip]) {
+  display: none !important;
+}
+
+:global([data-desktop-document-chip] > *) {
+  display: none !important;
+}
+
+.dropMask {
+  position: fixed;
+  z-index: 1000;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  pointer-events: none;
+  background: var(--dsw-alias-bg-mask-drop);
+  backdrop-filter: blur(10px);
+}
+
+.dropContent {
+  margin-top: -3%;
+  padding: 0 40px;
+  color: var(--dsw-alias-label-primary);
+  text-align: center;
+}
+
+.dropTitle {
+  font: var(--dsw-font-l-20);
+}
+
+.dropDescription {
+  margin-top: 16px;
+  color: var(--dsw-alias-label-tertiary);
+  font: var(--dsw-font-s-14);
+  white-space: pre-wrap;
+}
+
+@media (pointer: coarse) {
+  .remove { opacity: 1; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .remove { transition: none; }
+}

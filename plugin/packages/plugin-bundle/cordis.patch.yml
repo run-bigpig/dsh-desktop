@@ -1,0 +1,24 @@
+- target: '@root'
+  insert:
+    - id: desktop-integration-host
+      name: '@run-bigpig/dsh-desktop-plugin-host'
+    - id: desktop-integration-mcp
+      name: '@run-bigpig/dsh-desktop-plugin-host/mcp'
+      config:
+        path: !!js dshHomePath('mcp-servers.json')
+    - id: desktop-integration-vision
+      name: '@run-bigpig/dsh-desktop-plugin-host/vision'
+      config:
+        path: !!js dshHomePath('vision-bridge.json')
+    - id: desktop-integration-documents
+      name: '@run-bigpig/dsh-desktop-plugin-host/documents'
+      config:
+        path: !!js dshHomePath('documents/v1')
+    - id: desktop-integration-thinking-levels
+      name: '@run-bigpig/dsh-desktop-plugin-host/thinking'
+      config:
+        enableMappings: false
+        onUnsupported: fail
+        rules: []
+    - id: desktop-integration-client
+      name: '@run-bigpig/dsh-desktop-plugin-client'

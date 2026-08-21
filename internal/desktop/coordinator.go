@@ -101,20 +101,27 @@ func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledTool
 func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
 
 func installBundledToolchain(paths appconfig.Paths) error {
+	legacyGit := filepath.Join(paths.Toolchain, "git")
+	if _, err := os.Stat(legacyGit); err == nil {
+		cleanupRoot := filepath.Join(paths.Root, "cleanup")
+		if os.MkdirAll(cleanupRoot, 0o700) == nil {
+			stale := filepath.Join(cleanupRoot, fmt.Sprintf("toolchain-git-%d", time.Now().UnixNano()))
+			if os.Rename(legacyGit, stale) == nil {
+				go func() { _ = os.RemoveAll(stale) }()
+			} else {
+				go func() { _ = os.RemoveAll(legacyGit) }()
+			}
+		}
+	}
 	executableName := func(name string) string {
 		if runtime.GOOS == "windows" {
 			return name + ".exe"
 		}
 		return name
 	}
-	git := filepath.Join(paths.Toolchain, "git", "bin", executableName("git"))
-	if runtime.GOOS == "windows" {
-		git = filepath.Join(paths.Toolchain, "git", "cmd", executableName("git"))
-	}
 	required := []string{
 		filepath.Join(paths.Toolchain, "node", executableName("node")),
 		filepath.Join(paths.Toolchain, "pnpm", executableName("pnpm")),
-		git,
 	}
 	complete := true
 	for _, path := range required {
@@ -211,6 +218,9 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 		if runtime.GOOS == "windows" {
 			git = filepath.Join(root, "git", "cmd", exe("git"))
 		}
+		if _, err := os.Stat(git); err != nil {
+			git = ""
+		}
 		return update.Toolchain{
 			Node: filepath.Join(root, "node", exe("node")),
 			PNPM: filepath.Join(root, "pnpm", exe("pnpm")),
@@ -218,7 +228,7 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 		}
 	}
 	complete := func(tools update.Toolchain) bool {
-		for _, path := range []string{tools.Node, tools.PNPM, tools.Git} {
+		for _, path := range []string{tools.Node, tools.PNPM} {
 			if _, err := os.Stat(path); err != nil {
 				return false
 			}
@@ -235,9 +245,9 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 	}
 	node, nodeErr := exec.LookPath("node")
 	pnpm, pnpmErr := exec.LookPath("pnpm")
-	git, gitErr := exec.LookPath("git")
+	git, _ := exec.LookPath("git")
 	tools := update.Toolchain{Node: node, PNPM: pnpm, Git: git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM}
-	if nodeErr != nil || pnpmErr != nil || gitErr != nil {
+	if nodeErr != nil || pnpmErr != nil {
 		return tools, fmt.Errorf("embedded toolchain is incomplete; reinstall the desktop package")
 	}
 	return tools, nil

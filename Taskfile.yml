@@ -18,11 +18,12 @@ tasks:
       GOARCH: amd64
       CGO_ENABLED: "0"
     cmds:
-      - powershell -NoProfile -Command "New-Item -ItemType Directory -Force 'dist/windows/stage' | Out-Null; Remove-Item -Force 'dist/windows/stage/deepseek-harness-desktop.exe' -ErrorAction SilentlyContinue"
+      - powershell -NoProfile -Command "New-Item -ItemType Directory -Force 'dist/windows/stage' | Out-Null; if (Test-Path 'dist/windows/stage/dsh-desktop.exe') { Remove-Item -Force 'dist/windows/stage/dsh-desktop.exe' }"
+      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/app.manifest -info build/windows/info.json -out cmd/dsh-desktop/wails_windows_amd64.syso
       - go build -tags production -trimpath -ldflags="-s -w -H windowsgui -X github.com/run-bigpig/dsh-desktop/internal/buildinfo.Version={{.VERSION}} -X github.com/run-bigpig/dsh-desktop/internal/buildinfo.ReleaseAPIURL={{.RELEASE_API}}" -o dist/windows/stage/{{.APP_NAME}} ./cmd/dsh-desktop
 
   seed:windows:
-    desc: Download, verify and build the locked offline Windows seed
+    desc: Build the locked Windows seed with bundled Harness workspaces and install-time dependencies
     platforms: [windows]
     cmds:
       - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-seed.ps1
