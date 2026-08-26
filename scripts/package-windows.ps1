@@ -1,14 +1,45 @@
-param([string]$Version = "0.2.1")
+param(
+  [string]$Version = "0.2.1",
+  [string]$ReleaseAPI = "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
+)
 
 $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "windows-build-common.ps1")
+$buildLock = Enter-WindowsBuildLock $repoRoot
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $installer = Join-Path $repoRoot "build/windows/installer.nsi"
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
-if (-not (Test-Path (Join-Path $stage "dsh-desktop.exe"))) {
+$desktopManifestPath = Join-Path $stage "desktop-build.json"
+$seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
+$desktopExe = Join-Path $stage "dsh-desktop.exe"
+$output = Join-Path $repoRoot "dist/windows/DSH-DeskTop-Setup-x64.exe"
+$checksumPath = $output + ".sha256"
+$installerManifestPath = Join-Path $repoRoot "dist/windows/installer-build.json"
+if (-not (Test-Path $desktopExe)) {
   throw "Windows stage is missing the desktop executable"
+}
+if (-not (Test-Path $desktopManifestPath)) {
+  throw "Windows stage is missing its desktop build manifest; run task build:windows"
+}
+if (-not (Test-Path $seedManifestPath)) {
+  throw "Windows stage is missing its verified seed manifest; run task seed:windows"
+}
+$desktopManifest = Get-Content $desktopManifestPath -Raw | ConvertFrom-Json
+$seedManifest = Get-Content $seedManifestPath -Raw | ConvertFrom-Json
+$desktopFingerprint = Get-WindowsDesktopFingerprint -RepoRoot $repoRoot -Version $Version -ReleaseAPI $ReleaseAPI
+$seedFingerprint = Get-WindowsSeedFingerprint $repoRoot
+if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.version -ne $Version -or $desktopManifest.releaseAPI -ne $ReleaseAPI) {
+  throw "Windows desktop stage is stale; run task build:windows"
+}
+if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit) {
+  throw "Windows seed stage is stale; run task seed:windows"
+}
+$desktopHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $desktopExe).Hash.ToLowerInvariant()
+if ($desktopManifest.executableSHA256 -ne $desktopHash) {
+  throw "Windows desktop executable does not match its build manifest"
 }
 if (-not (Test-Path (Join-Path $stage "resources/toolchain/node/node.exe"))) {
   throw "Windows stage is missing embedded Node"
@@ -38,6 +69,41 @@ foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
   if (-not (Test-Path $manifest)) {
     throw "Windows stage is missing the source-built Desktop Plugin package: $manifest"
   }
+  $pluginManifest = Get-Content $manifest -Raw | ConvertFrom-Json
+  if ($pluginManifest.version -ne $seedManifest.pluginVersion) {
+    throw "Windows stage contains a stale built-in plugin package: $manifest"
+  }
+}
+
+$compilerVersion = (& makensis.exe /VERSION).Trim()
+if ($LASTEXITCODE -ne 0 -or -not $compilerVersion) { throw "Unable to determine the NSIS compiler version" }
+$installerSourceFingerprint = Get-SourceFingerprint -RepoRoot $repoRoot -Paths @(
+  "build/windows/installer.nsi",
+  "build/windows/icon.ico"
+)
+$installerFingerprint = Get-SHA256Text ((@(
+  "installerSource=$installerSourceFingerprint",
+  "desktopFingerprint=$desktopFingerprint",
+  "desktopSHA256=$desktopHash",
+  "seedFingerprint=$seedFingerprint",
+  "seedCommit=$($seedLock.commit)",
+  "version=$Version",
+  "compiler=$compilerVersion"
+) -join "`n"))
+if ((Test-Path -LiteralPath $installerManifestPath) -and (Test-Path -LiteralPath $output) -and (Test-Path -LiteralPath $checksumPath)) {
+  try {
+    $installerManifest = Get-Content $installerManifestPath -Raw | ConvertFrom-Json
+    $outputHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $output).Hash.ToLowerInvariant()
+    $expectedChecksum = $outputHash + "  " + [IO.Path]::GetFileName($output)
+    $checksumMatches = (Get-Content $checksumPath -Raw).Trim() -eq $expectedChecksum
+    if ($installerManifest.fingerprint -eq $installerFingerprint -and $installerManifest.installerSHA256 -eq $outputHash -and $checksumMatches) {
+      $buildLock.Dispose()
+      Write-Host "Verified Windows installer is current; skipping NSIS compression ($installerFingerprint)"
+      exit 0
+    }
+  } catch {
+    Write-Warning "Existing Windows installer cache is invalid; rebuilding it"
+  }
 }
 
 $usedDrives = @([IO.DriveInfo]::GetDrives() | ForEach-Object { $_.Name.TrimEnd('\') })
@@ -47,21 +113,36 @@ foreach ($letter in [char[]](90..68)) {
   if ($candidate -notin $usedDrives) { $drive = $candidate; break }
 }
 if (-not $drive) { throw "No free drive letter is available for long-path-safe NSIS packaging" }
+$temporaryOutput = Join-Path $repoRoot ("dist/windows/DSH-DeskTop-Setup-x64.tmp-" + [Guid]::NewGuid().ToString("N") + ".exe")
 
 try {
   & subst.exe $drive $stage
   if ($LASTEXITCODE -ne 0) { throw "Unable to map Windows stage to $drive" }
   Push-Location (Split-Path -Parent $installer)
   try {
-    & makensis.exe /INPUTCHARSET UTF8 "/DSTAGE_DIR=$drive" "/DAPP_VERSION=$Version" "/DSEED_COMMIT=$($seedLock.commit)" (Split-Path -Leaf $installer)
+    & makensis.exe /INPUTCHARSET UTF8 "/DSTAGE_DIR=$drive" "/DAPP_VERSION=$Version" "/DSEED_COMMIT=$($seedLock.commit)" "/DINSTALLER_OUTPUT=$temporaryOutput" (Split-Path -Leaf $installer)
     if ($LASTEXITCODE -ne 0) { throw "NSIS packaging failed" }
   } finally {
     Pop-Location
   }
+} catch {
+  Remove-Item -LiteralPath $temporaryOutput -Force -ErrorAction SilentlyContinue
+  throw
 } finally {
   & subst.exe $drive /D 2>$null
 }
 
-$output = Join-Path $repoRoot "dist/windows/DSH-DeskTop-Setup-x64.exe"
+if (-not (Test-Path -LiteralPath $temporaryOutput)) { throw "NSIS did not create the temporary Windows installer" }
+Move-Item -LiteralPath $temporaryOutput -Destination $output -Force
 $checksum = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
-Set-Content -Encoding ASCII -NoNewline -Path ($output + ".sha256") -Value ($checksum + "  " + [IO.Path]::GetFileName($output))
+Set-Content -Encoding ASCII -NoNewline -Path $checksumPath -Value ($checksum + "  " + [IO.Path]::GetFileName($output))
+Write-JsonAtomic -Path $installerManifestPath -Value ([ordered]@{
+  schemaVersion = 1
+  fingerprint = $installerFingerprint
+  version = $Version
+  seedCommit = $seedLock.commit
+  compiler = $compilerVersion
+  installerSHA256 = $checksum
+  createdAtUTC = [DateTime]::UtcNow.ToString("o")
+})
+$buildLock.Dispose()

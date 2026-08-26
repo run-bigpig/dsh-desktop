@@ -128,6 +128,11 @@ export interface McpSettingsMutationResult {
 }
 
 export interface VisionEndpointView {
+  readonly provider: string
+  readonly model: string
+}
+
+export interface LegacyVisionEndpointView {
   readonly baseURL: string
   readonly model: string
   readonly hasApiKey: boolean
@@ -153,14 +158,14 @@ export interface VisionCatalogGroup {
 
 export interface VisionBridgeSnapshot {
   readonly vision: VisionEndpointView
+  readonly legacyVision?: LegacyVisionEndpointView
   readonly targets: readonly VisionTargetView[]
   readonly catalog: readonly VisionCatalogGroup[]
 }
 
 export interface VisionEndpointSave {
-  readonly baseURL: string
+  readonly provider: string
   readonly model: string
-  readonly apiKey?: string
 }
 
 export interface VisionTargetSave {
@@ -179,14 +184,96 @@ export interface VisionBridgeMutationResult {
 }
 
 export interface VisionTestRequest {
-  readonly baseURL: string
+  readonly provider: string
   readonly model: string
-  readonly apiKey?: string
 }
 
 export type VisionTestResult =
   | { readonly kind: 'ok'; readonly message: string }
   | { readonly kind: 'error'; readonly message: string }
+
+export interface ImageModelSelectionView {
+  readonly provider: string
+  readonly model: string
+}
+
+export interface ImageModelCapabilitiesView {
+  readonly adapter: 'openai-images' | 'gemini-native-image'
+  readonly generate: true
+  readonly edit: true
+  readonly aspectRatios?: readonly string[]
+  readonly resolutions?: readonly ('1K' | '2K' | '4K')[]
+  readonly sizes?: readonly string[]
+  readonly customSize?: boolean
+}
+
+export interface ImageModelCatalogEntry {
+  readonly id: string
+  readonly name: string
+  readonly capabilities: ImageModelCapabilitiesView
+}
+
+export interface ImageModelCatalogGroup {
+  readonly provider: string
+  readonly providerName: string
+  readonly models: readonly ImageModelCatalogEntry[]
+}
+
+export interface ImageModelSettingsSnapshot {
+  readonly image: ImageModelSelectionView
+  readonly catalog: readonly ImageModelCatalogGroup[]
+}
+
+export interface ImageModelSaveRequest {
+  readonly provider: string
+  readonly model: string
+}
+
+export interface ImageSettingsMutationResult {
+  readonly ok: true
+}
+
+export interface StoredImageView {
+  readonly attachmentId: string
+  readonly mediaType: 'image/png' | 'image/jpeg' | 'image/webp' | 'image/gif'
+  readonly bytes: number
+  readonly width: number
+  readonly height: number
+  readonly name?: string
+}
+
+export interface ImageCanvasGeometry {
+  readonly width: number
+  readonly height: number
+  readonly sourceX: number
+  readonly sourceY: number
+  readonly sourceWidth: number
+  readonly sourceHeight: number
+}
+
+export type ImageAnnotationTool =
+  | 'rectangle'
+  | 'ellipse'
+  | 'brush'
+  | 'highlight'
+  | 'arrow'
+  | 'text'
+  | 'cross'
+  | 'extension'
+
+export interface ImageAnnotationPoint {
+  readonly x: number
+  readonly y: number
+}
+
+export interface ImageAnnotation {
+  readonly id: string
+  readonly tool: ImageAnnotationTool
+  readonly color: string
+  readonly strokeWidth: number
+  readonly points: readonly ImageAnnotationPoint[]
+  readonly text?: string
+}
 
 export interface DocumentUploadRequest {
   readonly name: string
@@ -200,4 +287,149 @@ export interface DocumentUploadResult {
   readonly sourceBytes: number
   readonly markdownCharacters: number
   readonly marker: string
+}
+
+export interface WorkspaceEntry {
+  readonly name: string
+  readonly path: string
+  readonly kind: 'file' | 'directory'
+  readonly size: number
+  readonly mtime: number
+}
+
+export interface WorkspaceDirectorySnapshot {
+  readonly rootName: string
+  readonly directory: string
+  readonly entries: readonly WorkspaceEntry[]
+}
+
+export interface WorkspaceSearchHit {
+  readonly name: string
+  readonly path: string
+  readonly kind: 'file' | 'directory'
+}
+
+export interface WorkspaceSearchSnapshot {
+  readonly query: string
+  readonly hits: readonly WorkspaceSearchHit[]
+  readonly truncated: boolean
+}
+
+export interface WorkspaceFileSnapshot {
+  readonly path: string
+  readonly content: string
+  readonly encoding: 'utf8' | 'data-url'
+  readonly mediaType: string
+  readonly size: number
+  readonly mtime: number
+  readonly truncated: boolean
+}
+
+export interface WorkspaceFileWriteRequest {
+  readonly path: string
+  readonly content: string
+  readonly baseMtime?: number
+}
+
+export interface WorkspaceFileWriteResult {
+  readonly path: string
+  readonly mtime: number
+}
+
+export type TaPresentationView = 'line' | 'bar' | 'funnel' | 'heatmap' | 'sankey' | 'table'
+
+export interface TaPresentationSeries {
+  readonly name: string
+  readonly values: readonly (number | null)[]
+  readonly format?: 'number' | 'percent'
+}
+
+export interface TaCartesianPayload {
+  readonly labels: readonly string[]
+  readonly series: readonly TaPresentationSeries[]
+}
+
+export interface TaFunnelStep {
+  readonly label: string
+  readonly value: number
+}
+
+export interface TaFunnelPayload {
+  readonly steps: readonly TaFunnelStep[]
+}
+
+export interface TaHeatmapRow {
+  readonly label: string
+  readonly initial?: number
+  readonly values: readonly (number | null)[]
+}
+
+export interface TaHeatmapPayload {
+  readonly columns: readonly string[]
+  readonly rows: readonly TaHeatmapRow[]
+  readonly format: 'number' | 'percent'
+}
+
+export interface TaSankeyLink {
+  readonly source: string
+  readonly target: string
+  readonly value: number
+}
+
+export interface TaSankeyPayload {
+  readonly links: readonly TaSankeyLink[]
+}
+
+export type TaTableCell = string | number | boolean | null
+
+export interface TaTablePayload {
+  readonly columns: readonly string[]
+  readonly rows: readonly (readonly TaTableCell[])[]
+}
+
+export type TaPresentationPayload =
+  | TaCartesianPayload
+  | TaFunnelPayload
+  | TaHeatmapPayload
+  | TaSankeyPayload
+  | TaTablePayload
+
+export interface TaPresentationModel {
+  readonly schemaVersion: 1
+  readonly view: TaPresentationView
+  readonly title: string
+  readonly sourceTool: string
+  readonly generatedAt?: string
+  readonly truncated: boolean
+  readonly payload: TaPresentationPayload
+}
+
+export interface GitFileState {
+  readonly path: string
+  readonly fromPath?: string
+  readonly index: string
+  readonly worktree: string
+}
+
+export interface GitSnapshot {
+  readonly available: boolean
+  readonly repository: boolean
+  readonly branch: string | null
+  readonly files: readonly GitFileState[]
+}
+
+export interface GitPathRequest {
+  readonly path: string
+}
+
+export interface GitPathsRequest {
+  readonly paths: readonly string[]
+}
+
+export interface GitDiffRequest extends GitPathRequest {
+  readonly staged: boolean
+}
+
+export interface GitCommitRequest {
+  readonly message: string
 }

@@ -1,7 +1,10 @@
 Unicode true
 RequestExecutionLevel user
 Name "DSH-DeskTop"
-OutFile "../../dist/windows/DSH-DeskTop-Setup-x64.exe"
+!ifndef INSTALLER_OUTPUT
+!define INSTALLER_OUTPUT "../../dist/windows/DSH-DeskTop-Setup-x64.exe"
+!endif
+OutFile "${INSTALLER_OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\DSH-DeskTop"
 InstallDirRegKey HKCU "Software\DSH-DeskTop" "InstallDir"
 SetCompressor /SOLID lzma
@@ -227,7 +230,7 @@ Section "Install"
     Abort
   install_executable_detached:
   SetOutPath "$INSTDIR"
-  File /r "${STAGE_DIR}\*"
+  File /r /x "desktop-build.json" /x "build-manifest.json" "${STAGE_DIR}\*"
   DetailPrint "正在安装 Harness 运行依赖..."
   InitPluginsDir
   SetOutPath "$PLUGINSDIR"

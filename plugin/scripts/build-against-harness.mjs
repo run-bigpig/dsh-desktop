@@ -101,20 +101,20 @@ await rm(output, { recursive: true, force: true })
 await mkdir(output, { recursive: true })
 
 const pnpm = process.platform === 'win32' ? 'pnpm.exe' : 'pnpm'
-const harnessRequire = createRequire(resolve(harness, 'package.json'))
-const tsc = harnessRequire.resolve('typescript/bin/tsc')
-const tsdown = harnessRequire.resolve('tsdown/run')
 await mkdir(overlay, { recursive: true })
 for (const name of ['plugin-host', 'plugin-client', 'plugin-bundle']) {
   await cp(resolve(project, 'packages', name), resolve(overlay, name), { recursive: true })
 }
 await run(pnpm, [
   'install', '--frozen-lockfile=false', '--ignore-scripts',
-  '--filter', '@run-bigpig/dsh-desktop-plugin-host',
-  '--filter', '@run-bigpig/dsh-desktop-plugin-client',
-  '--filter', '@run-bigpig/dsh-desktop-plugin',
+  '--filter', '@run-bigpig/dsh-desktop-plugin-host...',
+  '--filter', '@run-bigpig/dsh-desktop-plugin-client...',
+  '--filter', '@run-bigpig/dsh-desktop-plugin...',
   '--store-dir', store, '--prefer-offline',
 ], harness)
+const harnessRequire = createRequire(resolve(harness, 'package.json'))
+const tsc = harnessRequire.resolve('typescript/bin/tsc')
+const tsdown = harnessRequire.resolve('tsdown/run')
 await run(process.execPath, [tsc, '-b', 'packages/desktop/plugin-host'], harness)
 const generatorURL = pathToFileURL(resolve(harness, 'packages/typert/generator/lib/types/workspace.js')).href
 const { WorkspaceTypertGenerator } = await import(generatorURL)
@@ -158,7 +158,7 @@ for (const root of ['vendor', 'packages', 'apps', 'native']) {
 }
 await stagePackage(hostDir, resolve(output, 'plugin-host'), {
   files: [
-    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/vision.js', 'lib/documents.js', 'lib/thinking.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
+    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/ta-presentation.js', 'lib/thinking.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
     'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts',
   ],
   trees: [{ path: 'lib/types', suffixes: ['.js', '.d.ts'] }],

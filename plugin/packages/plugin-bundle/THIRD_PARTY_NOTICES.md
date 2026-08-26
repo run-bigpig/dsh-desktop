@@ -34,3 +34,29 @@ The thinking-level override capability and settings surface are adapted from
 under the Apache License, Version 2.0. The files were modified to fit the
 DSH-DeskTop built-in host/client/bundle architecture and the pinned Harness
 extension points.
+
+The TA presentation card bundles `@ant-design/plots` version `2.6.5` and its
+AntV rendering dependencies to provide line, bar, funnel, heatmap, and Sankey
+views. The bundled Ant Design and AntV packages are distributed under the MIT
+License; this includes `@ant-design/charts-util`, `@antv/g2`,
+`@antv/g2-extension-plot`, `@antv/g`, `@antv/component`, the AntV canvas and
+geometry packages, and their MIT-licensed utility dependencies. The applicable
+MIT license text is included in `LICENSES/ant-design-plots-MIT.txt`.
+
+The same rendering bundle includes `d3-hierarchy` version `3.1.2`, distributed
+under the ISC License, and `tslib` version `2.8.1`, distributed under the 0BSD
+License. Their license texts are included in `LICENSES/d3-hierarchy-ISC.txt`
+and `LICENSES/tslib-0BSD.txt` respectively.
+
+The Session Workbench Explorer, source-control, preview, and layout behavior is
+adapted from `DamonKoy/dsh-web-ui`, package `dsh-aionui-panel`, commit
+`3647a33fa467e0335260468614f6eed04b196c38`. The imported implementation was
+modified to use Harness slots, Typert Remote services, official file
+references, primitives, and theme tokens. The upstream package is distributed
+under the BSD 3-Clause License; its license and attribution notice are included
+in `LICENSES/dsh-aionui-panel-BSD-3-Clause.txt`.
+
+That upstream package is itself a behavioral re-implementation of the AionUi
+right-panel system (`iOfficeAI/AionUi`, version 2.1.53), which is licensed under
+the Apache License, Version 2.0. No AionUi application source is vendored by
+DSH-DeskTop.

@@ -1,8 +1,8 @@
 {
   "schemaVersion": 1,
   "repository": "https://github.com/deepseek-ai/deepseek-harness.git",
-  "commit": "141eb6fef83422698aef7a981029e843e8161534",
-  "ref": "refs/heads/master",
+  "commit": "b150a551b8d465e31e418e1b2eaf5e79bbb7d28e",
+  "ref": "refs/tags/dsh-v0.1.1-rc.2",
   "cliEntry": "apps/cli/lib/bin.js",
   "node": "24.8.0",
   "pnpm": "11.7.0",

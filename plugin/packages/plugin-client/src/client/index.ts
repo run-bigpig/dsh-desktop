@@ -1,24 +1,38 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
-import type {} from '@deepseek-ai/dsh-client-ui-conversation/client'
+import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
+import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import desktopRemote from '@run-bigpig/dsh-desktop-plugin-host/remote'
 import type {
   DesktopCapabilities,
   DesktopWindowState,
   DocumentUploadRequest,
   DocumentUploadResult,
+  GitCommitRequest,
+  GitDiffRequest,
+  GitPathRequest,
+  GitPathsRequest,
+  GitSnapshot,
   McpServerUpsertRequest,
   McpSettingsSnapshot,
+  ImageModelSaveRequest,
+  ImageModelSettingsSnapshot,
   MarketplaceOperation,
   MarketplaceSnapshot,
   VisionBridgeSnapshot,
   VisionSaveRequest,
   VisionTestRequest,
   VisionTestResult,
+  WorkspaceDirectorySnapshot,
+  WorkspaceFileSnapshot,
+  WorkspaceFileWriteRequest,
+  WorkspaceFileWriteResult,
+  WorkspaceSearchSnapshot,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import {
   MarketplaceSettingsTab,
@@ -30,6 +44,7 @@ import {
 } from './DesktopWindowControls.tsx'
 import { McpSettingsTab, type McpSettingsTabInjected } from './McpSettingsTab.tsx'
 import { VisionSettingsTab, type VisionSettingsTabInjected } from './VisionSettingsTab.tsx'
+import { ImageSettingsTab, type ImageSettingsTabInjected } from './ImageSettingsTab.tsx'
 import {
   DocumentUploadBridge,
   type DocumentUploadBridgeInjected,
@@ -40,6 +55,24 @@ import {
 } from './DocumentUploadBridge.tsx'
 import { DocumentMessageView, type DocumentMessageInjected } from './DocumentMessageView.tsx'
 import { ThinkingLevelSection } from './ThinkingLevelSection.tsx'
+import { TA_DIRECT_PRESENTATION_TOOLS, TaPresentationCard } from './TaPresentationCard.tsx'
+import { ImageToolView, type ImageToolViewInjected } from './ImageToolView.tsx'
+import {
+  ImageStudioInputBridge,
+  type ImageStudioInputBridgeInjected,
+  MessageImageGallery,
+  type MessageImageGalleryInjected,
+} from './MessageImageGallery.tsx'
+import {
+  WorkbenchController,
+  WorkbenchDrawer,
+  type WorkbenchDrawerInjected,
+  WorkbenchLauncher,
+  type WorkbenchLauncherInjected,
+  WorkspaceReferenceDropDock,
+  type WorkspaceReferenceDropDockInjected,
+  workspaceFileReferenceOf,
+} from './SessionWorkbench.tsx'
 import {
   LLM_PI_AI_NS,
   THINKING_OVERRIDE_NS,
@@ -48,8 +81,10 @@ import {
 } from './thinking-level-controller.ts'
 import { en as thinkingEn, zh as thinkingZh, type Dictionary as ThinkingLocaleKey } from './thinking-level-locales.ts'
 import {
-  desktopEn, desktopZh, documentsEn, documentsZh, en, mcpEn, mcpZh, visionEn, visionZh, zh,
-  type DesktopLocaleKey, type DocumentsLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey, type VisionLocaleKey,
+  desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, taPresentationEn, taPresentationZh,
+  visionEn, visionZh, workbenchEn, workbenchZh, zh,
+  type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
+  type TaPresentationLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -57,8 +92,11 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'settings.marketplace': MarketplaceLocaleKey
     'settings.mcp': McpLocaleKey
     'settings.vision': VisionLocaleKey
+    'settings.image': ImageLocaleKey
     'desktop.integration': DesktopLocaleKey
     'documents.upload': DocumentsLocaleKey
+    'desktop.workbench': WorkbenchLocaleKey
+    'desktop.taPresentation': TaPresentationLocaleKey
     'thinking-level-override': ThinkingLocaleKey
   }
 }
@@ -67,7 +105,10 @@ export const NS = 'settings.marketplace'
 export const DESKTOP_NS = 'desktop.integration'
 export const MCP_NS = 'settings.mcp'
 export const VISION_NS = 'settings.vision'
+export const IMAGE_NS = 'settings.image'
 export const DOCUMENTS_NS = 'documents.upload'
+export const WORKBENCH_NS = 'desktop.workbench'
+export const TA_PRESENTATION_NS = 'desktop.taPresentation'
 export const THINKING_NS = 'thinking-level-override'
 export const inject = ['slots', 'locale', 'remote', 'connection', 'settingsScope', 'inputTriggers', 'sessions']
 
@@ -101,8 +142,39 @@ interface VisionBridgeRemote {
   testConnection: (request: VisionTestRequest) => Promise<RemoteResult<VisionTestResult>>
 }
 
+interface ImageWorkbenchRemote {
+  snapshot: () => Promise<RemoteResult<ImageModelSettingsSnapshot>>
+  save: (request: ImageModelSaveRequest) => Promise<RemoteResult<{ ok: true }>>
+}
+
 interface DocumentsRemote {
   uploadDocument: (request: DocumentUploadRequest) => Promise<RemoteResult<DocumentUploadResult>>
+}
+
+interface DesktopWorkspaceRemote {
+  listDirectory: (
+    sessionId: string,
+    directory: string,
+    signal: AbortSignal,
+  ) => Promise<RemoteResult<WorkspaceDirectorySnapshot>>
+  search: (sessionId: string, query: string, signal: AbortSignal) => Promise<RemoteResult<WorkspaceSearchSnapshot>>
+  readFile: (sessionId: string, path: string, signal: AbortSignal) => Promise<RemoteResult<WorkspaceFileSnapshot>>
+  writeFile: (
+    sessionId: string,
+    request: WorkspaceFileWriteRequest,
+    signal: AbortSignal,
+  ) => Promise<RemoteResult<WorkspaceFileWriteResult>>
+}
+
+interface DesktopGitRemote {
+  snapshot: (sessionId: string, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  diff: (sessionId: string, request: GitDiffRequest, signal: AbortSignal) => Promise<RemoteResult<string>>
+  stage: (sessionId: string, request: GitPathRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  unstage: (sessionId: string, request: GitPathRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  stageMany: (sessionId: string, request: GitPathsRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  unstageMany: (sessionId: string, request: GitPathsRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  discard: (sessionId: string, request: GitPathsRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
+  commit: (sessionId: string, request: GitCommitRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
 }
 
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -142,8 +214,30 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(DESKTOP_NS, { zh: desktopZh, en: desktopEn }), 'desktop-integration: dictionaries')
   ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), 'desktop-mcp: dictionaries')
   ctx.effect(() => ctx.locale.register(VISION_NS, { zh: visionZh, en: visionEn }), 'desktop-vision: dictionaries')
+  ctx.effect(() => ctx.locale.register(IMAGE_NS, { zh: imageZh, en: imageEn }), 'desktop-image-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(DOCUMENTS_NS, { zh: documentsZh, en: documentsEn }), 'desktop-documents: dictionaries')
+  ctx.effect(() => ctx.locale.register(WORKBENCH_NS, { zh: workbenchZh, en: workbenchEn }), 'desktop-workbench: dictionaries')
+  ctx.effect(() => ctx.locale.register(TA_PRESENTATION_NS, { zh: taPresentationZh, en: taPresentationEn }), 'desktop-ta-presentation: dictionaries')
   ctx.effect(() => ctx.locale.register(THINKING_NS, { zh: thinkingZh, en: thinkingEn }), 'desktop-thinking-levels: dictionaries')
+  const workbenchController = new WorkbenchController()
+  ctx.slots.inject('conversation.message.images', () => ctx.slots.register({
+    name: 'conversation.message.images',
+    priority: -10,
+    locale: WORKBENCH_NS,
+    inject: (): MessageImageGalleryInjected => ({ controller: workbenchController }),
+  }, MessageImageGallery))
+  ctx.slots.inject('tool.call.toolview', function* () {
+    yield ctx.slots.register({
+      name: 'tool.call.toolview',
+      key: 'ta_present',
+      locale: TA_PRESENTATION_NS,
+    }, TaPresentationCard)
+    for (const rawName of TA_DIRECT_PRESENTATION_TOOLS) {
+      for (const key of [rawName, `mcp__ta-mcp-server__${rawName}`, `mcp__thinkingdata__${rawName}`]) {
+        yield ctx.slots.register({ name: 'tool.call.toolview', key, locale: TA_PRESENTATION_NS }, TaPresentationCard)
+      }
+    }
+  })
   const connection = ctx.get('connection') as ConnectionHandle
   const thinkingController = new ThinkingOverrideSectionController(
     ctx.settingsScope.bind({ namespace: THINKING_OVERRIDE_NS }),
@@ -167,13 +261,15 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         thinkingController.save(enableMappings, changes),
     }),
   }, ThinkingLevelSection))
-  ctx.inject(['remote.mcpSettings', 'remote.visionBridge'], (inner: ClientContext) => {
+  ctx.inject(['remote.mcpSettings', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       mcpSettings: McpSettingsRemote
       visionBridge: VisionBridgeRemote
+      imageWorkbench: ImageWorkbenchRemote
     }
     const mcpT = inner.locale.bind(MCP_NS)
     const visionT = inner.locale.bind(VISION_NS)
+    const imageT = inner.locale.bind(IMAGE_NS)
     inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
       name: 'settings.plugins.tab', id: 'mcp', order: 30, label: () => mcpT('tab'), locale: MCP_NS,
       inject: (): McpSettingsTabInjected => ({
@@ -190,6 +286,32 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         testConnection: async request => unwrap(await remotes.visionBridge.testConnection(request)),
       }),
     }, VisionSettingsTab))
+    inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
+      name: 'settings.plugins.tab', id: 'image', order: 50, label: () => imageT('tab'), locale: IMAGE_NS,
+      inject: (): ImageSettingsTabInjected => ({
+        snapshot: async () => unwrap(await remotes.imageWorkbench.snapshot()),
+        save: async request => { unwrap(await remotes.imageWorkbench.save(request)) },
+      }),
+    }, ImageSettingsTab))
+  })
+  ctx.inject(['conversation'], (inner: ClientContext) => {
+    const conversation = inner.get('conversation') as ConversationController | undefined
+    if (conversation === undefined) throw new Error('desktop-image-workbench: Harness conversation service is unavailable')
+    const imageToolActions: ImageToolViewInjected = {
+      loadImage: (sessionId, attachment) => conversation.resolveImage(
+        sessionId as Parameters<ConversationController['resolveImage']>[0],
+        attachment,
+      ),
+      controller: workbenchController,
+    }
+    for (const key of ['image_generate', 'image_edit', 'image_task_continue', 'image_task_get', 'image_versions']) {
+      inner.slots.inject('tool.call.toolview', () => inner.slots.register({
+        name: 'tool.call.toolview',
+        key,
+        locale: WORKBENCH_NS,
+        inject: (): ImageToolViewInjected => imageToolActions,
+      }, ImageToolView))
+    }
   })
   ctx.inject(['remote.documents', 'inputTriggers', 'sessions'], (inner: ClientContext) => {
     const documents = (inner.remote as ClientContext['remote'] & { documents: DocumentsRemote }).documents
@@ -249,6 +371,82 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         inject: (): DocumentMessageInjected => ({ documentT }),
       }, DocumentMessageView))
     }
+  })
+  ctx.inject(['remote.desktopWorkspace', 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'sessions'], (inner: ClientContext) => {
+    const remotes = inner.remote as ClientContext['remote'] & {
+      desktopWorkspace: DesktopWorkspaceRemote
+      desktopGit: DesktopGitRemote
+      imageWorkbench: ImageWorkbenchRemote
+    }
+    const workspace = remotes.desktopWorkspace
+    const git = remotes.desktopGit
+    const conversation = inner.get('conversation') as ConversationController | undefined
+    if (conversation === undefined) throw new Error('desktop-image-workbench: Harness conversation service is unavailable')
+    const imageInserters = new Map<string, (instruction: string, file: File) => boolean>()
+    inner.slots.inject('conversation.session.header.utilities', () => inner.slots.register({
+      name: 'conversation.session.header.utilities',
+      id: 'desktop-session-workbench-launcher',
+      order: 10,
+      locale: WORKBENCH_NS,
+      inject: (): WorkbenchLauncherInjected => ({ controller: workbenchController }),
+    }, WorkbenchLauncher))
+    inner.slots.inject('shell.overlay', () => inner.slots.register({
+      name: 'shell.overlay',
+      id: 'desktop-session-workbench',
+      order: 20,
+      locale: WORKBENCH_NS,
+      inject: (): WorkbenchDrawerInjected => ({
+        controller: workbenchController,
+        listDirectory: async (sessionId, directory, signal) =>
+          unwrap(await workspace.listDirectory(sessionId, directory, signal)),
+        searchWorkspace: async (sessionId, query, signal) =>
+          unwrap(await workspace.search(sessionId, query, signal)),
+        readWorkspaceFile: async (sessionId, path, signal) =>
+          unwrap(await workspace.readFile(sessionId, path, signal)),
+        writeWorkspaceFile: async (sessionId, request, signal) =>
+          unwrap(await workspace.writeFile(sessionId, request, signal)),
+        gitActions: sessionId => ({
+          snapshot: async signal => unwrap(await git.snapshot(sessionId, signal)),
+          diff: async (path, staged, signal) => unwrap(await git.diff(sessionId, { path, staged }, signal)),
+          stage: async (path, signal) => unwrap(await git.stage(sessionId, { path }, signal)),
+          unstage: async (path, signal) => unwrap(await git.unstage(sessionId, { path }, signal)),
+          stageMany: async (paths, signal) => unwrap(await git.stageMany(sessionId, { paths }, signal)),
+          unstageMany: async (paths, signal) => unwrap(await git.unstageMany(sessionId, { paths }, signal)),
+          discard: async (paths, signal) => unwrap(await git.discard(sessionId, { paths }, signal)),
+          commit: async (message, signal) => unwrap(await git.commit(sessionId, { message }, signal)),
+        }),
+        submitImageEdit: (sessionId, instruction, file) => imageInserters.get(sessionId)?.(instruction, file) ?? false,
+      }),
+    }, WorkbenchDrawer))
+    inner.slots.inject('conversation.input.dock', () => inner.slots.register({
+      name: 'conversation.input.dock',
+      id: 'desktop-image-studio-input-bridge',
+      order: 950,
+      inject: (): ImageStudioInputBridgeInjected => ({
+        bindInserter: (boundSessionId, insert) => {
+          imageInserters.set(boundSessionId, insert)
+          return () => { if (imageInserters.get(boundSessionId) === insert) imageInserters.delete(boundSessionId) }
+        },
+        createDraftImages: files => conversation.createDraftImages(files),
+        releaseDraftImage: id => { conversation.releaseDraftImage(id) },
+      }),
+    }, ImageStudioInputBridge))
+    inner.slots.inject('conversation.input.dock', () => inner.slots.register({
+      name: 'conversation.input.dock',
+      id: 'desktop-workspace-reference-drop',
+      order: 900,
+      locale: WORKBENCH_NS,
+      inject: (sessionId): WorkspaceReferenceDropDockInjected => ({
+        controller: workbenchController,
+        insertFile: (path, span) => {
+          const reference = workspaceFileReferenceOf(path)
+          if (reference === undefined) return false
+          const actx = inner.sessions.scope(sessionId)
+          if (actx === undefined) return false
+          return actx.bail(actx, 'slash/input-insert-reference', { reference, span }) === true
+        },
+      }),
+    }, WorkspaceReferenceDropDock))
   })
   if (capabilities.apiVersion === 1 && capabilities.capabilities.includes('marketplace')) {
     const t = ctx.locale.bind(NS)

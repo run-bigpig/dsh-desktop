@@ -12,15 +12,10 @@ tasks:
       - go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
 
   build:windows:
-    desc: Cross-build the Windows x64 desktop executable
-    env:
-      GOOS: windows
-      GOARCH: amd64
-      CGO_ENABLED: "0"
+    desc: Build and fingerprint the production Windows x64 desktop executable
+    platforms: [windows]
     cmds:
-      - powershell -NoProfile -Command "New-Item -ItemType Directory -Force 'dist/windows/stage' | Out-Null; if (Test-Path 'dist/windows/stage/dsh-desktop.exe') { Remove-Item -Force 'dist/windows/stage/dsh-desktop.exe' }"
-      - wails3 generate syso -arch amd64 -icon build/windows/icon.ico -manifest build/windows/app.manifest -info build/windows/info.json -out cmd/dsh-desktop/wails_windows_amd64.syso
-      - go build -tags production -trimpath -ldflags="-s -w -H windowsgui -X github.com/run-bigpig/dsh-desktop/internal/buildinfo.Version={{.VERSION}} -X github.com/run-bigpig/dsh-desktop/internal/buildinfo.ReleaseAPIURL={{.RELEASE_API}}" -o dist/windows/stage/{{.APP_NAME}} ./cmd/dsh-desktop
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/build-windows.ps1 -Version {{.VERSION}} -ReleaseAPI {{.RELEASE_API}}
 
   seed:windows:
     desc: Build the locked Windows seed with bundled Harness workspaces and install-time dependencies
@@ -29,8 +24,15 @@ tasks:
       - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/prepare-windows-seed.ps1
 
   package:windows:
-    desc: Build the per-user NSIS x64 installer
+    desc: Package the current verified Windows stage without rebuilding Harness
     platforms: [windows]
-    deps: [seed:windows, build:windows]
     cmds:
-      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1
+      - powershell -NoProfile -ExecutionPolicy Bypass -File scripts/package-windows.ps1 -Version {{.VERSION}} -ReleaseAPI {{.RELEASE_API}}
+
+  release:windows:
+    desc: Sequentially rebuild the verified stage and package the NSIS installer
+    platforms: [windows]
+    cmds:
+      - task: seed:windows
+      - task: build:windows
+      - task: package:windows

@@ -50,12 +50,18 @@ func TestHarnessLaunchArgsDisableBrowser(t *testing.T) {
 }
 
 func TestProbeBootManifest(t *testing.T) {
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		_, _ = w.Write([]byte(`<script>window.__DSH_BOOT__={}</script>`))
-	}))
-	defer server.Close()
-	raw := strings.Replace(server.URL, "localhost", "127.0.0.1", 1)
-	if err := ProbeBootManifest(server.Client(), raw, time.Second); err != nil {
-		t.Fatal(err)
+	for _, manifest := range []string{
+		`window.__DSH_BOOT__={}`,
+		`globalThis["__DSH_BOOT__"] = {}`,
+	} {
+		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			_, _ = w.Write([]byte(`<script>` + manifest + `</script>`))
+		}))
+		raw := strings.Replace(server.URL, "localhost", "127.0.0.1", 1)
+		if err := ProbeBootManifest(server.Client(), raw, time.Second); err != nil {
+			server.Close()
+			t.Fatalf("manifest %q was rejected: %v", manifest, err)
+		}
+		server.Close()
 	}
 }

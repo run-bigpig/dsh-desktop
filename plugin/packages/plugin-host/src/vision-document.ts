@@ -1,4 +1,9 @@
-export interface VisionEndpointRecord {
+export interface VisionModelSelectionRecord {
+  readonly provider: string
+  readonly model: string
+}
+
+export interface LegacyVisionEndpointRecord {
   readonly baseURL: string
   readonly apiKey: string
   readonly model: string
@@ -11,13 +16,14 @@ export interface VisionTargetRecord {
 }
 
 export interface VisionBridgeDocument {
-  readonly version: 1
-  readonly vision: VisionEndpointRecord
+  readonly version: 2
+  readonly vision: VisionModelSelectionRecord
+  readonly legacyVision?: LegacyVisionEndpointRecord
   readonly targets: readonly VisionTargetRecord[]
 }
 
 export function emptyVisionBridgeDocument(): VisionBridgeDocument {
-  return { version: 1, vision: { baseURL: '', apiKey: '', model: '' }, targets: [] }
+  return { version: 2, vision: { provider: '', model: '' }, targets: [] }
 }
 
 export function parseVisionBridgeDocument(text: string): VisionBridgeDocument {
@@ -28,22 +34,29 @@ export function parseVisionBridgeDocument(text: string): VisionBridgeDocument {
     throw new Error('vision-bridge: document is not valid JSON', { cause })
   }
   if (!isRecord(parsed)) throw new Error('vision-bridge: document must be a JSON object')
-  assertKnownKeys(parsed, ['version', 'vision', 'targets'], 'document')
-  if (parsed.version !== 1) {
+  if (parsed.version === 1) return migrateVersionOne(parsed)
+  assertKnownKeys(parsed, ['version', 'vision', 'legacyVision', 'targets'], 'document')
+  if (parsed.version !== 2) {
     throw new Error(`vision-bridge: unsupported document version ${String(parsed.version)}`)
   }
   if (!Array.isArray(parsed.targets)) throw new Error('vision-bridge: document.targets must be an array')
-  const vision = parsed.vision === undefined ? emptyVisionBridgeDocument().vision : parseVision(parsed.vision)
+  const vision = parsed.vision === undefined ? emptyVisionBridgeDocument().vision : parseSelection(parsed.vision)
+  const legacyVision = parsed.legacyVision === undefined ? undefined : parseLegacyVision(parsed.legacyVision)
   const targets = parsed.targets.map((entry, index) => parseTarget(entry, index))
-  return { version: 1, vision, targets: dedupeTargets(targets) }
+  return {
+    version: 2,
+    vision,
+    ...legacyVision === undefined ? {} : { legacyVision },
+    targets: dedupeTargets(targets),
+  }
 }
 
 export function serializeVisionBridgeDocument(document: VisionBridgeDocument): string {
   return `${JSON.stringify(document, null, 2)}\n`
 }
 
-export function visionEndpointReady(vision: VisionEndpointRecord): boolean {
-  return vision.baseURL.length > 0 && vision.model.length > 0 && vision.apiKey.trim().length > 0
+export function visionModelReady(vision: VisionModelSelectionRecord): boolean {
+  return vision.provider.length > 0 && vision.model.length > 0
 }
 
 export function isTargetEnabled(
@@ -55,23 +68,47 @@ export function isTargetEnabled(
 }
 
 export function mergeVision(
-  current: VisionEndpointRecord,
-  next: { readonly baseURL: string; readonly model: string; readonly apiKey?: string },
-): VisionEndpointRecord {
+  next: { readonly provider: string; readonly model: string },
+): VisionModelSelectionRecord {
   return {
-    baseURL: next.baseURL.trim(),
+    provider: next.provider.trim(),
     model: next.model.trim(),
-    apiKey: next.apiKey === undefined || next.apiKey.length === 0 ? current.apiKey : next.apiKey,
   }
 }
 
-function parseVision(value: unknown): VisionEndpointRecord {
+function parseSelection(value: unknown): VisionModelSelectionRecord {
   if (!isRecord(value)) throw new Error('vision-bridge: document.vision must be an object')
-  assertKnownKeys(value, ['baseURL', 'apiKey', 'model'], 'vision')
+  assertKnownKeys(value, ['provider', 'model'], 'vision')
   return {
-    baseURL: parseString(value.baseURL, 'vision.baseURL').trim(),
-    apiKey: parseString(value.apiKey, 'vision.apiKey'),
+    provider: parseString(value.provider, 'vision.provider').trim(),
     model: parseString(value.model, 'vision.model').trim(),
+  }
+}
+
+function parseLegacyVision(value: unknown): LegacyVisionEndpointRecord {
+  if (!isRecord(value)) throw new Error('vision-bridge: document.legacyVision must be an object')
+  assertKnownKeys(value, ['baseURL', 'apiKey', 'model'], 'legacyVision')
+  return {
+    baseURL: parseString(value.baseURL, 'legacyVision.baseURL').trim(),
+    apiKey: parseString(value.apiKey, 'legacyVision.apiKey'),
+    model: parseString(value.model, 'legacyVision.model').trim(),
+  }
+}
+
+function migrateVersionOne(parsed: Record<string, unknown>): VisionBridgeDocument {
+  assertKnownKeys(parsed, ['version', 'vision', 'targets'], 'document')
+  if (!Array.isArray(parsed.targets)) throw new Error('vision-bridge: document.targets must be an array')
+  const legacyVision = parsed.vision === undefined
+    ? { baseURL: '', apiKey: '', model: '' }
+    : parseLegacyVision(parsed.vision)
+  const targets = parsed.targets.map((entry, index) => parseTarget(entry, index))
+  return {
+    version: 2,
+    vision: { provider: '', model: '' },
+    ...legacyVision.baseURL.length === 0 && legacyVision.apiKey.length === 0 && legacyVision.model.length === 0
+      ? {}
+      : { legacyVision },
+    targets: dedupeTargets(targets),
   }
 }
 

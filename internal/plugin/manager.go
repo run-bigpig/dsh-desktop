@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.24"
+const desktopPluginVersion = "0.1.49"
 
 const maxPluginArchiveBytes int64 = 64 << 20
 
@@ -184,6 +184,9 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 		return fmt.Errorf("migrate desktop plugin bundle paths: %w", err)
 	}
 	if installed != nil && *installed == desktopPluginVersion && !changed {
+		if err := m.migrateRetiredDeepSeekDefaultModel(); err != nil {
+			return err
+		}
 		return nil
 	}
 	args := []string{"plugin", "--profile", "web", "add"}
@@ -215,6 +218,9 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 	}
 	if previousModules != "" {
 		go func() { _ = os.RemoveAll(previousModules) }()
+	}
+	if err := m.migrateRetiredDeepSeekDefaultModel(); err != nil {
+		return err
 	}
 	return nil
 }

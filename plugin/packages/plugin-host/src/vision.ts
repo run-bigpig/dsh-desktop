@@ -5,7 +5,9 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { AttachmentId, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
+import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { CallId, type GenerateOptions, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
+import { settingsNamespace } from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -16,8 +18,9 @@ import {
   mergeVision,
   parseVisionBridgeDocument,
   serializeVisionBridgeDocument,
-  visionEndpointReady,
+  visionModelReady,
   type VisionBridgeDocument,
+  type VisionModelSelectionRecord,
   type VisionTargetRecord,
 } from './vision-document.ts'
 import {
@@ -51,7 +54,7 @@ type ResolveModelInfo = (
 ) => Promise<LlmResolvedModelInfo>
 
 export class VisionBridgeGateway extends TypertRemoteService {
-  static inject = ['llm', 'attachments', 'tools']
+  static inject = ['llm', 'attachments', 'tools', 'settings', 'credentials']
   static Config: z<VisionBridgeConfig> = z.object({ path: z.string().required() })
 
   private readonly filename: string
@@ -72,6 +75,7 @@ export class VisionBridgeGateway extends TypertRemoteService {
     this.ctx.on('llm/stream', (options: GenerateOptions, next: () => AsyncIterable<StreamChunk>) => (
       this.onStream(options, next)
     ))
+    this.ctx.on('llm/adapters-updated', () => { this.captions.clear() })
     const systemPrompt = this.ctx.get('systemPrompt')
     systemPrompt?.section({
       name: 'desktop-vision-bridge',
@@ -95,9 +99,10 @@ export class VisionBridgeGateway extends TypertRemoteService {
     return this.enqueue(async () => {
       const vision = request.vision === undefined
         ? this.document.vision
-        : mergeVision(this.document.vision, request.vision)
+        : mergeVision(request.vision)
+      await this.validateSelection(vision)
       const targets = request.targets === undefined ? this.document.targets : normalizeTargets(request.targets)
-      this.document = { version: 1, vision, targets }
+      this.document = { ...this.document, version: 2, vision, targets }
       await this.persist()
       return { ok: true }
     })
@@ -106,14 +111,13 @@ export class VisionBridgeGateway extends TypertRemoteService {
   @Remote('testConnection')
   testConnection(request: VisionTestRequest): Promise<VisionTestResult> {
     return this.enqueue(async () => {
-      const apiKey = request.apiKey === undefined || request.apiKey.length === 0
-        ? this.document.vision.apiKey
-        : request.apiKey
-      const config = { baseURL: request.baseURL.trim(), model: request.model.trim(), apiKey }
-      if (!visionEndpointReady(config)) {
-        return { kind: 'error', message: 'Base URL, model, and API key are required.' }
+      const config = mergeVision(request)
+      try {
+        await this.validateSelection(config)
+      } catch (error) {
+        return { kind: 'error', message: error instanceof Error ? error.message : String(error) }
       }
-      return testVisionConnection(config)
+      return testVisionConnection(this.ctx.llm, config)
     })
   }
 
@@ -144,7 +148,7 @@ export class VisionBridgeGateway extends TypertRemoteService {
   }
 
   private shouldClaim(provider: string, model: string): boolean {
-    return visionEndpointReady(this.document.vision) && isTargetEnabled(this.document.targets, provider, model)
+    return visionModelReady(this.document.vision) && isTargetEnabled(this.document.targets, provider, model)
   }
 
   private async isNativeVision(provider: string, model: string, signal?: AbortSignal): Promise<boolean> {
@@ -200,8 +204,8 @@ export class VisionBridgeGateway extends TypertRemoteService {
   }
 
   private visionConfig(): VisionClientConfig {
-    if (!visionEndpointReady(this.document.vision)) {
-      throw new Error('vision-bridge: configure a vision model before sending images')
+    if (!visionModelReady(this.document.vision)) {
+      throw new Error('vision-bridge: select a Harness vision model before sending images')
     }
     return this.document.vision
   }
@@ -226,12 +230,7 @@ export class VisionBridgeGateway extends TypertRemoteService {
         height: image.height,
         ...(image.name === undefined ? {} : { name: image.name }),
       }, signal)
-      const caption = await captionImage(config, {
-        attachmentId: image.attachmentId,
-        mediaType: stored.ref.mediaType,
-        data: stored.data,
-        ...(image.name === undefined ? {} : { name: image.name }),
-      }, signal)
+      const caption = await captionImage(this.ctx.llm, config, stored.ref, signal)
       this.captions.set(image.attachmentId, caption)
       captions.set(image.attachmentId, caption)
     }))
@@ -246,12 +245,36 @@ export class VisionBridgeGateway extends TypertRemoteService {
   private async projectSnapshot(): Promise<VisionBridgeSnapshot> {
     return {
       vision: {
-        baseURL: this.document.vision.baseURL,
+        provider: this.document.vision.provider,
         model: this.document.vision.model,
-        hasApiKey: this.document.vision.apiKey.trim().length > 0,
+      },
+      ...this.document.legacyVision === undefined ? {} : {
+        legacyVision: {
+          baseURL: this.document.legacyVision.baseURL,
+          model: this.document.legacyVision.model,
+          hasApiKey: this.document.legacyVision.apiKey.trim().length > 0,
+        },
       },
       targets: this.document.targets.map(target => ({ ...target })),
       catalog: await this.listCatalog(),
+    }
+  }
+
+  private async validateSelection(selection: VisionModelSelectionRecord): Promise<void> {
+    if (!visionModelReady(selection)) {
+      if (selection.provider.length === 0 && selection.model.length === 0) return
+      throw new Error('vision-bridge: both provider and model are required')
+    }
+    const provider = this.ctx.llm.listProviders().find(entry => entry.id === selection.provider)
+    if (provider === undefined) {
+      throw new Error(`vision-bridge: Harness provider ${JSON.stringify(selection.provider)} is not active`)
+    }
+    if (!(await this.isProviderUsable(selection.provider))) {
+      throw new Error(`vision-bridge: Harness provider ${JSON.stringify(selection.provider)} is not fully configured`)
+    }
+    const models = await this.ctx.llm.listModels(selection.provider)
+    if (!models.some(model => model.id === selection.model)) {
+      throw new Error(`vision-bridge: model ${JSON.stringify(selection.model)} is not listed by the Harness provider`)
     }
   }
 
@@ -259,11 +282,20 @@ export class VisionBridgeGateway extends TypertRemoteService {
     const groups: VisionCatalogGroup[] = []
     for (const provider of this.ctx.llm.listProviders()) {
       try {
+        if (!(await this.isProviderUsable(provider.id))) continue
         const models = await this.ctx.llm.listModels(provider.id)
+        const resolvedModels = await Promise.all(models.map(async model => {
+          try {
+            return await this.ctx.llm.resolveModelInfo(provider.id, model.id)
+          } catch (error) {
+            this.ctx.logger.warn(`desktop-vision: failed to resolve ${provider.id}/${model.id}: ${String(error)}`)
+            return model
+          }
+        }))
         groups.push({
           provider: provider.id,
           providerName: provider.name,
-          models: models.map(model => ({
+          models: resolvedModels.map(model => ({
             id: model.id,
             name: model.name,
             nativeVision: model.inputModalities?.includes('image') === true,
@@ -274,6 +306,18 @@ export class VisionBridgeGateway extends TypertRemoteService {
       }
     }
     return groups
+  }
+
+  private async isProviderUsable(provider: string): Promise<boolean> {
+    const directory = this.ctx.llm.listConfigurableProviders().find(entry => entry.provider === provider)
+    if (directory === undefined) return true
+    const section = this.ctx.settings.get(settingsNamespace(directory.settingsNs))
+    const profile = valueAtPath(section, directory.settingsPath)
+    if (!isRecord(profile)) return false
+    const ref = profile.apiKeyEnv
+    if (ref === undefined) return true
+    if (typeof ref !== 'string' || ref.length === 0) return false
+    return (await this.ctx.credentials.describe(credentialRef(ref))).configured
   }
 
   private async readDocument(): Promise<VisionBridgeDocument> {
@@ -330,6 +374,19 @@ function isEnoent(error: unknown): boolean {
 function imageMediaType(value: string): ImageMediaType {
   if (value === 'image/png' || value === 'image/jpeg' || value === 'image/webp' || value === 'image/gif') return value
   throw new Error(`vision-bridge: unsupported image media type ${JSON.stringify(value)}`)
+}
+
+function valueAtPath(value: unknown, path: readonly string[]): unknown {
+  let current = value
+  for (const segment of path) {
+    if (!isRecord(current)) return undefined
+    current = current[segment]
+  }
+  return current
+}
+
+function isRecord(value: unknown): value is Record<string, unknown> {
+  return typeof value === 'object' && value !== null && !Array.isArray(value)
 }
 
 export default VisionBridgeGateway

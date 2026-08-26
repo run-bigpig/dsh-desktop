@@ -11,11 +11,15 @@
     { "path": "../../client/runtime" },
     { "path": "../../client/ui-attachment" },
     { "path": "../../client/ui-input-trigger" },
+    { "path": "../../client/ui-reference" },
     { "path": "../../client/ui-primitives" },
+    { "path": "../../client/ui-sidebar" },
+    { "path": "../../client/ui-tool" },
     { "path": "../../client/ui-layout" },
     { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-settings" },
     { "path": "../../client/ui-slots" },
-    { "path": "../../runtime-diagnostics/invariants" }
+    { "path": "../../runtime-diagnostics/invariants" },
+    { "path": "../../context/file-reference" }
   ]
 }

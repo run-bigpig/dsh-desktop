@@ -28,10 +28,8 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
   const formId = useId()
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
-  const [baseURL, setBaseURL] = useState('')
+  const [provider, setProvider] = useState('')
   const [model, setModel] = useState('')
-  const [apiKey, setApiKey] = useState('')
-  const [hasApiKey, setHasApiKey] = useState(false)
   const [enabled, setEnabled] = useState<Record<string, boolean>>({})
   const [expanded, setExpanded] = useState<Record<string, boolean>>({})
   const [saving, setSaving] = useState(false)
@@ -43,10 +41,8 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
     void snapshot().then(value => {
       if (!current) return
       setState({ status: 'ready', snapshot: value })
-      setBaseURL(value.vision.baseURL)
+      setProvider(value.vision.provider)
       setModel(value.vision.model)
-      setApiKey('')
-      setHasApiKey(value.vision.hasApiKey)
       setEnabled(Object.fromEntries(value.targets.map(target => [targetKey(target.provider, target.model), target.enabled])))
     }, () => { if (current) setState({ status: 'error' }) })
     return () => { current = false }
@@ -54,7 +50,9 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
 
   const submit = async (event: FormEvent<HTMLFormElement>): Promise<void> => {
     event.preventDefault()
-    if (state.status !== 'ready') return
+    if (state.status !== 'ready' || saving || !dirty || provider.length === 0 || model.length === 0) return
+    const nextProvider = provider.trim()
+    const nextModel = model.trim()
     setSaving(true)
     setNotice(null)
     try {
@@ -65,15 +63,22 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
       })))
       await save({
         vision: {
-          baseURL: baseURL.trim(),
-          model: model.trim(),
-          ...(apiKey.length === 0 ? {} : { apiKey }),
+          provider: nextProvider,
+          model: nextModel,
         },
         targets,
       })
-      setApiKey('')
+      setProvider(nextProvider)
+      setModel(nextModel)
+      setState({
+        status: 'ready',
+        snapshot: {
+          ...state.snapshot,
+          vision: { provider: nextProvider, model: nextModel },
+          targets,
+        },
+      })
       setNotice({ kind: 'ok', message: t('saved') })
-      setRequest(value => value + 1)
     } catch {
       setNotice({ kind: 'error', message: t('saveFailed') })
     } finally {
@@ -86,15 +91,39 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
     setNotice(null)
     try {
       setNotice(await testConnection({
-        baseURL: baseURL.trim(),
+        provider: provider.trim(),
         model: model.trim(),
-        ...(apiKey.length === 0 ? {} : { apiKey }),
       }))
     } catch (error) {
       setNotice({ kind: 'error', message: error instanceof Error ? error.message : t('saveFailed') })
     } finally {
       setTesting(false)
     }
+  }
+
+  const selectedKey = modelOptionValue(provider, model)
+  const selectedAvailable = state.status === 'ready' && state.snapshot.catalog.some(group =>
+    group.provider === provider && group.models.some(entry => entry.id === model))
+  const visionModelCount = state.status === 'ready'
+    ? state.snapshot.catalog.reduce((count, group) => count + group.models.length, 0)
+    : 0
+  const dirty = state.status === 'ready' && (
+    provider !== state.snapshot.vision.provider
+    || model !== state.snapshot.vision.model
+    || state.snapshot.catalog.some(group => group.models.some(entry => {
+      if (entry.nativeVision) return false
+      const key = targetKey(group.provider, entry.id)
+      const saved = state.snapshot.targets.some(target => target.provider === group.provider && target.model === entry.id && target.enabled)
+      return (enabled[key] === true) !== saved
+    }))
+  )
+
+  const cancel = (): void => {
+    if (state.status !== 'ready') return
+    setProvider(state.snapshot.vision.provider)
+    setModel(state.snapshot.vision.model)
+    setEnabled(Object.fromEntries(state.snapshot.targets.map(target => [targetKey(target.provider, target.model), target.enabled])))
+    setNotice(null)
   }
 
   return (
@@ -110,28 +139,39 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
         <form className={css.section} onSubmit={event => { void submit(event) }}>
           <div className={css.endpoint}>
             <div className={css.heading}><h3>{t('endpoint')}</h3></div>
-            <p className={css.hint}>{t('endpointHint')}</p>
-            <div className={css.formGrid}>
-              <div className={css.field} data-wide="true">
-                <label htmlFor={`${formId}-base-url`}>{t('baseURL')}</label>
-                <input id={`${formId}-base-url`} type="url" required placeholder="https://api.siliconflow.cn/v1" value={baseURL} onChange={event => { setBaseURL(event.currentTarget.value) }} />
-              </div>
-              <div className={css.field}>
-                <label htmlFor={`${formId}-model`}>{t('model')}</label>
-                <input id={`${formId}-model`} required placeholder="Qwen/Qwen3-VL-32B-Instruct" value={model} onChange={event => { setModel(event.currentTarget.value) }} />
-              </div>
-              <div className={css.field}>
-                <label htmlFor={`${formId}-api-key`}>{t('apiKey')}</label>
-                <input id={`${formId}-api-key`} type="password" autoComplete="off" value={apiKey} onChange={event => { setApiKey(event.currentTarget.value) }} />
-                <p className={css.hint}>{hasApiKey ? t('apiKeySet') : t('apiKeyMissing')} · {t('apiKeyHint')}</p>
-              </div>
+            <div className={css.field}>
+              <label htmlFor={`${formId}-model`}>{t('model')}</label>
+              <select
+                id={`${formId}-model`}
+                required
+                disabled={saving || testing}
+                value={selectedKey}
+                onChange={event => {
+                  const selection = parseModelOptionValue(event.currentTarget.value)
+                  setProvider(selection.provider)
+                  setModel(selection.model)
+                }}
+              >
+                <option value={modelOptionValue('', '')}>{t('selectModel')}</option>
+                {!selectedAvailable && provider.length > 0 && model.length > 0 ? (
+                  <option value={selectedKey}>{t('unavailableSelection')} · {provider} / {model}</option>
+                ) : null}
+                {state.snapshot.catalog.map(group => {
+                  const models = group.models
+                  return models.length === 0 ? null : (
+                    <optgroup key={group.provider} label={`${group.providerName} · ${group.provider}`}>
+                      {models.map(entry => <option key={entry.id} value={modelOptionValue(group.provider, entry.id)}>{entry.name} · {entry.id}</option>)}
+                    </optgroup>
+                  )
+                })}
+              </select>
             </div>
+            {visionModelCount === 0 ? <p className={css.status}>{t('emptyVisionModels')}</p> : null}
           </div>
 
           <div className={css.toolbar}>
             <div className={css.heading}><h3>{t('targets')}</h3></div>
           </div>
-          <p className={css.hint}>{t('targetsHint')}</p>
           {state.snapshot.catalog.length === 0 ? <p className={css.status}>{t('emptyCatalog')}</p> : null}
           <ul className={css.groups}>
             {state.snapshot.catalog.map(group => {
@@ -156,7 +196,7 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
                           <label className={css.modelRow} key={entry.id}>
                             <input
                               type="checkbox"
-                              disabled={entry.nativeVision}
+                              disabled={entry.nativeVision || saving || testing}
                               checked={entry.nativeVision || enabled[key] === true}
                               onChange={event => { const checked = event.currentTarget.checked; setEnabled(current => ({ ...current, [key]: checked })) }}
                             />
@@ -171,10 +211,13 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
               )
             })}
           </ul>
-          {notice !== null ? <p className={css.notice} data-kind={notice.kind} role={notice.kind === 'error' ? 'alert' : undefined}>{notice.message}</p> : null}
-          <div className={css.buttonGroup}>
-            <button className={css.primaryButton} type="submit" disabled={saving || testing}>{saving ? t('saving') : t('save')}</button>
-            <button className={css.button} type="button" disabled={saving || testing} onClick={() => { void test() }}>{testing ? t('testing') : t('test')}</button>
+          <div className={css.settingsFooter}>
+            {notice !== null ? <p className={css.footerNotice} data-kind={notice.kind} role={notice.kind === 'error' ? 'alert' : undefined}>{notice.message}</p> : <span className={css.footerNotice} />}
+            <div className={css.settingsFooterActions}>
+              <button className={css.settingsSecondaryButton} type="button" disabled={saving || testing || provider.length === 0 || model.length === 0} onClick={() => { void test() }}>{testing ? t('testing') : t('test')}</button>
+              <button className={css.settingsSecondaryButton} type="button" disabled={saving || testing || !dirty} onClick={cancel}>{t('cancel')}</button>
+              <button className={css.settingsPrimaryButton} type="submit" disabled={saving || testing || !dirty || provider.length === 0 || model.length === 0}>{saving ? t('saving') : t('save')}</button>
+            </div>
           </div>
         </form>
       ) : null}
@@ -184,4 +227,18 @@ export function VisionSettingsTab({ snapshot, save, testConnection, t }: VisionS
 
 function targetKey(provider: string, model: string): string {
   return `${provider}\0${model}`
+}
+
+function modelOptionValue(provider: string, model: string): string {
+  return JSON.stringify([provider, model])
+}
+
+function parseModelOptionValue(value: string): { provider: string; model: string } {
+  try {
+    const parsed = JSON.parse(value) as unknown
+    if (Array.isArray(parsed) && typeof parsed[0] === 'string' && typeof parsed[1] === 'string') {
+      return { provider: parsed[0], model: parsed[1] }
+    }
+  } catch {}
+  return { provider: '', model: '' }
 }

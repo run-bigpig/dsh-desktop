@@ -31,6 +31,7 @@ func TestValidCommitAndRuntimeOwnership(t *testing.T) {
 func TestMigrateLegacyRoot(t *testing.T) {
 	base := t.TempDir()
 	t.Setenv("DSH_DESKTOP_DATA_DIR", "")
+	t.Setenv("APPDATA", base)
 	t.Setenv("XDG_CONFIG_HOME", base)
 	oldRoot := filepath.Join(base, legacyAppDirName)
 	if err := os.MkdirAll(filepath.Join(oldRoot, "state"), 0o700); err != nil {

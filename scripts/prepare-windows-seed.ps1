@@ -2,6 +2,8 @@ $ErrorActionPreference = "Stop"
 Set-StrictMode -Version Latest
 
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot "windows-build-common.ps1")
+$buildLock = Enter-WindowsBuildLock $repoRoot
 $toolLock = Get-Content (Join-Path $repoRoot "release/toolchain.lock.json") -Raw | ConvertFrom-Json
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
 $stage = Join-Path $repoRoot "dist/windows/stage"
@@ -12,9 +14,101 @@ $runtimeTools = Join-Path $stage "resources/toolchain"
 $pluginTarget = Join-Path $stage "resources/plugin"
 $marketplaceTarget = Join-Path $stage "resources/marketplace"
 $seedSourceTarget = Join-Path $stage ("resources/seed/source/" + $seedLock.commit)
-Remove-Item -Recurse -Force $tools -ErrorAction SilentlyContinue
-Remove-Item -Recurse -Force $runtimeTools -ErrorAction SilentlyContinue
-New-Item -ItemType Directory -Force $stage,$downloads,$tools,$buildRoot | Out-Null
+$seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
+$seedFingerprint = Get-WindowsSeedFingerprint $repoRoot
+$seedCacheRoot = Join-Path $repoRoot "dist/windows/seed-cache"
+$seedCache = Join-Path $seedCacheRoot $seedFingerprint
+
+function Get-DesktopPluginVersion {
+  $versions = @(
+    "plugin/packages/plugin-host/package.json",
+    "plugin/packages/plugin-client/package.json",
+    "plugin/packages/plugin-bundle/package.json"
+  ) | ForEach-Object {
+    (Get-Content (Join-Path $repoRoot $_) -Raw | ConvertFrom-Json).version
+  } | Select-Object -Unique
+  if (@($versions).Count -ne 1) { throw "Built-in Desktop Plugin package versions do not match" }
+  return @($versions)[0]
+}
+
+function Test-VerifiedSeedLayout([string]$Root) {
+  $manifestPath = Join-Path $Root "resources/seed/build-manifest.json"
+  if (-not (Test-Path -LiteralPath $manifestPath)) { return $false }
+  try {
+    $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
+  } catch {
+    return $false
+  }
+  if ($manifest.fingerprint -ne $seedFingerprint -or $manifest.commit -ne $seedLock.commit) { return $false }
+  foreach ($required in @(
+    "resources/toolchain/node/node.exe",
+    "resources/toolchain/node/LICENSE",
+    "resources/toolchain/pnpm/pnpm.exe",
+    "resources/toolchain/pnpm/dist/pnpm.mjs",
+    "resources/toolchain/pnpm/dist/pnpmrc",
+    "resources/toolchain/pnpm/dist/worker.js",
+    ("resources/seed/source/" + $seedLock.commit + "/" + $seedLock.cliEntry),
+    "resources/plugin/plugin-host/package.json",
+    "resources/plugin/plugin-client/package.json",
+    "resources/plugin/plugin-bundle/package.json",
+    "resources/marketplace/catalog.json",
+    "resources/marketplace/catalog.sig"
+  )) {
+    if (-not (Test-Path -LiteralPath (Join-Path $Root $required))) { return $false }
+  }
+  return $true
+}
+
+function Restore-VerifiedSeedCache([string]$Cache) {
+  $stageResources = Join-Path $stage "resources"
+  New-Item -ItemType Directory -Force $stageResources | Out-Null
+  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+    Remove-DirectoryTree (Join-Path $stageResources $directory)
+    Copy-DirectoryTree `
+      -Source (Join-Path $Cache ("resources/" + $directory)) `
+      -Destination (Join-Path $stageResources $directory)
+  }
+}
+
+function Publish-VerifiedSeedCache {
+  Get-ChildItem -LiteralPath $seedCacheRoot -Directory -Filter "seed-cache-tmp-*" | ForEach-Object {
+    Remove-DirectoryTree $_.FullName
+  }
+  $temporaryCache = Join-Path $seedCacheRoot ("seed-cache-tmp-" + [Guid]::NewGuid().ToString("N"))
+  $temporaryResources = Join-Path $temporaryCache "resources"
+  New-Item -ItemType Directory -Force $temporaryResources | Out-Null
+  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+    Copy-DirectoryTree `
+      -Source (Join-Path $stage ("resources/" + $directory)) `
+      -Destination (Join-Path $temporaryResources $directory)
+  }
+  if (Test-Path -LiteralPath $seedCache) { Remove-DirectoryTree $seedCache }
+  Move-Item -LiteralPath $temporaryCache -Destination $seedCache
+}
+
+New-Item -ItemType Directory -Force $stage,$downloads,$buildRoot,$seedCacheRoot | Out-Null
+if (Test-VerifiedSeedLayout $stage) {
+  if (-not (Test-VerifiedSeedLayout $seedCache)) {
+    Publish-VerifiedSeedCache
+    Write-Host "Published verified Windows seed cache $seedFingerprint from the current stage"
+  }
+  $buildLock.Dispose()
+  Write-Host "Verified Windows seed stage is current; skipping Harness rebuild ($seedFingerprint)"
+  exit 0
+}
+if (Test-VerifiedSeedLayout $seedCache) {
+  Restore-VerifiedSeedCache $seedCache
+  $buildLock.Dispose()
+  Write-Host "Restored verified Windows seed cache $seedFingerprint"
+  exit 0
+}
+Get-ChildItem -LiteralPath $seedCacheRoot -Directory -Filter "seed-cache-tmp-*" | ForEach-Object {
+  Remove-DirectoryTree $_.FullName
+}
+Remove-Item -LiteralPath $seedManifestPath -Force -ErrorAction SilentlyContinue
+Remove-DirectoryTree $tools
+Remove-DirectoryTree $runtimeTools
+New-Item -ItemType Directory -Force $tools | Out-Null
 
 function Get-VerifiedArtifact($artifact) {
   if ($artifact.sha256 -notmatch '^[0-9a-f]{64}$') { throw "Invalid SHA-256 lock for $($artifact.name)" }
@@ -30,7 +124,7 @@ foreach ($artifact in $toolLock.artifacts) {
   $archive = Get-VerifiedArtifact $artifact
   switch ($artifact.name) {
     "node" {
-      $temp = Join-Path $buildRoot "node-extract"; Remove-Item -Recurse -Force $temp -ErrorAction SilentlyContinue; Expand-Archive $archive $temp
+      $temp = Join-Path $buildRoot "node-extract"; Remove-DirectoryTree $temp; Expand-Archive $archive $temp
       $nodeSource = Get-ChildItem $temp -Directory | Select-Object -First 1
       Copy-Item -Recurse -Force $nodeSource.FullName (Join-Path $tools "node")
     }
@@ -69,19 +163,42 @@ $lockedGit = $toolLock.artifacts | Where-Object { $_.name -eq "git" -and $_.plat
 if (-not $lockedGit -or ((& $git --version).Trim() -ne ("git version " + $lockedGit.version))) { throw "Embedded Git version mismatch" }
 
 $checkout = Join-Path $buildRoot "harness"
-$validRepository = $false
-if (Test-Path (Join-Path $checkout ".git")) {
-  & $git -C $checkout rev-parse --git-dir *> $null
-  $validRepository = $LASTEXITCODE -eq 0
-}
-if (-not $validRepository) {
-  if (Test-Path $checkout) { & cmd.exe /d /c rmdir /s /q $checkout }
+function Initialize-FreshHarnessCheckout {
+  $detachedCheckout = $null
+  if (Test-Path -LiteralPath $checkout) {
+    $detachedCheckout = Join-Path $buildRoot ("harness-stale-" + [Guid]::NewGuid().ToString("N"))
+    Move-Item -LiteralPath $checkout -Destination $detachedCheckout
+  }
   New-Item -ItemType Directory -Force $checkout | Out-Null
   & $git -C $checkout init
   if ($LASTEXITCODE -ne 0) { throw "Harness repository initialization failed" }
   & $git -C $checkout remote add origin $seedLock.repository
   if ($LASTEXITCODE -ne 0) { throw "Unable to configure locked Harness remote" }
-} else {
+  & $git -C $checkout fetch --force --no-tags --depth 1 origin $seedLock.commit
+  if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit fetch failed" }
+  & $git -C $checkout checkout --detach $seedLock.commit
+  if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit checkout failed" }
+  & $git -C $checkout reset --hard $seedLock.commit
+  if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit reset failed" }
+  if ($detachedCheckout) { Remove-DetachedDirectoryTree $detachedCheckout }
+}
+
+$validRepository = $false
+if (Test-Path (Join-Path $checkout ".git")) {
+  & $git -C $checkout rev-parse --git-dir *> $null
+  $validRepository = $LASTEXITCODE -eq 0
+  if ($validRepository) {
+    foreach ($lockName in "shallow.lock","index.lock","config.lock","HEAD.lock","packed-refs.lock") {
+      if (Test-Path -LiteralPath (Join-Path $checkout (".git/" + $lockName))) {
+        Write-Warning "Cached Harness checkout contains a stale Git lock; replacing the generated checkout"
+        $validRepository = $false
+        break
+      }
+    }
+  }
+}
+$previousCommit = ""
+if ($validRepository) {
   & $git -C $checkout remote get-url origin *> $null
   if ($LASTEXITCODE -eq 0) {
     & $git -C $checkout remote set-url origin $seedLock.repository
@@ -89,38 +206,33 @@ if (-not $validRepository) {
     & $git -C $checkout remote add origin $seedLock.repository
   }
   if ($LASTEXITCODE -ne 0) { throw "Unable to restore locked Harness remote" }
+  $savedErrorPreference = $ErrorActionPreference
+  $ErrorActionPreference = "SilentlyContinue"
+  $previousCommit = (& $git -C $checkout rev-parse --verify HEAD 2>$null)
+  $previousCommitExitCode = $LASTEXITCODE
+  $ErrorActionPreference = $savedErrorPreference
+  if ($previousCommitExitCode -eq 0) { $previousCommit = $previousCommit.Trim() } else { $previousCommit = "" }
 }
-$savedErrorPreference = $ErrorActionPreference
-$ErrorActionPreference = "SilentlyContinue"
-$previousCommit = (& $git -C $checkout rev-parse --verify HEAD 2>$null)
-$previousCommitExitCode = $LASTEXITCODE
-$ErrorActionPreference = $savedErrorPreference
-if ($previousCommitExitCode -eq 0) {
-  $previousCommit = $previousCommit.Trim()
+if ($previousCommit -eq $seedLock.commit) {
   & $git -C $checkout reset --hard HEAD
   if ($LASTEXITCODE -ne 0) { throw "Unable to reset cached Harness checkout" }
-} else {
-  $previousCommit = ""
-}
-& $git -C $checkout clean -fdx -e node_modules/
-if ($LASTEXITCODE -ne 0) { throw "Unable to clean cached Harness checkout" }
-& $git -C $checkout fetch --force --no-tags --depth 1 origin $seedLock.commit
-if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit fetch failed" }
-& $git -C $checkout checkout --detach $seedLock.commit
-if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit checkout failed" }
-& $git -C $checkout reset --hard $seedLock.commit
-if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit reset failed" }
-if ($previousCommit -ne $seedLock.commit) {
-  $cachedNodeModules = Join-Path $checkout "node_modules"
-  if (Test-Path $cachedNodeModules) {
-    & cmd.exe /d /c rmdir /s /q "\\?\$cachedNodeModules"
-    if ($LASTEXITCODE -ne 0 -or (Test-Path $cachedNodeModules)) { throw "Unable to remove stale Harness node_modules" }
-  }
-  & $git -C $checkout clean -fdx
-} else {
   & $git -C $checkout clean -fdx -e node_modules/
+  if ($LASTEXITCODE -ne 0) { throw "Unable to clean cached Harness checkout" }
+  & $git -C $checkout fetch --force --no-tags --depth 1 origin $seedLock.commit
+  if ($LASTEXITCODE -ne 0) {
+    Write-Warning "Cached Harness checkout fetch failed; replacing the generated checkout"
+    Initialize-FreshHarnessCheckout
+  } else {
+    & $git -C $checkout checkout --detach $seedLock.commit
+    if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit checkout failed" }
+    & $git -C $checkout reset --hard $seedLock.commit
+    if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit reset failed" }
+    & $git -C $checkout clean -fdx -e node_modules/
+    if ($LASTEXITCODE -ne 0) { throw "Harness worktree cleanup failed" }
+  }
+} else {
+  Initialize-FreshHarnessCheckout
 }
-if ($LASTEXITCODE -ne 0) { throw "Harness worktree cleanup failed" }
 $desktopOverlay = Join-Path $checkout "packages/desktop"
 if (Test-Path $desktopOverlay) { & cmd.exe /d /c rmdir /s /q $desktopOverlay }
 $resolved = (& $git -C $checkout rev-parse HEAD).Trim()
@@ -133,16 +245,36 @@ $env:HOME = $cleanHome; $env:USERPROFILE = $cleanHome; $env:GIT_TERMINAL_PROMPT 
 $env:PATH = ((Join-Path $tools "node"),(Join-Path $tools "pnpm"),(Join-Path $tools "git/cmd"),(Join-Path $env:SystemRoot "System32"),(Join-Path $env:SystemRoot "System32/WindowsPowerShell/v1.0")) -join ";"
 Remove-Item Env:SSH_AUTH_SOCK -ErrorAction SilentlyContinue
 Get-ChildItem Env: | Where-Object { $_.Name -match '(TOKEN|SECRET|PASSWORD|API_KEY|OPENAI|ANTHROPIC|DEEPSEEK)' } | ForEach-Object { Remove-Item ("Env:" + $_.Name) -ErrorAction SilentlyContinue }
+$installArguments = @(
+  "install", "--frozen-lockfile",
+  "--store-dir", (Join-Path $buildRoot "pnpm-store"),
+  "--fetch-retries", "5",
+  "--fetch-retry-mintimeout", "10000",
+  "--fetch-retry-maxtimeout", "120000",
+  "--fetch-timeout", "300000",
+  "--network-concurrency", "8"
+)
 Push-Location $checkout
 try {
-  & $node $pnpmScript install --frozen-lockfile `
-    --store-dir (Join-Path $buildRoot "pnpm-store") `
-    --fetch-retries 5 `
-    --fetch-retry-mintimeout 10000 `
-    --fetch-retry-maxtimeout 120000 `
-    --fetch-timeout 300000 `
-    --network-concurrency 8
-  if ($LASTEXITCODE -ne 0) { throw "Frozen seed install failed" }
+  & $node $pnpmScript @installArguments
+  $installExitCode = $LASTEXITCODE
+} finally {
+  Pop-Location
+}
+if ($installExitCode -ne 0) {
+  Write-Warning "Frozen seed install failed; replacing the generated Harness checkout and retrying once"
+  Initialize-FreshHarnessCheckout
+  Push-Location $checkout
+  try {
+    & $node $pnpmScript @installArguments
+    $installExitCode = $LASTEXITCODE
+  } finally {
+    Pop-Location
+  }
+}
+if ($installExitCode -ne 0) { throw "Frozen seed install failed after fresh-checkout recovery" }
+Push-Location $checkout
+try {
   & $node $pnpmScript run build:official
   if ($LASTEXITCODE -ne 0) { throw "Official seed build failed" }
 } finally {
@@ -249,7 +381,7 @@ if (-not $readyUrl) {
   throw "Seed smoke did not publish a strict loopback ready URL"
 }
 $homePage = Invoke-WebRequest -UseBasicParsing -Uri $readyUrl -TimeoutSec 8
-if ($homePage.Content -notmatch 'window\.__DSH_BOOT__') { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke homepage is missing window.__DSH_BOOT__" }
+if ($homePage.Content -notmatch '(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])') { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke homepage is missing the Harness boot manifest" }
 $smoke.StandardInput.WriteLine('{"type":"shutdown","source":"release-smoke"}'); $smoke.StandardInput.Close()
 if (-not $smoke.WaitForExit(10000)) { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke did not shut down gracefully" }
 if ($smoke.ExitCode -ne 0) { throw "Seed smoke exited with code $($smoke.ExitCode)" }
@@ -333,4 +465,21 @@ Copy-Item -Force $node (Join-Path $runtimeNode "node.exe")
 Copy-Item -Force (Join-Path $tools "node/LICENSE") (Join-Path $runtimeNode "LICENSE")
 Copy-Item -Recurse -Force (Join-Path $tools "pnpm") (Join-Path $runtimeTools "pnpm")
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
+$finalSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
+if ($finalSeedFingerprint -ne $seedFingerprint) {
+  throw "Seed or plugin sources changed during the Windows build; retry from a stable worktree"
+}
+Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
+  schemaVersion = 1
+  fingerprint = $seedFingerprint
+  commit = $seedLock.commit
+  ref = $seedLock.ref
+  node = $seedLock.node
+  pnpm = $seedLock.pnpm
+  pluginVersion = $pluginVersion
+  createdAtUTC = [DateTime]::UtcNow.ToString("o")
+})
+
+Publish-VerifiedSeedCache
+$buildLock.Dispose()
 Write-Host "Verified installable Harness workspace seed, source-built Desktop Plugin, and Marketplace catalog staged at $seedSourceTarget"

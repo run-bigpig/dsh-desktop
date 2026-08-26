@@ -29,13 +29,15 @@ Linux 本机构建 Wails 窗口需要系统的 `pkg-config` 与 WebKitGTK 开发
 
 ## Windows 发布
 
-在 Windows x64 发布机安装 Go 1.25、Wails CLI、Task 和 NSIS，然后运行：
+在 Windows x64 发布机安装 Go 1.25、Wails CLI、Task 和 NSIS。完整发布构建运行：
 
 ```powershell
-task package:windows
+task release:windows
 ```
 
 发布流程读取 [toolchain.lock.json](release/toolchain.lock.json) 和 [seed.lock.json](release/seed.lock.json)，下载后先校验 SHA-256，再构建并冒烟验证 seed。输出安装器及同名 `.sha256` 文件。安装器为每用户 NSIS，并在安装前检测 Evergreen WebView2。
+
+完成一次完整发布构建后，可以使用 `task package:windows` 验证并打包当前 stage；该命令不会重建 Harness。若 seed、桌面 EXE、安装器源码、版本和 NSIS 编译器均未变化，并且现有安装器与校验文件通过哈希验证，则直接复用安装器而不重复压缩。`task seed:windows` 会优先复用按 Harness、工具链和内置插件源码指纹保存的已验证 seed 缓存。
 
 Harness checkout、完整 `node_modules` 和安装后 runtime 只存在于 `dist/` 发布暂存区或用户安装目录，不进入本仓库；安装包中的 seed source 仅包含官方 workspace manifest、编译产物、锁文件和 patch。
 

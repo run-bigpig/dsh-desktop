@@ -40,7 +40,8 @@
 .actions,
 .buttonGroup,
 .checkRow,
-.providerMeta {
+.providerMeta,
+.capabilitySummary {
   display: flex;
   align-items: center;
 }
@@ -338,6 +339,87 @@
   gap: 7px;
 }
 
+.capabilitySummary {
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.settingsFooter {
+  display: flex;
+  min-height: 52px;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  border-top: 1px solid var(--dsw-alias-border-l2);
+  padding: 12px 0 4px;
+}
+
+.footerNotice {
+  min-width: 0;
+  flex: 1;
+  margin: 0;
+  color: var(--dsw-alias-label-tertiary);
+  font-size: 12px;
+  line-height: 18px;
+}
+
+.footerNotice[data-kind='ok'] { color: var(--dsw-alias-state-success-primary); }
+.footerNotice[data-kind='error'] { color: var(--dsw-alias-state-error-primary); }
+
+.settingsFooterActions {
+  display: flex;
+  flex: none;
+  align-items: center;
+  gap: 8px;
+}
+
+.settingsPrimaryButton,
+.settingsSecondaryButton {
+  box-sizing: border-box;
+  display: inline-flex;
+  height: 36px;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  padding: 0 14px;
+  font: inherit;
+  font-size: 14px;
+  line-height: 22px;
+  cursor: pointer;
+}
+
+.settingsPrimaryButton {
+  border: none;
+  background: var(--dsw-alias-button-primary-fill);
+  color: var(--dsw-alias-label-primary-foreground);
+}
+
+.settingsPrimaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-button-primary-hover);
+}
+
+.settingsSecondaryButton {
+  border: 1px solid var(--dsw-alias-border-l2);
+  background: transparent;
+  color: var(--dsw-alias-label-primary);
+}
+
+.settingsSecondaryButton:hover:not(:disabled) {
+  background: var(--dsw-alias-interactive-bg-hover-solid);
+}
+
+.settingsPrimaryButton:disabled,
+.settingsSecondaryButton:disabled {
+  cursor: default;
+  opacity: .4;
+}
+
+.settingsPrimaryButton:focus-visible,
+.settingsSecondaryButton:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px var(--dsw-alias-border-l3);
+}
+
 .button,
 .dangerButton,
 .primaryButton {
@@ -433,4 +515,6 @@
   .serverActions .buttonGroup { align-self: flex-end; }
   .formGrid { grid-template-columns: minmax(0, 1fr); }
   .field[data-wide='true'] { grid-column: auto; }
+  .settingsFooter { align-items: stretch; flex-direction: column; }
+  .settingsFooterActions { justify-content: flex-end; }
 }

@@ -241,6 +241,8 @@ pnpm run build:official
 ## 16. Desktop Lifecycle And UX Constraints
 
 - Launch Harness with the embedded Node runtime and the official CLI entry through `child-control.mjs`.
+- Every desktop-managed Harness Web launch must explicitly pass `--no-open`. The production command shape is `node --import child-control.mjs <cli> --profile web --no-open --host 127.0.0.1 --port 0`.
+- Seed build and smoke-test launches must also pass `--no-open` so validation never opens the system browser. Keep the argument regression test in `internal/runtime/validation_test.go`.
 - Bind only to `127.0.0.1` and use an ephemeral port.
 - Accept only a strict loopback ready line and verify the homepage contains `window.__DSH_BOOT__` before navigation.
 - After Harness becomes ready, keep the splash visible for the configured final hold before completing the transition.
@@ -274,6 +276,10 @@ repository source
 - When replacing an installed resource for a smoke test, stop the running application, keep a precise rollback copy until readiness succeeds, then remove only that rollback copy.
 - Preserve unrelated worktree changes. This project frequently has intentional uncommitted work; inspect `git status` and focused diffs before editing.
 - Do not commit, push, tag, publish a release, or change a remote unless explicitly requested.
+- `task release:windows` is the full sequential release entry: verified seed, production EXE, then NSIS. Do not restore parallel Task dependencies that write `dist/windows/stage`.
+- `task package:windows` is the fast packaging entry. It must only package a current fingerprint-verified stage and must fail with a precise rebuild instruction when seed or desktop inputs changed.
+- `task seed:windows` may restore an immutable verified seed cache keyed by locked Harness/toolchain inputs and built-in plugin source. A cache hit must occur before cleaning the mutable Harness checkout or extracting build tools.
+- Source fingerprint traversal must prune ignored build/dependency directories before descending into them. Do not reintroduce recursive enumeration followed by post-filtering of `node_modules`, `lib`, or `dist`.
 
 ## 18. Verification Gates
 
@@ -328,6 +334,11 @@ For source changes, run the smallest relevant checks first, then the release-app
 ## 20. Packaging Rules
 
 - Do not build or rebuild NSIS unless the user explicitly asks for packaging.
+- If packaging cleanup fails in a generated deep dependency tree, remove only verified cache targets beneath `dist/windows/seed-build`. Never extend that cleanup to repository source, user data, `%APPDATA%`, `%LOCALAPPDATA%`, or the shared pnpm store.
+- Treat `git clean: Directory not empty`, PowerShell `PathNotFound`, and Node `fs.rmSync` `EPERM` as transient cleanup failures, not permission to broaden the deletion scope. Use normalized Windows paths and the project's existing Node/long-path cleanup approach.
+- Never run `git clean -fdx` through a corrupted pnpm workspace dependency tree. Leave the checkout, detach the entire generated Harness checkout, initialize the pinned commit in a fresh directory, delete the detached tree with the long-path helper, preserve `dist/windows/seed-build/pnpm-store`, and retry the frozen install once.
+- Copy seed cache trees with the long-path-safe directory copy helper, not recursive PowerShell `Copy-Item`.
+- A Node executable cannot reliably delete its own parent directory on Windows. Copy it outside the cleanup target, such as `%TEMP%`, before using it to remove a directory that contains the original `node.exe`.
 - Before packaging, regenerate/verify the complete stage from current source. Never assume an existing installer or stage is current.
 - `scripts/prepare-windows-seed.ps1` is responsible for:
   - verifying locked downloads;
@@ -350,7 +361,10 @@ For source changes, run the smallest relevant checks first, then the release-app
 - Installer dependency deployment uses embedded pnpm and the selected allowed registry.
 - Large old resources or dependency directories should be detached by rename and cleaned outside the critical install path.
 - After generating `dist/windows/DSH-DeskTop-Setup-x64.exe`, calculate a new SHA-256 and update the sidecar. Never reuse a previous checksum.
-- Treat any existing NSIS file as stale until its contents, timestamp, version, seed commit, plugin version, and checksum are verified against current source.
+- NSIS packaging must fingerprint the verified seed, desktop executable, installer sources, app version, and compiler version. If that manifest, installer hash, and sidecar all match, reuse the installer without recompression.
+- A real NSIS rebuild must write to a temporary installer path and replace the public installer only after successful compilation.
+- `desktop-build.json` and `resources/seed/build-manifest.json` are build-verification metadata only. Validate them before packaging, but do not include them in the installed payload.
+- Treat an existing NSIS file as stale until its installer-input fingerprint, embedded version/seed/plugin inputs, file hash, and checksum sidecar are verified. File timestamps are not cache identity.
 
 ## 21. Release And Update Model
 

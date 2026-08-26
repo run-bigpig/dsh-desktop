@@ -59,7 +59,9 @@ func ProbeBootManifest(client *http.Client, raw string, timeout time.Duration) e
 			body, readErr := io.ReadAll(io.LimitReader(resp.Body, 2<<20))
 			_ = resp.Body.Close()
 			sameOrigin := resp.Request != nil && resp.Request.URL.Scheme == expected.Scheme && resp.Request.URL.Host == expected.Host
-			if readErr == nil && sameOrigin && resp.StatusCode >= 200 && resp.StatusCode < 300 && strings.Contains(string(body), "window.__DSH_BOOT__") {
+			hasBootManifest := strings.Contains(string(body), "window.__DSH_BOOT__") ||
+				strings.Contains(string(body), `globalThis["__DSH_BOOT__"]`)
+			if readErr == nil && sameOrigin && resp.StatusCode >= 200 && resp.StatusCode < 300 && hasBootManifest {
 				return nil
 			}
 			if readErr != nil {
