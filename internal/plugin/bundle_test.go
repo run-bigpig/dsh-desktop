@@ -22,6 +22,7 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
     "@run-bigpig/dsh-desktop-marketplace-host": "file:C:/old-run-bigpig/host-0.1.9.tgz",
     "@run-bigpig/dsh-desktop-marketplace-client": "file:C:/old-run-bigpig/client-0.1.9.tgz",
     "@run-bigpig/dsh-desktop-marketplace": "file:C:/old-run-bigpig/bundle-0.1.9.tgz",
+    "dsh-web-tools": "file:C:/old/web-tools",
     "example-plugin": "1.2.3"
   },
   "dsh": { "profile": { "bundles": ["@deepseek-ai/dsh-base", "@deepseek-ai/dsh-desktop-marketplace", "example-plugin"] } }
@@ -34,6 +35,7 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 		filepath.Join(directory, "plugin-host"),
 		filepath.Join(directory, "plugin-client"),
 		filepath.Join(directory, "plugin-bundle"),
+		filepath.Join(directory, "web-tools"),
 	}
 	backup, changed, err := rewriteManagedBundleSpecs(manifest, artifacts)
 	if err != nil {
@@ -59,6 +61,9 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 			t.Fatalf("dependency %s = %q, want %q", packageName, document.Dependencies[packageName], expected)
 		}
 		for _, legacyPackages := range legacyManagedBundlePackageSets {
+			if index >= len(legacyPackages) {
+				continue
+			}
 			if _, ok := document.Dependencies[legacyPackages[index]]; ok {
 				t.Fatalf("legacy dependency %s was retained", legacyPackages[index])
 			}

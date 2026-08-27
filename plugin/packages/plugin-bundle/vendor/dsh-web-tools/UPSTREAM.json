@@ -1,0 +1,14 @@
+{
+  "repository": "https://github.com/A3Boy/dsh-web-tools.git",
+  "commit": "e664521d51c4e6fa738e79126bf2e78e2cc62455",
+  "tag": "v0.3.0",
+  "version": "0.3.0",
+  "license": "MIT",
+  "adaptations": [
+    "Desktop Bundle owns the Cordis patch layer",
+    "updates are delivered only with DSH-DeskTop releases",
+    "browser state is stored under the DSH-DeskTop private data root",
+    "Windows browser child processes hide console windows",
+    "runtime dependency and Harness peer versions are locked by the desktop build"
+  ]
+}

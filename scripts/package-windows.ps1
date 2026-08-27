@@ -64,13 +64,19 @@ if (Test-Path $packagedRuntime) {
   throw "Windows installer must generate the Harness runtime during installation: $packagedRuntime"
 }
 $pluginRoot = Join-Path $stage "resources/plugin"
-foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
-  $manifest = Join-Path $pluginRoot ($directory + "/package.json")
+$pluginPackages = @(
+  @{ directory = "plugin-host"; version = $seedManifest.pluginVersion },
+  @{ directory = "plugin-client"; version = $seedManifest.pluginVersion },
+  @{ directory = "plugin-bundle"; version = $seedManifest.pluginVersion },
+  @{ directory = "web-tools"; version = $seedManifest.webToolsVersion }
+)
+foreach ($package in $pluginPackages) {
+  $manifest = Join-Path $pluginRoot ($package.directory + "/package.json")
   if (-not (Test-Path $manifest)) {
     throw "Windows stage is missing the source-built Desktop Plugin package: $manifest"
   }
   $pluginManifest = Get-Content $manifest -Raw | ConvertFrom-Json
-  if ($pluginManifest.version -ne $seedManifest.pluginVersion) {
+  if ($pluginManifest.version -ne $package.version) {
     throw "Windows stage contains a stale built-in plugin package: $manifest"
   }
 }

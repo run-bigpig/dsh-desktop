@@ -4,6 +4,7 @@ import {
   IconRefreshOutline14, MarkdownText, Menu, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceFileSnapshot, WorkspaceFileWriteResult } from '@run-bigpig/dsh-desktop-plugin-host/types'
+import { HarnessImage } from './ImagePreview.tsx'
 import css from './WorkspacePreview.module.css'
 
 export type PreviewKind = 'markdown' | 'html' | 'code' | 'csv' | 'image' | 'pdf' | 'office' | 'text' | 'diff'
@@ -27,6 +28,7 @@ export interface PreviewTab {
 
 export interface WorkspacePreviewCopy {
   readonly preview: string
+  readonly closePreview: string
   readonly noPreview: string
   readonly noPreviewHint: string
   readonly close: string
@@ -239,12 +241,12 @@ function PreviewContent({ tab, sourceMode, split, ratio, onRatio, onChange, onSa
       <div className={css.split}>
         <div className={css.splitSide} style={{ width: `${ratio}%` }}><Editor value={content} onChange={onChange} onSave={onSave} /></div>
         <ResizeHandle ratio={ratio} onRatio={onRatio} />
-        <div className={css.splitSide} style={{ width: `${100 - ratio}%` }}><Rendered tab={tab} content={content} /></div>
+        <div className={css.splitSide} style={{ width: `${100 - ratio}%` }}><Rendered tab={tab} content={content} closeLabel={copy.closePreview} /></div>
       </div>
     )
   }
   if (isEditable(tab) && (sourceMode || !supportsRendered(tab.kind))) return <Editor value={content} onChange={onChange} onSave={onSave} />
-  return <Rendered tab={tab} content={content} />
+  return <Rendered tab={tab} content={content} closeLabel={copy.closePreview} />
 }
 
 function Editor({ value, onChange, onSave }: { value: string; onChange: (value: string) => void; onSave: () => void }): ReactNode {
@@ -253,12 +255,22 @@ function Editor({ value, onChange, onSave }: { value: string; onChange: (value: 
   }} />
 }
 
-function Rendered({ tab, content }: { tab: PreviewTab; content: string }): ReactNode {
+function Rendered({ tab, content, closeLabel }: { tab: PreviewTab; content: string; closeLabel: string }): ReactNode {
   if (tab.kind === 'markdown') return <div className={css.markdown}><MarkdownText text={content} /></div>
   if (tab.kind === 'html') return <iframe className={css.frame} srcDoc={content} sandbox="" title={tab.title} />
   if (tab.kind === 'csv') return <CsvPreview content={content} />
   if (tab.kind === 'diff') return <DiffPreview content={content} />
-  if (tab.kind === 'image') return <div className={css.image}><img src={content} alt={tab.title} /></div>
+  if (tab.kind === 'image') return (
+    <div className={css.image}>
+      <HarnessImage
+        rootClassName={css.imageComponent}
+        imageClassName={css.imageElement}
+        src={content}
+        alt={tab.title}
+        closeLabel={closeLabel}
+      />
+    </div>
+  )
   if (tab.kind === 'pdf') return <iframe className={css.frame} src={content} title={tab.title} />
   return <pre className={css.code}><code>{content}</code></pre>
 }

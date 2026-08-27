@@ -105,11 +105,18 @@ await mkdir(overlay, { recursive: true })
 for (const name of ['plugin-host', 'plugin-client', 'plugin-bundle']) {
   await cp(resolve(project, 'packages', name), resolve(overlay, name), { recursive: true })
 }
+await cp(
+  resolve(project, 'packages/plugin-bundle/vendor/dsh-web-tools'),
+  resolve(overlay, 'dsh-web-tools'),
+  { recursive: true },
+)
+await rm(resolve(overlay, 'plugin-bundle/vendor'), { recursive: true, force: true })
 await run(pnpm, [
   'install', '--frozen-lockfile=false', '--ignore-scripts',
   '--filter', '@run-bigpig/dsh-desktop-plugin-host...',
   '--filter', '@run-bigpig/dsh-desktop-plugin-client...',
   '--filter', '@run-bigpig/dsh-desktop-plugin...',
+  '--filter', 'dsh-web-tools...',
   '--store-dir', store, '--prefer-offline',
 ], harness)
 const harnessRequire = createRequire(resolve(harness, 'package.json'))
@@ -151,6 +158,23 @@ await run(process.execPath, [tsc, '-b', 'packages/desktop/plugin-client'], harne
 await run(process.execPath, [
   tsdown, '--config', 'packages/desktop/plugin-client/tsdown.config.ts', '--env.DSH_BUILD_FACE', 'client',
 ], harness)
+const clientSourceMap = JSON.parse(await readFile(resolve(overlay, 'plugin-client/lib/client.js.map'), 'utf8'))
+const clientSources = Array.isArray(clientSourceMap.sources) ? clientSourceMap.sources : []
+for (const source of ['@rc-component/image/es/Image.js', '@rc-component/image/es/PreviewGroup.js']) {
+  if (!clientSources.some(candidate => typeof candidate === 'string' && candidate.replaceAll('\\', '/').endsWith(source))) {
+    throw new Error(`Desktop image preview did not bundle the ESM source ${source}`)
+  }
+}
+const webToolsDir = resolve(overlay, 'dsh-web-tools')
+await rm(resolve(webToolsDir, 'lib'), { recursive: true, force: true })
+await run(process.execPath, [tsc, '-p', 'packages/desktop/dsh-web-tools/tsconfig.json', '--noEmit'], harness)
+await run(process.execPath, [tsc, '-p', 'packages/desktop/dsh-web-tools/tsconfig.client.json', '--noEmit'], harness)
+await run(process.execPath, [tsc, '-p', 'packages/desktop/dsh-web-tools/tsconfig.build.json'], harness)
+const webToolsRequire = createRequire(resolve(webToolsDir, 'package.json'))
+const webToolsTsdown = webToolsRequire.resolve('tsdown/run')
+await run(process.execPath, [
+  webToolsTsdown, '--config', 'packages/desktop/dsh-web-tools/tsdown.config.ts',
+], harness)
 
 const versions = new Map()
 for (const root of ['vendor', 'packages', 'apps', 'native']) {
@@ -158,7 +182,7 @@ for (const root of ['vendor', 'packages', 'apps', 'native']) {
 }
 await stagePackage(hostDir, resolve(output, 'plugin-host'), {
   files: [
-    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/ta-presentation.js', 'lib/thinking.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
+    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/ta-presentation.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
     'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts',
   ],
   trees: [{ path: 'lib/types', suffixes: ['.js', '.d.ts'] }],
@@ -171,4 +195,25 @@ await stagePackage(resolve(overlay, 'plugin-bundle'), resolve(output, 'plugin-bu
   files: ['package.json', 'cordis.patch.yml', 'THIRD_PARTY_NOTICES.md'],
   trees: [{ path: 'LICENSES', suffixes: ['.txt'] }],
 }, versions)
+const webToolsOutput = resolve(output, 'web-tools')
+await stagePackage(webToolsDir, webToolsOutput, {
+  files: [
+    'package.json', 'cordis.patch.yml', 'LICENSE', 'README.md', 'README.zh-CN.md',
+    'CONTRIBUTING.md', 'UPSTREAM.json',
+  ],
+  trees: [{ path: 'lib', suffixes: ['.js', '.d.ts'] }],
+}, versions)
+const webToolsManifestText = await readFile(resolve(webToolsOutput, 'package.json'), 'utf8')
+const webToolsManifest = JSON.parse(webToolsManifestText)
+if (webToolsManifest.name !== 'dsh-web-tools' || webToolsManifest.version !== '0.3.0') {
+  throw new Error('staged dsh-web-tools package identity is invalid')
+}
+if (webToolsManifestText.includes('workspace:') || webToolsManifest.dsh?.bundle !== undefined) {
+  throw new Error('staged dsh-web-tools package retained a workspace dependency or Bundle patch')
+}
+for (const file of ['lib/host/index.js', 'lib/client.js']) {
+  if (!await exists(resolve(webToolsOutput, file))) {
+    throw new Error(`staged dsh-web-tools package is missing ${file}`)
+  }
+}
 process.stdout.write(`Desktop integration package directories written to ${basename(output)}\n`)

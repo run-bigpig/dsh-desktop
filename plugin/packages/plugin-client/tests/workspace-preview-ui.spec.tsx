@@ -1,6 +1,6 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WorkspacePreview, tabFromFile, type WorkspacePreviewCopy,
@@ -10,6 +10,7 @@ afterEach(() => { cleanup() })
 
 const copy: WorkspacePreviewCopy = {
   preview: 'Preview',
+  closePreview: 'Close preview',
   noPreview: 'No file is open',
   noPreviewHint: 'Choose a file to preview it.',
   close: 'Close tab',
@@ -61,5 +62,32 @@ describe('workspace preview UI', () => {
     fireEvent.click(view.getByRole('menuitem', { name: 'beta.ts' }))
 
     expect(onActivate).toHaveBeenCalledWith(tabs[1].id)
+  })
+
+  it('uses the Ant Design image preview for workspace images', async () => {
+    const tab = tabFromFile({
+      path: 'assets/preview.png',
+      content: 'data:image/png;base64,iVBORw0KGgo=',
+      encoding: 'base64',
+      mediaType: 'image/png',
+      size: 68,
+      mtime: 1,
+      truncated: false,
+    })
+    const view = render(<WorkspacePreview
+      tabs={[tab]}
+      activeId={tab.id}
+      copy={copy}
+      onActivate={vi.fn()}
+      onClose={vi.fn()}
+      onChange={vi.fn()}
+      onRefresh={vi.fn()}
+      onSave={vi.fn().mockResolvedValue(undefined)}
+    />)
+
+    fireEvent.click(view.getByRole('button', { name: 'preview.png' }))
+    expect(view.getByRole('dialog', { name: 'preview.png' })).toBeTruthy()
+    fireEvent.click(view.getByRole('button', { name: 'Close preview' }))
+    await waitFor(() => { expect(view.queryByRole('dialog', { name: 'preview.png' })).toBeNull() })
   })
 })

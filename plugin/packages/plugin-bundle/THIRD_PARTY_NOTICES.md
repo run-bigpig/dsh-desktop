@@ -28,13 +28,6 @@ The document conversion capability is adapted from
 distributed under the MIT License. The Firecrawl source reviewed for this
 integration was commit `7df4b2e4213c033cfb8e94abc57ab88bb1e9b48c`.
 
-The thinking-level override capability and settings surface are adapted from
-`my-dsh-plugin/thinking-level-override` commit
-`b7795132580a34b96b3b84a74fd4914b96f509e7`. The upstream project is licensed
-under the Apache License, Version 2.0. The files were modified to fit the
-DSH-DeskTop built-in host/client/bundle architecture and the pinned Harness
-extension points.
-
 The TA presentation card bundles `@ant-design/plots` version `2.6.5` and its
 AntV rendering dependencies to provide line, bar, funnel, heatmap, and Sankey
 views. The bundled Ant Design and AntV packages are distributed under the MIT
@@ -42,6 +35,12 @@ License; this includes `@ant-design/charts-util`, `@antv/g2`,
 `@antv/g2-extension-plot`, `@antv/g`, `@antv/component`, the AntV canvas and
 geometry packages, and their MIT-licensed utility dependencies. The applicable
 MIT license text is included in `LICENSES/ant-design-plots-MIT.txt`.
+
+Conversation image results and workspace image previews bundle
+`@rc-component/image` version `1.10.0`, the image display and preview component
+used by the Ant Design 6 image surface. It and its bundled React Component
+dependencies are distributed under the MIT License. The applicable license
+text is included in `LICENSES/rc-component-image-MIT.txt`.
 
 The same rendering bundle includes `d3-hierarchy` version `3.1.2`, distributed
 under the ISC License, and `tslib` version `2.8.1`, distributed under the 0BSD
@@ -60,3 +59,16 @@ That upstream package is itself a behavioral re-implementation of the AionUi
 right-panel system (`iOfficeAI/AionUi`, version 2.1.53), which is licensed under
 the Apache License, Version 2.0. No AionUi application source is vendored by
 DSH-DeskTop.
+
+The built-in web search, web fetch, provider credential-pool, and browser-based
+X/Twitter and Xiaohongshu capabilities vendor `A3Boy/dsh-web-tools` version
+`0.3.0`, commit `e664521d51c4e6fa738e79126bf2e78e2cc62455`. The upstream
+project is distributed under the MIT License. It was modified so updates are
+delivered with DSH-DeskTop releases, browser state is kept under the desktop
+private data directory, Windows browser child processes remain hidden, and the
+desktop Bundle remains the sole Cordis patch owner. The license text is
+included in `LICENSES/dsh-web-tools-MIT.txt`.
+
+The host package depends on `undici` version `6.28.0` and `ws` version `8.21.0`.
+Both are distributed under the MIT License; their license texts are included
+in `LICENSES/undici-MIT.txt` and `LICENSES/ws-MIT.txt`.

@@ -27,10 +27,3 @@ The document conversion capability is adapted from
 `@firecrawl/anydoc` version `0.1.8` from the Firecrawl anydoc project. Both are
 distributed under the MIT License. The Firecrawl source reviewed for this
 integration was commit `7df4b2e4213c033cfb8e94abc57ab88bb1e9b48c`.
-
-The thinking-level override capability and settings surface are adapted from
-`my-dsh-plugin/thinking-level-override` commit
-`b7795132580a34b96b3b84a74fd4914b96f509e7`. The upstream project is licensed
-under the Apache License, Version 2.0. The files were modified to fit the
-DSH-DeskTop built-in host/client/bundle architecture and the pinned Harness
-extension points.

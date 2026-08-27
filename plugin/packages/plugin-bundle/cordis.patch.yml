@@ -4,11 +4,25 @@
 
 - id: web
   name: '@deepseek-ai/dsh-web'
-  config: {}
+  config:
+    searchProvider: dsh-web-tools
+    fetchProvider: dsh-web-tools-fetch
 
 - id: web-search-deepseek
   name: '@deepseek-ai/dsh-web-search-deepseek'
   disabled: true
+
+- id: tool-web
+  name: '@deepseek-ai/dsh-tool-web'
+  disabled: false
+  config:
+    search: true
+    fetch: true
+    searchMaxQueries: 4
+    searchMaxResults: 8
+    searchTimeoutMs: 60000
+    fetchTimeoutMs: 30000
+    fetchMaxOutputChars: 200000
 
 - id: agent-default-model
   name: '@deepseek-ai/dsh-agent-default-model'
@@ -20,6 +34,8 @@
   insert:
     - id: desktop-integration-host
       name: '@run-bigpig/dsh-desktop-plugin-host'
+    - id: desktop-web-tools
+      name: 'dsh-web-tools'
     - id: desktop-integration-mcp
       name: '@run-bigpig/dsh-desktop-plugin-host/mcp'
       config:
@@ -42,11 +58,5 @@
       name: '@run-bigpig/dsh-desktop-plugin-host/git'
     - id: desktop-integration-ta-presentation
       name: '@run-bigpig/dsh-desktop-plugin-host/ta-presentation'
-    - id: desktop-integration-thinking-levels
-      name: '@run-bigpig/dsh-desktop-plugin-host/thinking'
-      config:
-        enableMappings: false
-        onUnsupported: fail
-        rules: []
     - id: desktop-integration-client
       name: '@run-bigpig/dsh-desktop-plugin-client'

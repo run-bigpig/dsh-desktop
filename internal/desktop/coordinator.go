@@ -163,7 +163,7 @@ func (c *Coordinator) Store() *state.Store    { return c.store }
 func (c *Coordinator) Paths() appconfig.Paths { return c.paths }
 
 type dshTerminalConfig struct {
-	Node, CLI, HarnessHome, WorkingDirectory, StateDirectory string
+	Node, PNPM, PNPMStore, CLI, HarnessHome, WorkingDirectory, StateDirectory string
 }
 
 func (c *Coordinator) OpenDSHTerminal() error {
@@ -186,6 +186,7 @@ func (c *Coordinator) dshTerminalConfig() (dshTerminalConfig, error) {
 	cli := filepath.Join(runtimeDir, "apps", "cli", "lib", "bin.js")
 	for _, required := range []struct{ label, path string }{
 		{"内置 Node", c.tools.Node},
+		{"内置 pnpm", c.tools.PNPM},
 		{"Harness CLI", cli},
 		{"工作目录", c.cfg.WorkingDirectory},
 	} {
@@ -195,6 +196,8 @@ func (c *Coordinator) dshTerminalConfig() (dshTerminalConfig, error) {
 	}
 	return dshTerminalConfig{
 		Node:             c.tools.Node,
+		PNPM:             c.tools.PNPM,
+		PNPMStore:        c.paths.PNPMStore,
 		CLI:              cli,
 		HarnessHome:      c.paths.HarnessHome,
 		WorkingDirectory: c.cfg.WorkingDirectory,

@@ -1,9 +1,9 @@
 import { useEffect, useRef, useState, type ReactNode } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { ComposerAttachment } from '@deepseek-ai/dsh-client-ui-conversation/client'
-import { IconCloseOutline16, Modal } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type { StoredImageView } from '@run-bigpig/dsh-desktop-plugin-host/types'
+import { HarnessImage, HarnessImageGroup } from './ImagePreview.tsx'
 import type { WorkbenchController } from './SessionWorkbench.tsx'
 import css from './MessageImageGallery.module.css'
 
@@ -47,19 +47,21 @@ export function MessageImageTiles({
   if (images.length === 0) return null
   const variant = images.length === 1 ? 'single' : 'tile'
   return (
-    <div className={css.gallery} data-align={align}>
-      {images.map((image, index) => (
-        <MessageImageTile
-          key={`${String(image.attachment.attachmentId)}:${String(index)}`}
-          attachment={image.attachment}
-          loadImage={loadImage}
-          variant={variant}
-          sessionId={sessionId}
-          controller={controller}
-          t={t}
-        />
-      ))}
-    </div>
+    <HarnessImageGroup label={t('imagePreview')} closeLabel={t('closeImagePreview')}>
+      <div className={css.gallery} data-align={align}>
+        {images.map((image, index) => (
+          <MessageImageTile
+            key={`${String(image.attachment.attachmentId)}:${String(index)}`}
+            attachment={image.attachment}
+            loadImage={loadImage}
+            variant={variant}
+            sessionId={sessionId}
+            controller={controller}
+            t={t}
+          />
+        ))}
+      </div>
+    </HarnessImageGroup>
   )
 }
 
@@ -74,7 +76,6 @@ function MessageImageTile({ attachment, loadImage, variant, sessionId, controlle
   const [attempt, setAttempt] = useState(0)
   const [src, setSrc] = useState<string | null>(null)
   const [error, setError] = useState(false)
-  const [lightbox, setLightbox] = useState(false)
   const source = storedImage(attachment)
   const label = attachment.name ?? t('imageUnnamed')
 
@@ -94,64 +95,39 @@ function MessageImageTile({ attachment, loadImage, variant, sessionId, controlle
 
   const fit = variant === 'single' ? singleFit(attachment) : undefined
   return (
-    <>
-      <div className={css.tile} data-variant={variant} style={fit === undefined ? undefined : { width: fit.width, height: fit.height }}>
-        <button
-          className={css.preview}
-          type="button"
-          aria-label={t('imageOpenNamed', { name: label })}
-          onClick={() => { if (src !== null) setLightbox(true) }}
-        >
-          {src === null
-            ? <span className={css.loading}>{t('imageLoadingShort')}</span>
-            : <img src={src} alt={label} style={fit === undefined ? undefined : { objectPosition: fit.objectPosition }} />}
-        </button>
-        <button
-          className={css.edit}
-          type="button"
-          disabled={src === null}
-          aria-label={t('imageEditNamed', { name: label })}
-          title={t('imageEdit')}
-          onClick={() => {
-            if (src === null) return
-            controller.openImage({
-              sessionId,
-              sourceImage: source,
-              label,
-              loadImage: () => loadImage(attachment),
-            })
-          }}
-        >
-          <EditGlyph />
-        </button>
-      </div>
-      {lightbox && src !== null && <ImageLightbox src={src} label={label} onClose={() => { setLightbox(false) }} t={t} />}
-    </>
-  )
-}
-
-function ImageLightbox({ src, label, onClose, t }: {
-  readonly src: string
-  readonly label: string
-  readonly onClose: () => void
-  readonly t: MessageImageGalleryProps['t']
-}): ReactNode {
-  return (
-    <Modal
-      open
-      headless
-      title={t('imagePreview')}
-      closeLabel={t('close')}
-      className={css.lightboxDialog ?? ''}
-      onClose={onClose}
-    >
-      <div className={css.lightboxContent}>
-        <img src={src} alt={label} />
-        <button className={css.lightboxClose} type="button" aria-label={t('close')} onClick={onClose}>
-          <IconCloseOutline16 />
-        </button>
-      </div>
-    </Modal>
+    <div className={css.tile} data-variant={variant} style={fit === undefined ? undefined : { width: fit.width, height: fit.height }}>
+      {src === null
+        ? <span className={css.loading}>{t('imageLoadingShort')}</span>
+        : <HarnessImage
+          rootClassName={css.preview}
+          src={src}
+          alt={label}
+          ariaLabel={t('imageOpenNamed', { name: label })}
+          width="100%"
+          height="100%"
+          closeLabel={t('closeImagePreview')}
+          imageStyle={fit === undefined ? { objectFit: 'cover' } : { objectFit: 'cover', objectPosition: fit.objectPosition }}
+          onError={() => { setError(true) }}
+        />}
+      <button
+        className={css.edit}
+        type="button"
+        disabled={src === null}
+        aria-label={t('imageEditNamed', { name: label })}
+        title={t('imageEdit')}
+        onClick={() => {
+          if (src === null) return
+          controller.openImage({
+            sessionId,
+            sourceImage: source,
+            label,
+            loadImage: () => loadImage(attachment),
+          })
+        }}
+      >
+        <EditGlyph />
+      </button>
+    </div>
   )
 }
 

@@ -15,6 +15,8 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 	root := t.TempDir()
 	config := dshTerminalConfig{
 		Node:             filepath.Join(root, "toolchain", "node.exe"),
+		PNPM:             filepath.Join(root, "toolchain", "pnpm", "pnpm.exe"),
+		PNPMStore:        filepath.Join(root, "pnpm-store"),
 		CLI:              filepath.Join(root, "runtime", "bin.js"),
 		HarnessHome:      filepath.Join(root, "harness-home"),
 		WorkingDirectory: filepath.Join(root, "workspaces"),
@@ -54,6 +56,9 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 		`set "DSH_HOME=` + config.HarnessHome + `"`,
 		`set "DSH_DESKTOP_NODE=` + config.Node + `"`,
 		`set "DSH_DESKTOP_CLI=` + config.CLI + `"`,
+		`set "PNPM_HOME=` + filepath.Dir(config.PNPM) + `"`,
+		`set "npm_config_store_dir=` + config.PNPMStore + `"`,
+		`set "PATH=` + filepath.Join(config.StateDirectory, "terminal-bin") + `;` + filepath.Dir(config.Node) + `;` + filepath.Dir(config.PNPM) + `;%PATH%"`,
 		`cd /d "` + config.WorkingDirectory + `"`,
 		"title DeepSeek Harness dsh",
 	} {
@@ -66,6 +71,8 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 func TestTerminalBootstrapEscapesPercent(t *testing.T) {
 	config := dshTerminalConfig{
 		Node:             `C:\tool%set%\node.exe`,
+		PNPM:             `C:\tool%set%\pnpm\pnpm.exe`,
+		PNPMStore:        `C:\home%set%\pnpm-store`,
 		CLI:              `C:\runtime\bin.js`,
 		HarnessHome:      `C:\home`,
 		WorkingDirectory: `C:\workspace`,
@@ -76,5 +83,8 @@ func TestTerminalBootstrapEscapesPercent(t *testing.T) {
 	}
 	if !strings.Contains(contents, `C:\tool%%set%%\node.exe`) {
 		t.Fatalf("percent signs were not escaped:\n%s", contents)
+	}
+	if !strings.Contains(contents, `C:\home%%set%%\pnpm-store`) {
+		t.Fatalf("store percent signs were not escaped:\n%s", contents)
 	}
 }

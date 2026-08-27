@@ -7,6 +7,7 @@ import type {
   MarketplaceOperation,
   MarketplaceSnapshot,
 } from './types.ts'
+import { registerSkinSettings } from './skin-settings.ts'
 
 export type * from './types.ts'
 
@@ -36,6 +37,7 @@ async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
 export class DesktopGateway extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'desktop')
+    registerSkinSettings(ctx)
   }
 
   @Remote('capabilities')

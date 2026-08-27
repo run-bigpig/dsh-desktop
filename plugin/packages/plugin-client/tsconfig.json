@@ -18,6 +18,7 @@
     { "path": "../../client/ui-layout" },
     { "path": "../../client/ui-conversation" },
     { "path": "../../client/ui-settings" },
+    { "path": "../../client/ui-theme" },
     { "path": "../../client/ui-slots" },
     { "path": "../../runtime-diagnostics/invariants" },
     { "path": "../../context/file-reference" }

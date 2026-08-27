@@ -1,9 +1,9 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ConnectionHandle } from '@deepseek-ai/dsh-client-connection/client'
 import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
+import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
@@ -54,7 +54,6 @@ import {
   documentReferenceOf,
 } from './DocumentUploadBridge.tsx'
 import { DocumentMessageView, type DocumentMessageInjected } from './DocumentMessageView.tsx'
-import { ThinkingLevelSection } from './ThinkingLevelSection.tsx'
 import { TA_DIRECT_PRESENTATION_TOOLS, TaPresentationCard } from './TaPresentationCard.tsx'
 import { ImageToolView, type ImageToolViewInjected } from './ImageToolView.tsx'
 import {
@@ -73,18 +72,18 @@ import {
   type WorkspaceReferenceDropDockInjected,
   workspaceFileReferenceOf,
 } from './SessionWorkbench.tsx'
+import { SkinBrandMark, SkinBrandName } from './SkinBrand.tsx'
+import { SkinBackgroundPresenter } from './skin-background.ts'
+import { SkinSettingsRow, type SkinSettingsRowInjected } from './SkinSettingsRow.tsx'
 import {
-  LLM_PI_AI_NS,
-  THINKING_OVERRIDE_NS,
-  ThinkingOverrideSectionController,
-  type ReasoningEfforts,
-} from './thinking-level-controller.ts'
-import { en as thinkingEn, zh as thinkingZh, type Dictionary as ThinkingLocaleKey } from './thinking-level-locales.ts'
+  SKIN_SETTINGS_NAMESPACE, SkinController, type SkinBrand, type SkinPreset, type SkinSettings,
+} from './skin-controller.ts'
 import {
-  desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, taPresentationEn, taPresentationZh,
+  desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, skinEn, skinZh,
+  taPresentationEn, taPresentationZh,
   visionEn, visionZh, workbenchEn, workbenchZh, zh,
   type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
-  type TaPresentationLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
+  type SkinLocaleKey, type TaPresentationLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
@@ -97,7 +96,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'documents.upload': DocumentsLocaleKey
     'desktop.workbench': WorkbenchLocaleKey
     'desktop.taPresentation': TaPresentationLocaleKey
-    'thinking-level-override': ThinkingLocaleKey
+    'settings.desktopSkin': SkinLocaleKey
   }
 }
 
@@ -109,8 +108,8 @@ export const IMAGE_NS = 'settings.image'
 export const DOCUMENTS_NS = 'documents.upload'
 export const WORKBENCH_NS = 'desktop.workbench'
 export const TA_PRESENTATION_NS = 'desktop.taPresentation'
-export const THINKING_NS = 'thinking-level-override'
-export const inject = ['slots', 'locale', 'remote', 'connection', 'settingsScope', 'inputTriggers', 'sessions']
+export const SKIN_NS = 'settings.desktopSkin'
+export const inject = ['slots', 'locale', 'remote', 'inputTriggers', 'sessions', 'settingsScope', 'theme']
 
 interface DesktopRemote {
   capabilities: () => Promise<RemoteResult<DesktopCapabilities>>
@@ -218,7 +217,66 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(DOCUMENTS_NS, { zh: documentsZh, en: documentsEn }), 'desktop-documents: dictionaries')
   ctx.effect(() => ctx.locale.register(WORKBENCH_NS, { zh: workbenchZh, en: workbenchEn }), 'desktop-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(TA_PRESENTATION_NS, { zh: taPresentationZh, en: taPresentationEn }), 'desktop-ta-presentation: dictionaries')
-  ctx.effect(() => ctx.locale.register(THINKING_NS, { zh: thinkingZh, en: thinkingEn }), 'desktop-thinking-levels: dictionaries')
+  ctx.effect(() => ctx.locale.register(SKIN_NS, { zh: skinZh, en: skinEn }), 'desktop-skin: dictionaries')
+
+  const skinScope = ctx.settingsScope.bind<SkinSettings>({ namespace: SKIN_SETTINGS_NAMESPACE })
+  const skinBackground = new SkinBackgroundPresenter()
+  let disposeCustomBrand: (() => void) | undefined
+  const setCustomBrand = (enabled: boolean): void => {
+    if (!enabled) {
+      disposeCustomBrand?.()
+      disposeCustomBrand = undefined
+      return
+    }
+    if (disposeCustomBrand !== undefined) return
+    const disposers = [
+      ctx.slots.inject('sidebar.brand.mark', () =>
+        ctx.slots.register({ name: 'sidebar.brand.mark', priority: -10 }, SkinBrandMark)),
+      ctx.slots.inject('sidebar.brand.name', () =>
+        ctx.slots.register({ name: 'sidebar.brand.name', priority: -10 }, SkinBrandName)),
+      ctx.slots.inject('conversation.hero.brand.mark', () =>
+        ctx.slots.register({ name: 'conversation.hero.brand.mark', priority: -10 }, SkinBrandMark)),
+    ]
+    disposeCustomBrand = () => {
+      for (const dispose of disposers.reverse()) dispose()
+    }
+  }
+  ctx.effect(() => {
+    const controller = new SkinController(
+      skinScope,
+      ctx.theme,
+      setCustomBrand,
+      image => { skinBackground.set(image) },
+    )
+    return () => {
+      controller.dispose()
+      skinBackground.dispose()
+    }
+  }, 'desktop-skin: theme and brand synchronization')
+  const skinInjected: SkinSettingsRowInjected = {
+    scope: skinScope,
+    setEnabled: enabled => skinScope.set('enabled', enabled),
+    setPreset: (preset: SkinPreset) => skinScope.set('preset', preset),
+    setBrand: (brand: SkinBrand) => skinScope.set('brand', brand),
+    setBackgroundImage: image => skinScope.set('backgroundImage', image),
+    setTransparency: transparency => skinScope.set('transparency', transparency),
+    clearBackgroundImage: () => skinScope.unset('backgroundImage'),
+    reset: async () => {
+      await skinScope.unset('enabled')
+      await skinScope.unset('preset')
+      await skinScope.unset('brand')
+      await skinScope.unset('backgroundImage')
+      await skinScope.unset('transparency')
+    },
+  }
+  ctx.slots.inject('settings.general.item', () => ctx.slots.register({
+    name: 'settings.general.item',
+    id: 'desktop-skin',
+    order: 15,
+    locale: SKIN_NS,
+    inject: (): SkinSettingsRowInjected => skinInjected,
+  }, SkinSettingsRow))
+
   const workbenchController = new WorkbenchController()
   ctx.slots.inject('conversation.message.images', () => ctx.slots.register({
     name: 'conversation.message.images',
@@ -238,29 +296,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }
     }
   })
-  const connection = ctx.get('connection') as ConnectionHandle
-  const thinkingController = new ThinkingOverrideSectionController(
-    ctx.settingsScope.bind({ namespace: THINKING_OVERRIDE_NS }),
-    ctx.settingsScope.bind({ namespace: LLM_PI_AI_NS }),
-    connection.api,
-  )
-  const thinkingT = ctx.locale.bind(THINKING_NS)
-  ctx.slots.inject('settings.section', () => ctx.slots.register({
-    name: 'settings.section',
-    id: 'thinking-level-override',
-    order: 12,
-    label: () => thinkingT('nav'),
-    locale: THINKING_NS,
-    inject: () => ({
-      hooks: {
-        thinkingOverridePolicy: thinkingController.policySource,
-        piAiSection: thinkingController.piAiSource,
-      },
-      api: connection.api,
-      saveSection: (enableMappings: boolean, changes: Map<string, ReasoningEfforts | undefined>) =>
-        thinkingController.save(enableMappings, changes),
-    }),
-  }, ThinkingLevelSection))
   ctx.inject(['remote.mcpSettings', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       mcpSettings: McpSettingsRemote

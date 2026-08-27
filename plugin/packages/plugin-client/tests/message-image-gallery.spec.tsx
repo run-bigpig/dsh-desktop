@@ -50,7 +50,7 @@ describe('message image gallery', () => {
     expect(controller.getOpen()).toBe(true)
   })
 
-  it('uses the Harness modal for image preview', async () => {
+  it('uses the Ant Design image preview for message images', async () => {
     const attachment = {
       attachmentId: AttachmentId('attachment-preview'),
       mediaType: 'image/png' as const,
@@ -73,8 +73,8 @@ describe('message image gallery', () => {
     fireEvent.click(open)
 
     expect(view.getByRole('dialog', { name: 'Image preview' })).toBeTruthy()
-    fireEvent.click(view.getByRole('button', { name: 'Close workbench' }))
-    expect(view.queryByRole('dialog', { name: 'Image preview' })).toBeNull()
+    fireEvent.click(view.getByRole('button', { name: 'Close image preview' }))
+    await waitFor(() => { expect(view.queryByRole('dialog', { name: 'Image preview' })).toBeNull() })
   })
 
   it('keeps the message attachment independent from legacy approval projections', async () => {

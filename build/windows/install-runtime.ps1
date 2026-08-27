@@ -25,7 +25,7 @@ if (-not (Test-Path $pnpm)) { throw "Embedded pnpm is missing" }
 $node = Join-Path $nodeDir "node.exe"
 if (-not (Test-Path $node)) { throw "Embedded Node is missing" }
 if (-not (Test-Path $materializer)) { throw "Harness workspace materializer is missing" }
-foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
+foreach ($directory in "plugin-host","plugin-client","plugin-bundle","web-tools") {
   if (-not (Test-Path (Join-Path $pluginRoot ($directory + "\package.json")))) {
     throw "Built-in plugin package is missing: $directory"
   }
@@ -129,7 +129,7 @@ if (-not (Test-Path (Join-Path $deploy "lib/bin.js"))) { throw "Harness deploy d
 if (-not (Test-Path (Join-Path $deploy "node_modules"))) { throw "Harness deploy did not create node_modules" }
 
 $pluginDependencies = [ordered]@{}
-foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
+foreach ($directory in "plugin-host","plugin-client","plugin-bundle","web-tools") {
   $manifest = Get-Content (Join-Path $pluginRoot ($directory + "\package.json")) -Raw | ConvertFrom-Json
   $dependenciesProperty = $manifest.PSObject.Properties["dependencies"]
   if ($null -eq $dependenciesProperty) { continue }

@@ -68,6 +68,39 @@ describe('image tool view', () => {
     expect(await view.findByRole('img', { name: 'generated.png' })).toBeTruthy()
   })
 
+  it('keeps the edit card mounted when a running task settles with an image', async () => {
+    const common = {
+      toolName: 'image_edit',
+      sessionId: 'session-a',
+      useProjection: () => undefined,
+      loadImage: vi.fn().mockResolvedValue('data:image/jpeg;base64,AA=='),
+      controller: { openImage: vi.fn() },
+      t: translate,
+    }
+    const view = render(<ImageToolView {...({
+      ...common,
+      block: { id: 'call-edit', name: 'image_edit', argsRaw: '{"instruction":"Add a hat"}' },
+    } as unknown as ImageToolViewProps)} />)
+
+    expect(view.container.querySelector('[data-phase="running"]')).toBeTruthy()
+    view.rerender(<ImageToolView {...({
+      ...common,
+      block: {
+        kind: 'tool-result', seq: 2, time: Date.now(), callId: 'call-edit', callTime: Date.now() - 100,
+        call: { name: 'image_edit', argsRaw: '{"instruction":"Add a hat"}' },
+        content: [
+          { type: 'text', text: '{"taskId":"task-edit","operation":"edit"}' },
+          { type: 'image', attachment: { attachmentId: AttachmentId('attachment-edit'), mediaType: 'image/jpeg', bytes: 68, width: 864, height: 1248, name: 'edited.jpg' } },
+        ],
+        isError: false, callView: null, resultView: null, subCalls: [],
+      },
+    } as unknown as ImageToolViewProps)} />)
+
+    expect(view.container.querySelector('[data-phase="ready"]')).toBeTruthy()
+    expect(view.getByText('Edit image')).toBeTruthy()
+    expect(await view.findByRole('img', { name: 'edited.jpg' })).toBeTruthy()
+  })
+
   it('shows batch progress and all successful images in one card', async () => {
     const running = {
       toolName: 'image_generate',

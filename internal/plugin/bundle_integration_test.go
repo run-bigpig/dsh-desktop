@@ -61,6 +61,10 @@ func TestBundledDesktopPluginOfflineInstall(t *testing.T) {
 	if installed == nil || *installed != desktopPluginVersion {
 		t.Fatalf("installed Desktop Plugin version = %v", installed)
 	}
+	installedWebTools := installedPackageVersion(paths.HarnessHome, "dsh-web-tools")
+	if installedWebTools == nil || *installedWebTools != builtInWebToolsVersion {
+		t.Fatalf("installed built-in web tools version = %v", installedWebTools)
+	}
 	if err := manager.runCLI(ctx, paths.HarnessHome, "--profile", "web", "--dump-config"); err != nil {
 		t.Fatal(err)
 	}

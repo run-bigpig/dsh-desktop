@@ -51,6 +51,7 @@ function Test-VerifiedSeedLayout([string]$Root) {
     "resources/plugin/plugin-host/package.json",
     "resources/plugin/plugin-client/package.json",
     "resources/plugin/plugin-bundle/package.json",
+    "resources/plugin/web-tools/package.json",
     "resources/marketplace/catalog.json",
     "resources/marketplace/catalog.sig"
   )) {
@@ -407,22 +408,25 @@ $pluginSource = Join-Path $repoRoot "plugin"
 $pluginBuild = Join-Path $pluginSource "scripts/build-against-harness.mjs"
 $marketplaceCatalog = Join-Path $pluginSource "catalog/catalog.json"
 $marketplaceSignature = Join-Path $pluginSource "catalog/catalog.sig"
+$pluginVersion = Get-DesktopPluginVersion
+$webToolsSourceManifest = Join-Path $pluginSource "packages/plugin-bundle/vendor/dsh-web-tools/package.json"
+if (-not (Test-Path $webToolsSourceManifest)) { throw "Built-in web tools source is incomplete: $webToolsSourceManifest" }
+$webToolsVersion = (Get-Content $webToolsSourceManifest -Raw | ConvertFrom-Json).version
 $pluginPackages = @(
-  @{ directory = "plugin-host"; name = "@run-bigpig/dsh-desktop-plugin-host" },
-  @{ directory = "plugin-client"; name = "@run-bigpig/dsh-desktop-plugin-client" },
-  @{ directory = "plugin-bundle"; name = "@run-bigpig/dsh-desktop-plugin" }
+  @{ directory = "plugin-host"; name = "@run-bigpig/dsh-desktop-plugin-host"; source = "packages/plugin-host/package.json"; version = $pluginVersion },
+  @{ directory = "plugin-client"; name = "@run-bigpig/dsh-desktop-plugin-client"; source = "packages/plugin-client/package.json"; version = $pluginVersion },
+  @{ directory = "plugin-bundle"; name = "@run-bigpig/dsh-desktop-plugin"; source = "packages/plugin-bundle/package.json"; version = $pluginVersion },
+  @{ directory = "web-tools"; name = "dsh-web-tools"; source = "packages/plugin-bundle/vendor/dsh-web-tools/package.json"; version = $webToolsVersion }
 )
 foreach ($required in $pluginBuild,$marketplaceCatalog,$marketplaceSignature) {
   if (-not (Test-Path $required)) { throw "Built-in Desktop Plugin source is incomplete: $required" }
 }
-$pluginVersion = $null
 foreach ($package in $pluginPackages) {
-  $manifestPath = Join-Path $pluginSource ("packages/" + $package.directory + "/package.json")
+  $manifestPath = Join-Path $pluginSource $package.source
   if (-not (Test-Path $manifestPath)) { throw "Built-in Desktop Plugin source is incomplete: $manifestPath" }
   $manifest = Get-Content $manifestPath -Raw | ConvertFrom-Json
   if ($manifest.name -ne $package.name) { throw "Built-in Desktop Plugin package name mismatch: $manifestPath" }
-  if ($null -eq $pluginVersion) { $pluginVersion = $manifest.version }
-  if ($manifest.version -ne $pluginVersion) { throw "Built-in Desktop Plugin package versions do not match" }
+  if ($manifest.version -ne $package.version) { throw "Built-in Desktop Plugin package version mismatch: $manifestPath" }
 }
 & $node $pluginBuild --harness $checkout --out $pluginTarget
 if ($LASTEXITCODE -ne 0) { throw "Desktop Plugin build failed" }
@@ -431,7 +435,7 @@ foreach ($package in $pluginPackages) {
   if (-not (Test-Path $builtManifestPath)) { throw "Built-in Desktop Plugin package is missing: $builtManifestPath" }
   $builtManifestText = Get-Content $builtManifestPath -Raw
   $builtManifest = $builtManifestText | ConvertFrom-Json
-  if ($builtManifest.name -ne $package.name -or $builtManifest.version -ne $pluginVersion) {
+  if ($builtManifest.name -ne $package.name -or $builtManifest.version -ne $package.version) {
     throw "Built-in Desktop Plugin package identity mismatch: $builtManifestPath"
   }
   if ($builtManifestText -match 'workspace:') { throw "Built-in Desktop Plugin contains an unpublished workspace dependency: $builtManifestPath" }
@@ -477,6 +481,7 @@ Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
   node = $seedLock.node
   pnpm = $seedLock.pnpm
   pluginVersion = $pluginVersion
+  webToolsVersion = $webToolsVersion
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })
 
