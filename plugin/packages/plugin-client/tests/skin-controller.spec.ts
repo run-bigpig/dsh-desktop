@@ -1,8 +1,8 @@
 import { describe, expect, it, vi } from 'vitest'
-import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-runtime/client'
+import type { SettingsScope, SettingsScopeSnapshot } from '@deepseek-ai/dsh-client-ui-settings/client'
 import {
   SKIN_THEME_SOURCE, SKIN_TOKEN_PRESETS, SkinController, skinTokens, type SkinSettings,
-} from '../src/client/skin-controller.ts'
+} from '../src/client/skin/skin-controller.ts'
 
 class FakeScope implements SettingsScope<SkinSettings> {
   private listeners = new Set<() => void>()
@@ -33,13 +33,12 @@ class FakeScope implements SettingsScope<SkinSettings> {
 }
 
 describe('SkinController', () => {
-  it('applies and fully removes token and brand overrides as settings change', () => {
+  it('applies and fully removes token and background overrides as settings change', () => {
     const scope = new FakeScope()
     const disposeTheme = vi.fn()
     const overrideTokens = vi.fn(() => disposeTheme)
-    const setCustomBrand = vi.fn()
     const setBackgroundImage = vi.fn()
-    const controller = new SkinController(scope, { overrideTokens } as never, setCustomBrand, setBackgroundImage)
+    const controller = new SkinController(scope, { overrideTokens } as never, setBackgroundImage)
 
     expect(overrideTokens).not.toHaveBeenCalled()
     scope.publish({
@@ -48,9 +47,12 @@ describe('SkinController', () => {
       brand: 'desktop',
       backgroundImage: 'data:image/png;base64,AA==',
       transparency: 35,
+      logoImage: '',
+      brandTitle: '',
+      heroHeadline: '',
+      heroPreview: '',
     })
     expect(overrideTokens).toHaveBeenCalledWith(SKIN_THEME_SOURCE, skinTokens('forest', 35))
-    expect(setCustomBrand).toHaveBeenLastCalledWith(true)
     expect(setBackgroundImage).toHaveBeenLastCalledWith('data:image/png;base64,AA==')
 
     scope.publish({
@@ -59,19 +61,13 @@ describe('SkinController', () => {
       brand: 'desktop',
       backgroundImage: 'data:image/png;base64,AA==',
       transparency: 35,
+      logoImage: '',
+      brandTitle: '',
+      heroHeadline: '',
+      heroPreview: '',
     })
     expect(disposeTheme).toHaveBeenCalledOnce()
-    expect(setCustomBrand).toHaveBeenCalledOnce()
     expect(setBackgroundImage).toHaveBeenLastCalledWith(undefined)
-
-    scope.publish({
-      enabled: false,
-      preset: 'forest',
-      brand: 'deepseek',
-      backgroundImage: '',
-      transparency: 20,
-    })
-    expect(setCustomBrand).toHaveBeenLastCalledWith(false)
 
     controller.dispose()
     expect(disposeTheme).toHaveBeenCalledOnce()

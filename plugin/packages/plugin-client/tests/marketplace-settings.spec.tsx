@@ -5,7 +5,7 @@ import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   MarketplaceSettingsTab,
   type MarketplaceSettingsTabProps,
-} from '../src/client/MarketplaceSettingsTab.tsx'
+} from '../src/client/marketplace/MarketplaceSettingsTab.tsx'
 import { en } from '../src/client/locales.ts'
 
 afterEach(cleanup)

@@ -4,7 +4,7 @@ import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   WorkspacePreview, tabFromFile, type WorkspacePreviewCopy,
-} from '../src/client/WorkspacePreview.tsx'
+} from '../src/client/workbench/WorkspacePreview.tsx'
 
 afterEach(() => { cleanup() })
 
@@ -34,6 +34,9 @@ const copy: WorkspacePreviewCopy = {
   unsupportedHint: 'Open it locally.',
   moreTabs: 'More open tabs',
   saveFailed: 'Save failed',
+  markdownCopy: 'Copy code',
+  markdownCopied: 'Copied',
+  markdownFootnotes: 'Footnotes',
 }
 
 describe('workspace preview UI', () => {

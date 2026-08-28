@@ -36,8 +36,14 @@ func TestNodeFixtureGracefulShutdownAndUnexpectedExit(t *testing.T) {
 				t.Fatal(err)
 			}
 			script := `import http from "node:http";
-const server=http.createServer((req,res)=>{res.end('<script>window.__DSH_BOOT__={}</script>')});
-server.listen(0,"127.0.0.1",()=>{console.log("dsh web: http://127.0.0.1:"+server.address().port);` + func() string {
+const token="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+const server=http.createServer((req,res)=>{
+  const url=new URL(req.url,"http://127.0.0.1");
+  if(url.pathname==="/"&&url.searchParams.get("token")===token&&[...url.searchParams].length===1){res.writeHead(303,{"set-cookie":"dsh-auth-test=valid; Path=/; HttpOnly; SameSite=Strict","location":"/"});res.end();return;}
+  if(url.pathname==="/"&&url.search===""&&req.headers.cookie?.includes("dsh-auth-test=valid")){res.end('<script>window.__DSH_BOOT__={}</script>');return;}
+  res.writeHead(401);res.end("authentication required");
+});
+server.listen(0,"127.0.0.1",()=>{console.log("dsh web: http://127.0.0.1:"+server.address().port+"/?token="+token);` + func() string {
 				if tc.exitAfter {
 					return `setTimeout(()=>process.exit(23),250);`
 				}

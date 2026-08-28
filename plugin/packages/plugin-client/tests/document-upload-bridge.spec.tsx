@@ -8,8 +8,8 @@ import {
   DocumentUploadBridge,
   DOCUMENT_REFERENCE_SOURCE,
   type DocumentUploadBridgeProps,
-} from '../src/client/DocumentUploadBridge.tsx'
-import { DocumentMessageView, extractDocumentMessage, type DocumentMessageProps } from '../src/client/DocumentMessageView.tsx'
+} from '../src/client/documents/DocumentUploadBridge.tsx'
+import { DocumentMessageView, extractDocumentMessage, type DocumentMessageProps } from '../src/client/documents/DocumentMessageView.tsx'
 import { documentsEn } from '../src/client/locales.ts'
 
 const DOCUMENT_ID = `sha256:${'a'.repeat(64)}`

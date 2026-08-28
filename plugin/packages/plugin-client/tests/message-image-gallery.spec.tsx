@@ -8,8 +8,8 @@ import {
   type ImageStudioInputBridgeProps,
   MessageImageGallery,
   type MessageImageGalleryProps,
-} from '../src/client/MessageImageGallery.tsx'
-import { WorkbenchController } from '../src/client/SessionWorkbench.tsx'
+} from '../src/client/image/MessageImageGallery.tsx'
+import { WorkbenchController } from '../src/client/workbench/SessionWorkbench.tsx'
 import { workbenchEn } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup() })

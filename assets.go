@@ -2,8 +2,7 @@ package desktopassets
 
 import "embed"
 
-// AppIcon is the rounded DSH-DeskTop application icon derived from the
-// DeepSeek fish used by the startup interface.
+// AppIcon is the StarWeave application icon used by the desktop window and tray.
 //
 //go:embed build/appicon.png
 var AppIcon []byte

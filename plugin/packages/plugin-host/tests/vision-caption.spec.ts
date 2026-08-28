@@ -1,7 +1,7 @@
 import { describe, expect, it, vi } from 'vitest'
 import { AttachmentId, type ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type { LlmRuntime, StreamChunk } from '@deepseek-ai/dsh-llm'
-import { captionImage, testVisionConnection } from '../src/vision-caption.ts'
+import { captionImage, testVisionConnection } from '../src/vision/caption.ts'
 
 const IMAGE: ImageAttachmentRef = {
   attachmentId: AttachmentId('image-1'),

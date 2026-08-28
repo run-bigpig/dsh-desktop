@@ -27,24 +27,22 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.56"
-const builtInWebToolsVersion = "0.3.0"
-
+const desktopPluginVersion = "0.1.61"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{
 	"plugin-host",
 	"plugin-client",
 	"plugin-bundle",
-	"web-tools",
 }
 
 var managedBundlePackages = []string{
 	"@run-bigpig/dsh-desktop-plugin-host",
 	"@run-bigpig/dsh-desktop-plugin-client",
 	"@run-bigpig/dsh-desktop-plugin",
-	"dsh-web-tools",
 }
+
+var retiredManagedBundlePackages = []string{"dsh-web-tools"}
 
 var legacyManagedBundlePackageSets = [][]string{
 	{
@@ -63,8 +61,9 @@ var stableBundleDirectories = []string{
 	"plugin-host",
 	"plugin-client",
 	"plugin-bundle",
-	"web-tools",
 }
+
+var retiredStableBundleDirectories = []string{"web-tools"}
 
 var legacyStableBundleArtifacts = []string{
 	"plugin-host.tgz",
@@ -172,7 +171,6 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 		return fmt.Errorf("repair migrated pnpm profile: %w", err)
 	}
 	installed := installedPackageVersion(m.paths.HarnessHome, "@run-bigpig/dsh-desktop-plugin")
-	installedWebTools := installedPackageVersion(m.paths.HarnessHome, "dsh-web-tools")
 	packages, ok := m.bundledPackages()
 	if !ok {
 		if m.log != nil {
@@ -188,7 +186,7 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 	if err != nil {
 		return fmt.Errorf("migrate desktop plugin bundle paths: %w", err)
 	}
-	if installed != nil && *installed == desktopPluginVersion && installedWebTools != nil && *installedWebTools == builtInWebToolsVersion && !changed {
+	if installed != nil && *installed == desktopPluginVersion && !changed {
 		if err := m.migrateRetiredDeepSeekDefaultModel(); err != nil {
 			return err
 		}
@@ -220,11 +218,6 @@ func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
 	if installed == nil || *installed != desktopPluginVersion {
 		_ = restoreProfileModules(profile, previousModules)
 		return fmt.Errorf("desktop plugin bundle version %s was not installed", desktopPluginVersion)
-	}
-	installedWebTools = installedPackageVersion(m.paths.HarnessHome, "dsh-web-tools")
-	if installedWebTools == nil || *installedWebTools != builtInWebToolsVersion {
-		_ = restoreProfileModules(profile, previousModules)
-		return fmt.Errorf("built-in web tools version %s was not installed", builtInWebToolsVersion)
 	}
 	if previousModules != "" {
 		go func() { _ = os.RemoveAll(previousModules) }()
@@ -362,6 +355,11 @@ func (m *Manager) publishBundlePackages(sources []string) ([]string, error) {
 			return nil, err
 		}
 	}
+	for _, name := range retiredStableBundleDirectories {
+		if err := os.RemoveAll(filepath.Join(directory, name)); err != nil {
+			return nil, err
+		}
+	}
 	legacyDirectory := filepath.Join(m.paths.Marketplace, "bundle")
 	if err := os.RemoveAll(legacyDirectory); err != nil && m.log != nil {
 		_, _ = fmt.Fprintln(m.log, "remove legacy desktop Marketplace bundle directory:", err)
@@ -391,6 +389,12 @@ func rewriteManagedBundleSpecs(path string, artifacts []string) ([]byte, bool, e
 		}
 	}
 	changed := false
+	for _, packageName := range retiredManagedBundlePackages {
+		if _, ok := dependencies[packageName]; ok {
+			delete(dependencies, packageName)
+			changed = true
+		}
+	}
 	for index, packageName := range managedBundlePackages {
 		_, current := dependencies[packageName]
 		legacy := false

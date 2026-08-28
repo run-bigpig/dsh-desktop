@@ -3,7 +3,7 @@
 import { cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { AttachmentId } from '@deepseek-ai/dsh-attachment'
-import { ImageToolView, type ImageToolViewProps } from '../src/client/ImageToolView.tsx'
+import { ImageToolView, type ImageToolViewProps } from '../src/client/image/ImageToolView.tsx'
 import { workbenchEn } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup() })

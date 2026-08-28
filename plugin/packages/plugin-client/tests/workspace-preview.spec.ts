@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { describe, expect, it } from 'vitest'
-import { parseCsv, previewKind, tabFromFile } from '../src/client/WorkspacePreview.tsx'
+import { parseCsv, previewKind, tabFromFile } from '../src/client/workbench/WorkspacePreview.tsx'
 
 describe('workspace preview', () => {
   it('routes the supported AionUi preview formats without claiming Office rendering', () => {

@@ -5,7 +5,7 @@ import {
   normalizeImageRequestForAdapter,
   OpenAIImageAdapter,
   type ImageModelDescriptor,
-} from '../src/image-adapters.ts'
+} from '../src/image/adapters.ts'
 
 describe('image model adapters', () => {
   it('calls the OpenAI Images generation endpoint and decodes its image', async () => {

@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { parseVisionBridgeDocument, serializeVisionBridgeDocument } from '../src/vision-document.ts'
+import { parseVisionBridgeDocument, serializeVisionBridgeDocument } from '../src/vision/document.ts'
 
 describe('vision bridge document migration', () => {
   it('retains a version-one endpoint as inactive legacy configuration', () => {

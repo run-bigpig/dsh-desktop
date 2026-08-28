@@ -67,8 +67,7 @@ $pluginRoot = Join-Path $stage "resources/plugin"
 $pluginPackages = @(
   @{ directory = "plugin-host"; version = $seedManifest.pluginVersion },
   @{ directory = "plugin-client"; version = $seedManifest.pluginVersion },
-  @{ directory = "plugin-bundle"; version = $seedManifest.pluginVersion },
-  @{ directory = "web-tools"; version = $seedManifest.webToolsVersion }
+  @{ directory = "plugin-bundle"; version = $seedManifest.pluginVersion }
 )
 foreach ($package in $pluginPackages) {
   $manifest = Join-Path $pluginRoot ($package.directory + "/package.json")

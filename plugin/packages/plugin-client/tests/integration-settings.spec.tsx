@@ -2,9 +2,9 @@
 
 import { cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
-import { McpSettingsTab, type McpSettingsTabProps } from '../src/client/McpSettingsTab.tsx'
-import { VisionSettingsTab, type VisionSettingsTabProps } from '../src/client/VisionSettingsTab.tsx'
-import { ImageSettingsTab, type ImageSettingsTabProps } from '../src/client/ImageSettingsTab.tsx'
+import { McpSettingsTab, type McpSettingsTabProps } from '../src/client/mcp/McpSettingsTab.tsx'
+import { VisionSettingsTab, type VisionSettingsTabProps } from '../src/client/vision/VisionSettingsTab.tsx'
+import { ImageSettingsTab, type ImageSettingsTabProps } from '../src/client/image/ImageSettingsTab.tsx'
 import { imageEn, mcpEn, visionEn } from '../src/client/locales.ts'
 
 afterEach(cleanup)

@@ -35,7 +35,6 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 		filepath.Join(directory, "plugin-host"),
 		filepath.Join(directory, "plugin-client"),
 		filepath.Join(directory, "plugin-bundle"),
-		filepath.Join(directory, "web-tools"),
 	}
 	backup, changed, err := rewriteManagedBundleSpecs(manifest, artifacts)
 	if err != nil {
@@ -69,6 +68,9 @@ func TestRewriteManagedBundleSpecsPreservesProfileAndMigratesOnlyManagedPackages
 			}
 		}
 	}
+	if _, ok := document.Dependencies["dsh-web-tools"]; ok {
+		t.Fatal("retired dsh-web-tools dependency was retained")
+	}
 	if document.Dependencies["example-plugin"] != "1.2.3" || document.DSH["profile"] == nil {
 		t.Fatal("migration changed unrelated profile fields")
 	}
@@ -87,6 +89,11 @@ func TestPublishBundlePackagesUsesPluginDirectoryAndRemovesLegacyBundle(t *testi
 	}
 	for _, name := range legacyStableBundleArtifacts {
 		if err := os.WriteFile(filepath.Join(pluginBundleDirectory, name), []byte("old"), 0o600); err != nil {
+			t.Fatal(err)
+		}
+	}
+	for _, name := range retiredStableBundleDirectories {
+		if err := os.MkdirAll(filepath.Join(pluginBundleDirectory, name), 0o700); err != nil {
 			t.Fatal(err)
 		}
 	}
@@ -125,6 +132,11 @@ func TestPublishBundlePackagesUsesPluginDirectoryAndRemovesLegacyBundle(t *testi
 	for _, name := range legacyStableBundleArtifacts {
 		if _, err := os.Stat(filepath.Join(pluginBundleDirectory, name)); !os.IsNotExist(err) {
 			t.Fatalf("legacy Desktop Plugin archive still exists: %s", name)
+		}
+	}
+	for _, name := range retiredStableBundleDirectories {
+		if _, err := os.Stat(filepath.Join(pluginBundleDirectory, name)); !os.IsNotExist(err) {
+			t.Fatalf("retired Desktop Plugin package directory still exists: %s", name)
 		}
 	}
 }

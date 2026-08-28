@@ -1,7 +1,7 @@
 // @vitest-environment jsdom
 
 import { afterEach, describe, expect, it } from 'vitest'
-import { SkinBackgroundPresenter } from '../src/client/skin-background.ts'
+import { SkinBackgroundPresenter } from '../src/client/skin/skin-background.ts'
 
 afterEach(() => { document.body.removeAttribute('style') })
 

@@ -11,7 +11,7 @@ import {
   type WorkbenchLauncherProps,
   workspaceFileReferenceOf,
   type WorkspaceReferenceDropDockProps,
-} from '../src/client/SessionWorkbench.tsx'
+} from '../src/client/workbench/SessionWorkbench.tsx'
 import { workbenchEn, workbenchZh } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup() })

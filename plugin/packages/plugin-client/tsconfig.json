@@ -1,6 +1,12 @@
 {
   "extends": "../../../tsconfig.base.client.json",
-  "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "lib/types",
+    "exactOptionalPropertyTypes": false,
+    "noUncheckedIndexedAccess": false,
+    "noImplicitOverride": false
+  },
   "include": ["src"],
   "references": [
     { "path": "../../../vendor/cordis" },
@@ -8,10 +14,11 @@
     { "path": "../../api/remotes/tsconfig.client.json" },
     { "path": "../../client/connection/tsconfig.client.json" },
     { "path": "../../client/locale" },
-    { "path": "../../client/runtime" },
+    { "path": "../../client/ui-chat" },
     { "path": "../../client/ui-attachment" },
     { "path": "../../client/ui-input-trigger" },
     { "path": "../../client/ui-reference" },
+    { "path": "../../client/ui-renderer" },
     { "path": "../../client/ui-primitives" },
     { "path": "../../client/ui-sidebar" },
     { "path": "../../client/ui-tool" },

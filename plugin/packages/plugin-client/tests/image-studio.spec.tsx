@@ -2,7 +2,7 @@
 
 import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
-import { ImageStudio, type ImageStudioProps } from '../src/client/ImageStudio.tsx'
+import { ImageStudio, type ImageStudioProps } from '../src/client/image/ImageStudio.tsx'
 import { workbenchEn } from '../src/client/locales.ts'
 
 afterEach(() => {

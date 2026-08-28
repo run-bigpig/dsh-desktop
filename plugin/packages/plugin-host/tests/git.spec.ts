@@ -39,6 +39,7 @@ describe('desktop Git gateway', () => {
     const root = await mkdtemp(join(tmpdir(), 'dsh-git-'))
     temporaryDirectories.push(root)
     await execFileAsync('git', ['init'], { cwd: root })
+    await execFileAsync('git', ['config', 'core.autocrlf', 'false'], { cwd: root })
     await execFileAsync('git', ['config', 'user.email', 'test@example.com'], { cwd: root })
     await execFileAsync('git', ['config', 'user.name', 'Test'], { cwd: root })
     await writeFile(join(root, 'tracked.txt'), 'base\n')

@@ -1,10 +1,11 @@
 import type {} from '@deepseek-ai/dsh-client-locale/client'
-import type { ClientContext } from '@deepseek-ai/dsh-client-runtime/client'
+import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
 import type { InputTriggerServiceContract, InputTriggerSource } from '@deepseek-ai/dsh-client-ui-input-trigger/client'
 import type {} from '@deepseek-ai/dsh-client-ui-settings/client'
 import type {} from '@deepseek-ai/dsh-client-ui-theme/client'
 import type {} from '@deepseek-ai/dsh-client-ui-layout/client'
+import type {} from '@deepseek-ai/dsh-client-ui-renderer/client'
 import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import desktopRemote from '@run-bigpig/dsh-desktop-plugin-host/remote'
@@ -37,14 +38,14 @@ import type {
 import {
   MarketplaceSettingsTab,
   type MarketplaceSettingsTabInjected,
-} from './MarketplaceSettingsTab.tsx'
+} from './marketplace/MarketplaceSettingsTab.tsx'
 import {
   DesktopWindowControls,
   type DesktopWindowControlsInjected,
-} from './DesktopWindowControls.tsx'
-import { McpSettingsTab, type McpSettingsTabInjected } from './McpSettingsTab.tsx'
-import { VisionSettingsTab, type VisionSettingsTabInjected } from './VisionSettingsTab.tsx'
-import { ImageSettingsTab, type ImageSettingsTabInjected } from './ImageSettingsTab.tsx'
+} from './desktop-window/DesktopWindowControls.tsx'
+import { McpSettingsTab, type McpSettingsTabInjected } from './mcp/McpSettingsTab.tsx'
+import { VisionSettingsTab, type VisionSettingsTabInjected } from './vision/VisionSettingsTab.tsx'
+import { ImageSettingsTab, type ImageSettingsTabInjected } from './image/ImageSettingsTab.tsx'
 import {
   DocumentUploadBridge,
   type DocumentUploadBridgeInjected,
@@ -52,16 +53,20 @@ import {
   type DocumentUploadButtonInjected,
   DOCUMENT_REFERENCE_SOURCE,
   documentReferenceOf,
-} from './DocumentUploadBridge.tsx'
-import { DocumentMessageView, type DocumentMessageInjected } from './DocumentMessageView.tsx'
-import { TA_DIRECT_PRESENTATION_TOOLS, TaPresentationCard } from './TaPresentationCard.tsx'
-import { ImageToolView, type ImageToolViewInjected } from './ImageToolView.tsx'
+} from './documents/DocumentUploadBridge.tsx'
+import {
+  DocumentSteeringMessageView,
+  DocumentUserMessageView,
+  type DocumentMessageInjected,
+} from './documents/DocumentMessageView.tsx'
+import { ChartPresentationCard } from './chart-presentation/ChartPresentationCard.tsx'
+import { ImageToolView, type ImageToolViewInjected } from './image/ImageToolView.tsx'
 import {
   ImageStudioInputBridge,
   type ImageStudioInputBridgeInjected,
   MessageImageGallery,
   type MessageImageGalleryInjected,
-} from './MessageImageGallery.tsx'
+} from './image/MessageImageGallery.tsx'
 import {
   WorkbenchController,
   WorkbenchDrawer,
@@ -71,20 +76,21 @@ import {
   WorkspaceReferenceDropDock,
   type WorkspaceReferenceDropDockInjected,
   workspaceFileReferenceOf,
-} from './SessionWorkbench.tsx'
-import { SkinBrandMark, SkinBrandName } from './SkinBrand.tsx'
-import { SkinBackgroundPresenter } from './skin-background.ts'
-import { SkinSettingsRow, type SkinSettingsRowInjected } from './SkinSettingsRow.tsx'
+} from './workbench/SessionWorkbench.tsx'
+import { SkinBrandMark, SkinBrandName } from './skin/SkinBrand.tsx'
+import { SkinBackgroundPresenter } from './skin/skin-background.ts'
+import { SkinSettingsRow, type SkinSettingsRowInjected } from './skin/SkinSettingsRow.tsx'
 import {
-  SKIN_SETTINGS_NAMESPACE, SkinController, type SkinBrand, type SkinPreset, type SkinSettings,
-} from './skin-controller.ts'
+  SKIN_SETTINGS_NAMESPACE, SkinController, type SkinPreset, type SkinSettings,
+} from './skin/skin-controller.ts'
 import {
   desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, skinEn, skinZh,
-  taPresentationEn, taPresentationZh,
+  chartPresentationEn, chartPresentationZh,
   visionEn, visionZh, workbenchEn, workbenchZh, zh,
   type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
-  type SkinLocaleKey, type TaPresentationLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
+  type ChartPresentationLocaleKey, type SkinLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
+import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -95,8 +101,9 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
     'desktop.integration': DesktopLocaleKey
     'documents.upload': DocumentsLocaleKey
     'desktop.workbench': WorkbenchLocaleKey
-    'desktop.taPresentation': TaPresentationLocaleKey
+    'desktop.chartPresentation': ChartPresentationLocaleKey
     'settings.desktopSkin': SkinLocaleKey
+    'dsh-web-tools': WebToolsLocaleKey
   }
 }
 
@@ -107,7 +114,7 @@ export const VISION_NS = 'settings.vision'
 export const IMAGE_NS = 'settings.image'
 export const DOCUMENTS_NS = 'documents.upload'
 export const WORKBENCH_NS = 'desktop.workbench'
-export const TA_PRESENTATION_NS = 'desktop.taPresentation'
+export const CHART_PRESENTATION_NS = 'desktop.chartPresentation'
 export const SKIN_NS = 'settings.desktopSkin'
 export const inject = ['slots', 'locale', 'remote', 'inputTriggers', 'sessions', 'settingsScope', 'theme']
 
@@ -216,36 +223,31 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(IMAGE_NS, { zh: imageZh, en: imageEn }), 'desktop-image-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(DOCUMENTS_NS, { zh: documentsZh, en: documentsEn }), 'desktop-documents: dictionaries')
   ctx.effect(() => ctx.locale.register(WORKBENCH_NS, { zh: workbenchZh, en: workbenchEn }), 'desktop-workbench: dictionaries')
-  ctx.effect(() => ctx.locale.register(TA_PRESENTATION_NS, { zh: taPresentationZh, en: taPresentationEn }), 'desktop-ta-presentation: dictionaries')
+  ctx.effect(() => ctx.locale.register(CHART_PRESENTATION_NS, { zh: chartPresentationZh, en: chartPresentationEn }), 'desktop-chart-presentation: dictionaries')
   ctx.effect(() => ctx.locale.register(SKIN_NS, { zh: skinZh, en: skinEn }), 'desktop-skin: dictionaries')
+  applyWebTools(ctx)
 
   const skinScope = ctx.settingsScope.bind<SkinSettings>({ namespace: SKIN_SETTINGS_NAMESPACE })
   const skinBackground = new SkinBackgroundPresenter()
-  let disposeCustomBrand: (() => void) | undefined
-  const setCustomBrand = (enabled: boolean): void => {
-    if (!enabled) {
-      disposeCustomBrand?.()
-      disposeCustomBrand = undefined
-      return
-    }
-    if (disposeCustomBrand !== undefined) return
-    const disposers = [
-      ctx.slots.inject('sidebar.brand.mark', () =>
-        ctx.slots.register({ name: 'sidebar.brand.mark', priority: -10 }, SkinBrandMark)),
-      ctx.slots.inject('sidebar.brand.name', () =>
-        ctx.slots.register({ name: 'sidebar.brand.name', priority: -10 }, SkinBrandName)),
-      ctx.slots.inject('conversation.hero.brand.mark', () =>
-        ctx.slots.register({ name: 'conversation.hero.brand.mark', priority: -10 }, SkinBrandMark)),
-    ]
-    disposeCustomBrand = () => {
-      for (const dispose of disposers.reverse()) dispose()
-    }
-  }
+  ctx.slots.inject('sidebar.brand.mark', () =>
+    ctx.slots.register({
+      name: 'sidebar.brand.mark', priority: -10,
+      inject: () => ({ scope: skinScope, placement: 'sidebar' as const }),
+    }, SkinBrandMark))
+  ctx.slots.inject('sidebar.brand.name', () =>
+    ctx.slots.register({
+      name: 'sidebar.brand.name', priority: -10,
+      inject: () => ({ scope: skinScope }),
+    }, SkinBrandName))
+  ctx.slots.inject('conversation.hero.brand.mark', () =>
+    ctx.slots.register({
+      name: 'conversation.hero.brand.mark', priority: -10,
+      inject: () => ({ scope: skinScope, placement: 'hero' as const }),
+    }, SkinBrandMark))
   ctx.effect(() => {
     const controller = new SkinController(
       skinScope,
       ctx.theme,
-      setCustomBrand,
       image => { skinBackground.set(image) },
     )
     return () => {
@@ -257,16 +259,24 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     scope: skinScope,
     setEnabled: enabled => skinScope.set('enabled', enabled),
     setPreset: (preset: SkinPreset) => skinScope.set('preset', preset),
-    setBrand: (brand: SkinBrand) => skinScope.set('brand', brand),
     setBackgroundImage: image => skinScope.set('backgroundImage', image),
     setTransparency: transparency => skinScope.set('transparency', transparency),
     clearBackgroundImage: () => skinScope.unset('backgroundImage'),
+    setLogoImage: image => skinScope.set('logoImage', image),
+    clearLogoImage: () => skinScope.unset('logoImage'),
+    setBrandTitle: title => skinScope.set('brandTitle', title),
+    setHeroHeadline: headline => skinScope.set('heroHeadline', headline),
+    setHeroPreview: preview => skinScope.set('heroPreview', preview),
     reset: async () => {
       await skinScope.unset('enabled')
       await skinScope.unset('preset')
       await skinScope.unset('brand')
       await skinScope.unset('backgroundImage')
       await skinScope.unset('transparency')
+      await skinScope.unset('logoImage')
+      await skinScope.unset('brandTitle')
+      await skinScope.unset('heroHeadline')
+      await skinScope.unset('heroPreview')
     },
   }
   ctx.slots.inject('settings.general.item', () => ctx.slots.register({
@@ -284,18 +294,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     locale: WORKBENCH_NS,
     inject: (): MessageImageGalleryInjected => ({ controller: workbenchController }),
   }, MessageImageGallery))
-  ctx.slots.inject('tool.call.toolview', function* () {
-    yield ctx.slots.register({
-      name: 'tool.call.toolview',
-      key: 'ta_present',
-      locale: TA_PRESENTATION_NS,
-    }, TaPresentationCard)
-    for (const rawName of TA_DIRECT_PRESENTATION_TOOLS) {
-      for (const key of [rawName, `mcp__ta-mcp-server__${rawName}`, `mcp__thinkingdata__${rawName}`]) {
-        yield ctx.slots.register({ name: 'tool.call.toolview', key, locale: TA_PRESENTATION_NS }, TaPresentationCard)
-      }
-    }
-  })
+  ctx.slots.inject('tool.call.toolview', () => ctx.slots.register({
+    name: 'tool.call.toolview',
+    key: 'chart_present',
+    locale: CHART_PRESENTATION_NS,
+  }, ChartPresentationCard))
   ctx.inject(['remote.mcpSettings', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       mcpSettings: McpSettingsRemote
@@ -329,12 +332,10 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }),
     }, ImageSettingsTab))
   })
-  ctx.inject(['conversation'], (inner: ClientContext) => {
-    const conversation = inner.get('conversation') as ConversationController | undefined
-    if (conversation === undefined) throw new Error('desktop-image-workbench: Harness conversation service is unavailable')
+  ctx.inject(['uiConversation'], (inner: ClientContext) => {
     const imageToolActions: ImageToolViewInjected = {
-      loadImage: (sessionId, attachment) => conversation.resolveImage(
-        sessionId as Parameters<ConversationController['resolveImage']>[0],
+      loadImage: (sessionId, attachment) => inner.uiConversation.imageUrl(
+        sessionId as Parameters<ClientContext['uiConversation']['imageUrl']>[0],
         attachment,
       ),
       controller: workbenchController,
@@ -397,15 +398,20 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }),
     }, DocumentUploadButton))
     const documentT = inner.locale.bind(DOCUMENTS_NS)
-    for (const key of ['user', 'steering'] as const) {
-      inner.slots.inject('conversation.chat.node', () => inner.slots.register({
-        name: 'conversation.chat.node',
-        key,
-        priority: -10,
-        locale: 'conversation',
-        inject: (): DocumentMessageInjected => ({ documentT }),
-      }, DocumentMessageView))
-    }
+    inner.slots.inject('conversation.chat.node', () => inner.slots.register({
+      name: 'conversation.chat.node',
+      key: 'user',
+      priority: -10,
+      locale: 'chat',
+      inject: (): DocumentMessageInjected => ({ documentT }),
+    }, DocumentUserMessageView))
+    inner.slots.inject('conversation.chat.node', () => inner.slots.register({
+      name: 'conversation.chat.node',
+      key: 'steering',
+      priority: -10,
+      locale: 'chat',
+      inject: (): DocumentMessageInjected => ({ documentT }),
+    }, DocumentSteeringMessageView))
   })
   ctx.inject(['remote.desktopWorkspace', 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'sessions'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {

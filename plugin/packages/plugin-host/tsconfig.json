@@ -2,7 +2,9 @@
   "extends": "../../../tsconfig.base.json",
   "compilerOptions": { "rootDir": "src", "outDir": "lib/types" },
   "include": ["src"],
+  "exclude": ["src/web-tools.ts", "src/web-tools/**"],
   "references": [
+    { "path": "./tsconfig.web-tools.json" },
     { "path": "../../../vendor/cordis" },
     { "path": "../../../vendor/loader" },
     { "path": "../../../vendor/schemastery" },

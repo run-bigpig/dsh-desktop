@@ -1,12 +1,12 @@
 import { describe, expect, it } from 'vitest'
-import { CallId, createMessage } from '@deepseek-ai/dsh-llm'
+import { ToolCallId, createMessage } from '@deepseek-ai/dsh-llm'
 import { serializeMessages } from '../../../llm/llm-deepseek/src/serialize.ts'
 import { syntheticLookAtCallChunks } from '../src/vision.ts'
-import { normalizeLookAtReplayState } from '../src/vision-rewrite.ts'
+import { normalizeLookAtReplayState } from '../src/vision/rewrite.ts'
 
 describe('synthetic look_at_image stream', () => {
   it('preserves reasoning_content on a thinking-mode tool-call turn', () => {
-    const chunks = syntheticLookAtCallChunks(CallId('look-at-1'), '{"images":[]}')
+    const chunks = syntheticLookAtCallChunks(ToolCallId('look-at-1'), '{"images":[]}')
     const content = chunks.flatMap(chunk => chunk.type === 'block-end' ? [chunk.block] : [])
 
     expect(content.map(block => block.type)).toEqual(['reasoning', 'tool-call'])
@@ -32,7 +32,7 @@ describe('synthetic look_at_image stream', () => {
       model: 'deepseek-v4-flash',
       messages: [createMessage({
         role: 'assistant',
-        content: [{ type: 'tool-call', id: CallId('legacy-look-at'), name: 'look_at_image', arguments: '{"images":[]}' }],
+        content: [{ type: 'tool-call', id: ToolCallId('legacy-look-at'), name: 'look_at_image', arguments: '{"images":[]}' }],
         source: {
           kind: 'model',
           provider: 'deepseek-official',

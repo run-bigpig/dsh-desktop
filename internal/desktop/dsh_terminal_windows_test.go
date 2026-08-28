@@ -57,7 +57,7 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 		`set "DSH_DESKTOP_NODE=` + config.Node + `"`,
 		`set "DSH_DESKTOP_CLI=` + config.CLI + `"`,
 		`set "PNPM_HOME=` + filepath.Dir(config.PNPM) + `"`,
-		`set "npm_config_store_dir=` + config.PNPMStore + `"`,
+		`set "PNPM_CONFIG_STORE_DIR=` + config.PNPMStore + `"`,
 		`set "PATH=` + filepath.Join(config.StateDirectory, "terminal-bin") + `;` + filepath.Dir(config.Node) + `;` + filepath.Dir(config.PNPM) + `;%PATH%"`,
 		`cd /d "` + config.WorkingDirectory + `"`,
 		"title DeepSeek Harness dsh",

@@ -1,0 +1,353 @@
+.card {
+  --chart-border: color-mix(in srgb, currentColor 13%, transparent);
+  --chart-muted: color-mix(in srgb, currentColor 56%, transparent);
+  --chart-panel: color-mix(in srgb, currentColor 3.5%, transparent);
+  --chart-accent: #28a596;
+  width: min(100%, 920px);
+  overflow: hidden;
+  border: 1px solid var(--chart-border);
+  border-radius: 13px;
+  background:
+    linear-gradient(135deg, color-mix(in srgb, var(--chart-accent) 5%, transparent), transparent 38%),
+    var(--ds-background-2, var(--chart-panel));
+  box-shadow: 0 12px 34px color-mix(in srgb, #000 9%, transparent);
+}
+
+.header {
+  display: flex;
+  min-height: 54px;
+  align-items: stretch;
+  border-bottom: 1px solid transparent;
+}
+
+.card[data-expanded] .header {
+  border-bottom-color: var(--chart-border);
+}
+
+.headingButton {
+  display: grid;
+  flex: 1;
+  min-width: 0;
+  grid-template-columns: 34px minmax(0, 1fr) 10px 18px;
+  gap: 10px;
+  align-items: center;
+  padding: 8px 10px 8px 12px;
+  border: 0;
+  color: inherit;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+}
+
+.headingButton:focus-visible,
+.inspect:focus-visible,
+.tabs button:focus-visible {
+  outline: 2px solid var(--chart-accent);
+  outline-offset: -2px;
+}
+
+.iconShell {
+  display: grid;
+  width: 32px;
+  height: 32px;
+  place-items: center;
+  border: 1px solid color-mix(in srgb, var(--chart-accent) 28%, transparent);
+  border-radius: 9px;
+  color: var(--chart-accent);
+  background: color-mix(in srgb, var(--chart-accent) 10%, transparent);
+}
+
+.mark {
+  width: 18px;
+  height: 18px;
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.7;
+}
+
+.headingCopy {
+  display: flex;
+  min-width: 0;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.headingCopy strong,
+.headingCopy span {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.headingCopy strong {
+  font-size: 13px;
+  font-weight: 650;
+  letter-spacing: .01em;
+}
+
+.headingCopy span {
+  color: var(--chart-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+}
+
+.stateDot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--chart-accent);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--chart-accent) 12%, transparent);
+}
+
+.card[data-phase='running'] .stateDot {
+  animation: pulse 1.3s ease-in-out infinite;
+}
+
+.card[data-phase='error'] .stateDot,
+.card[data-phase='invalid'] .stateDot {
+  background: #d86f70;
+  box-shadow: 0 0 0 4px color-mix(in srgb, #d86f70 12%, transparent);
+}
+
+.chevron {
+  width: 16px;
+  height: 16px;
+  fill: none;
+  stroke: var(--chart-muted);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.6;
+  transition: transform 160ms ease;
+}
+
+.chevron[data-open] {
+  transform: rotate(180deg);
+}
+
+.inspect {
+  align-self: center;
+  margin-right: 12px;
+  padding: 5px 8px;
+  border: 1px solid var(--chart-border);
+  border-radius: 7px;
+  color: var(--chart-muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.inspect:hover {
+  color: inherit;
+  border-color: color-mix(in srgb, currentColor 24%, transparent);
+}
+
+.body {
+  padding: 12px;
+}
+
+.toolbar {
+  display: flex;
+  min-height: 32px;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 10px;
+}
+
+.tabs {
+  display: inline-flex;
+  padding: 2px;
+  border: 1px solid var(--chart-border);
+  border-radius: 8px;
+  background: color-mix(in srgb, currentColor 3%, transparent);
+}
+
+.tabs button {
+  padding: 4px 11px;
+  border: 0;
+  border-radius: 6px;
+  color: var(--chart-muted);
+  background: transparent;
+  font-size: 11px;
+  cursor: pointer;
+}
+
+.tabs button[aria-selected='true'] {
+  color: inherit;
+  background: var(--ds-background-1, color-mix(in srgb, currentColor 8%, transparent));
+  box-shadow: 0 1px 3px color-mix(in srgb, #000 10%, transparent);
+}
+
+.provenance {
+  display: flex;
+  min-width: 0;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+  color: var(--chart-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 9px;
+}
+
+.truncated {
+  padding: 2px 6px;
+  border-radius: 999px;
+  color: #b27621;
+  background: color-mix(in srgb, #e3a348 14%, transparent);
+}
+
+.antvChart,
+.chartEmpty,
+.tableWrap {
+  border: 1px solid var(--chart-border);
+  border-radius: 10px;
+  background: color-mix(in srgb, currentColor 1.8%, transparent);
+}
+
+.antvChart {
+  height: 330px;
+  min-width: 0;
+  overflow: hidden;
+  padding: 12px 10px 6px;
+}
+
+.antvChart > div,
+.antvChart canvas,
+.antvChart svg {
+  max-width: 100%;
+}
+
+.chartEmpty {
+  display: grid;
+  min-height: 220px;
+  place-items: center;
+  color: var(--chart-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+}
+
+.tableWrap {
+  max-width: 100%;
+  max-height: 470px;
+  overflow: auto;
+}
+
+.table {
+  width: 100%;
+  min-width: 560px;
+  border-collapse: collapse;
+  font-size: 10px;
+}
+
+.table th,
+.table td {
+  max-width: 300px;
+  padding: 8px 10px;
+  overflow: hidden;
+  border-right: 1px solid color-mix(in srgb, currentColor 7%, transparent);
+  border-bottom: 1px solid color-mix(in srgb, currentColor 7%, transparent);
+  text-align: left;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.table th {
+  position: sticky;
+  z-index: 1;
+  top: 0;
+  color: var(--chart-muted);
+  background: var(--ds-background-2, #f5f5f5);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+}
+
+.table tbody tr:hover {
+  background: color-mix(in srgb, var(--chart-accent) 5%, transparent);
+}
+
+.loading {
+  display: grid;
+  min-height: 150px;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+  place-items: end stretch;
+  padding: 30px 16%;
+  border: 1px solid var(--chart-border);
+  border-radius: 10px;
+}
+
+.loading span {
+  border-radius: 4px 4px 1px 1px;
+  background: color-mix(in srgb, var(--chart-accent) 22%, transparent);
+  animation: loadingBars 1.4s ease-in-out infinite alternate;
+}
+
+.loading span:nth-child(1) { height: 35%; }
+.loading span:nth-child(2) { height: 76%; animation-delay: 160ms; }
+.loading span:nth-child(3) { height: 54%; animation-delay: 320ms; }
+
+.loading p {
+  grid-column: 1 / -1;
+  margin: 10px 0 0;
+  color: var(--chart-muted);
+  font-size: 11px;
+  text-align: center;
+}
+
+.error {
+  padding: 16px;
+  border: 1px solid color-mix(in srgb, #d86f70 24%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, #d86f70 7%, transparent);
+}
+
+.error strong {
+  color: #c85759;
+  font-size: 12px;
+}
+
+.error p {
+  margin: 6px 0 0;
+  color: var(--chart-muted);
+  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-size: 10px;
+  white-space: pre-wrap;
+}
+
+@keyframes pulse {
+  50% { opacity: .35; transform: scale(.78); }
+}
+
+@keyframes loadingBars {
+  to { height: 90%; background: color-mix(in srgb, var(--chart-accent) 48%, transparent); }
+}
+
+@media (max-width: 680px) {
+  .toolbar {
+    align-items: flex-start;
+    flex-direction: column;
+  }
+
+  .provenance {
+    justify-content: flex-start;
+  }
+
+  .antvChart {
+    height: 290px;
+    padding-inline: 4px;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stateDot,
+  .loading span {
+    animation: none;
+  }
+
+  .chevron {
+    transition: none;
+  }
+}

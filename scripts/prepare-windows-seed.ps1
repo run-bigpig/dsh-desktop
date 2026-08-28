@@ -31,6 +31,21 @@ function Get-DesktopPluginVersion {
   return @($versions)[0]
 }
 
+function Get-HarnessReadyUrl([string]$Line) {
+  $match = [Text.RegularExpressions.Regex]::Match(
+    $Line,
+    '^dsh web: (http://127\.0\.0\.1:[0-9]{1,5}/\?token=[A-Za-z0-9_-]{43})$',
+    [Text.RegularExpressions.RegexOptions]::CultureInvariant
+  )
+  if (-not $match.Success) { return $null }
+  $value = $match.Groups[1].Value
+  $uri = $null
+  if (-not [Uri]::TryCreate($value, [UriKind]::Absolute, [ref]$uri)) { return $null }
+  if ($uri.Scheme -cne 'http' -or $uri.Host -cne '127.0.0.1' -or $uri.Port -lt 1 -or $uri.Port -gt 65535) { return $null }
+  if ($uri.UserInfo -ne '' -or $uri.AbsolutePath -cne '/' -or $uri.Query -cnotmatch '^\?token=[A-Za-z0-9_-]{43}$' -or $uri.Fragment -ne '') { return $null }
+  return $value
+}
+
 function Test-VerifiedSeedLayout([string]$Root) {
   $manifestPath = Join-Path $Root "resources/seed/build-manifest.json"
   if (-not (Test-Path -LiteralPath $manifestPath)) { return $false }
@@ -51,7 +66,6 @@ function Test-VerifiedSeedLayout([string]$Root) {
     "resources/plugin/plugin-host/package.json",
     "resources/plugin/plugin-client/package.json",
     "resources/plugin/plugin-bundle/package.json",
-    "resources/plugin/web-tools/package.json",
     "resources/marketplace/catalog.json",
     "resources/marketplace/catalog.sig"
   )) {
@@ -346,7 +360,8 @@ while ([DateTime]::UtcNow -lt $deadline -and -not $smoke.HasExited) {
     $line = $stdoutRead.GetAwaiter().GetResult()
     if ($null -eq $line) { $stdoutOpen = $false } else {
       [void]$lines.Add($line)
-      if ($line -match '^dsh web: (http://127\.0\.0\.1:[0-9]{1,5})$') { $readyUrl = $Matches[1] }
+      $candidate = Get-HarnessReadyUrl $line
+      if ($candidate) { $readyUrl = $candidate }
       $stdoutRead = $smoke.StandardOutput.ReadLineAsync()
     }
   }
@@ -354,7 +369,8 @@ while ([DateTime]::UtcNow -lt $deadline -and -not $smoke.HasExited) {
     $line = $stderrRead.GetAwaiter().GetResult()
     if ($null -eq $line) { $stderrOpen = $false } else {
       [void]$lines.Add($line)
-      if ($line -match '^dsh web: (http://127\.0\.0\.1:[0-9]{1,5})$') { $readyUrl = $Matches[1] }
+      $candidate = Get-HarnessReadyUrl $line
+      if ($candidate) { $readyUrl = $candidate }
       $stderrRead = $smoke.StandardError.ReadLineAsync()
     }
   }
@@ -365,14 +381,16 @@ if (-not $readyUrl -and $smoke.HasExited) {
     $line = $stdoutRead.GetAwaiter().GetResult()
     if ($null -eq $line) { $stdoutOpen = $false; break }
     [void]$lines.Add($line)
-    if ($line -match '^dsh web: (http://127\.0\.0\.1:[0-9]{1,5})$') { $readyUrl = $Matches[1] }
+    $candidate = Get-HarnessReadyUrl $line
+    if ($candidate) { $readyUrl = $candidate }
     $stdoutRead = $smoke.StandardOutput.ReadLineAsync()
   }
   while ($stderrOpen) {
     $line = $stderrRead.GetAwaiter().GetResult()
     if ($null -eq $line) { $stderrOpen = $false; break }
     [void]$lines.Add($line)
-    if ($line -match '^dsh web: (http://127\.0\.0\.1:[0-9]{1,5})$') { $readyUrl = $Matches[1] }
+    $candidate = Get-HarnessReadyUrl $line
+    if ($candidate) { $readyUrl = $candidate }
     $stderrRead = $smoke.StandardError.ReadLineAsync()
   }
 }
@@ -409,14 +427,10 @@ $pluginBuild = Join-Path $pluginSource "scripts/build-against-harness.mjs"
 $marketplaceCatalog = Join-Path $pluginSource "catalog/catalog.json"
 $marketplaceSignature = Join-Path $pluginSource "catalog/catalog.sig"
 $pluginVersion = Get-DesktopPluginVersion
-$webToolsSourceManifest = Join-Path $pluginSource "packages/plugin-bundle/vendor/dsh-web-tools/package.json"
-if (-not (Test-Path $webToolsSourceManifest)) { throw "Built-in web tools source is incomplete: $webToolsSourceManifest" }
-$webToolsVersion = (Get-Content $webToolsSourceManifest -Raw | ConvertFrom-Json).version
 $pluginPackages = @(
   @{ directory = "plugin-host"; name = "@run-bigpig/dsh-desktop-plugin-host"; source = "packages/plugin-host/package.json"; version = $pluginVersion },
   @{ directory = "plugin-client"; name = "@run-bigpig/dsh-desktop-plugin-client"; source = "packages/plugin-client/package.json"; version = $pluginVersion },
-  @{ directory = "plugin-bundle"; name = "@run-bigpig/dsh-desktop-plugin"; source = "packages/plugin-bundle/package.json"; version = $pluginVersion },
-  @{ directory = "web-tools"; name = "dsh-web-tools"; source = "packages/plugin-bundle/vendor/dsh-web-tools/package.json"; version = $webToolsVersion }
+  @{ directory = "plugin-bundle"; name = "@run-bigpig/dsh-desktop-plugin"; source = "packages/plugin-bundle/package.json"; version = $pluginVersion }
 )
 foreach ($required in $pluginBuild,$marketplaceCatalog,$marketplaceSignature) {
   if (-not (Test-Path $required)) { throw "Built-in Desktop Plugin source is incomplete: $required" }
@@ -481,7 +495,6 @@ Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
   node = $seedLock.node
   pnpm = $seedLock.pnpm
   pluginVersion = $pluginVersion
-  webToolsVersion = $webToolsVersion
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })
 

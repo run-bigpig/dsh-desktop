@@ -1,0 +1,19 @@
+.anchor {
+  display: contents;
+}
+
+.mark {
+  display: block;
+  flex: none;
+  object-fit: contain;
+}
+
+.name {
+  overflow: hidden;
+  color: var(--dsw-alias-label-primary);
+  font-size: 15px;
+  font-weight: 650;
+  line-height: 20px;
+  letter-spacing: -0.02em;
+  white-space: nowrap;
+}

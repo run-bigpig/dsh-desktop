@@ -63,7 +63,7 @@ func terminalBootstrap(config dshTerminalConfig, binDir string) (string, error) 
 		`set "DSH_DESKTOP_NODE=` + escape(config.Node) + `"`,
 		`set "DSH_DESKTOP_CLI=` + escape(config.CLI) + `"`,
 		`set "PNPM_HOME=` + escape(filepath.Dir(config.PNPM)) + `"`,
-		`set "npm_config_store_dir=` + escape(config.PNPMStore) + `"`,
+		`set "PNPM_CONFIG_STORE_DIR=` + escape(config.PNPMStore) + `"`,
 		`set "PATH=` + escape(binDir) + `;` + escape(filepath.Dir(config.Node)) + `;` + escape(filepath.Dir(config.PNPM)) + `;%PATH%"`,
 		`cd /d "` + escape(config.WorkingDirectory) + `"`,
 		"title DeepSeek Harness dsh",

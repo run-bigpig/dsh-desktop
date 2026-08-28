@@ -4,7 +4,7 @@ import {
   type ImageGenerateBatchResult,
   type ImageMutationResult,
   type ImageToolService,
-} from '../src/image-tools.ts'
+} from '../src/image/tools.ts'
 
 describe('image tools', () => {
   it('renders a completed mutation as official text and image blocks', () => {

@@ -61,14 +61,14 @@ func TestBundledDesktopPluginOfflineInstall(t *testing.T) {
 	if installed == nil || *installed != desktopPluginVersion {
 		t.Fatalf("installed Desktop Plugin version = %v", installed)
 	}
-	installedWebTools := installedPackageVersion(paths.HarnessHome, "dsh-web-tools")
-	if installedWebTools == nil || *installedWebTools != builtInWebToolsVersion {
-		t.Fatalf("installed built-in web tools version = %v", installedWebTools)
-	}
 	if err := manager.runCLI(ctx, paths.HarnessHome, "--profile", "web", "--dump-config"); err != nil {
 		t.Fatal(err)
 	}
 	hostEntry := filepath.Join(paths.HarnessHome, "profiles", "web", "node_modules", "@run-bigpig", "dsh-desktop-plugin-host", "lib", "index.js")
+	webToolsEntry := filepath.Join(paths.HarnessHome, "profiles", "web", "node_modules", "@run-bigpig", "dsh-desktop-plugin-host", "lib", "web-tools.js")
+	if _, err := os.Stat(webToolsEntry); err != nil {
+		t.Fatalf("built-in web tools Host entry is missing: %v", err)
+	}
 	probe := `import { pathToFileURL } from 'node:url'; const module = await import(pathToFileURL(process.argv[1]).href); const value = await module.DesktopGateway.prototype.catalog.call({}); if (!value || !Array.isArray(value.plugins)) throw new Error('invalid catalog response'); process.stdout.write(JSON.stringify(value));`
 	command := exec.CommandContext(ctx, node, "--input-type=module", "--eval", probe, hostEntry)
 	command.Dir = filepath.Join(paths.HarnessHome, "profiles", "web")
