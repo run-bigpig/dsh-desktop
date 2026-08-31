@@ -25,14 +25,14 @@ if (-not (Test-Path $pnpm)) { throw "Embedded pnpm is missing" }
 $node = Join-Path $nodeDir "node.exe"
 if (-not (Test-Path $node)) { throw "Embedded Node is missing" }
 if (-not (Test-Path $materializer)) { throw "Harness workspace materializer is missing" }
-foreach ($directory in "plugin-host","plugin-client","plugin-bundle","web-tools") {
+foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
   if (-not (Test-Path (Join-Path $pluginRoot ($directory + "\package.json")))) {
     throw "Built-in plugin package is missing: $directory"
   }
 }
 
 $logDir = Split-Path -Parent $logPath
-$installerHome = Join-Path $env:APPDATA "DSH-DeskTop\installer-home"
+$installerHome = Join-Path $env:APPDATA "StarWeave\installer-home"
 New-Item -ItemType Directory -Force $logDir,$installerHome,$store | Out-Null
 $env:HOME = $installerHome
 $env:USERPROFILE = $installerHome
@@ -129,7 +129,7 @@ if (-not (Test-Path (Join-Path $deploy "lib/bin.js"))) { throw "Harness deploy d
 if (-not (Test-Path (Join-Path $deploy "node_modules"))) { throw "Harness deploy did not create node_modules" }
 
 $pluginDependencies = [ordered]@{}
-foreach ($directory in "plugin-host","plugin-client","plugin-bundle","web-tools") {
+foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
   $manifest = Get-Content (Join-Path $pluginRoot ($directory + "\package.json")) -Raw | ConvertFrom-Json
   $dependenciesProperty = $manifest.PSObject.Properties["dependencies"]
   if ($null -eq $dependenciesProperty) { continue }
@@ -149,7 +149,7 @@ if ($pluginDependencies.Count -gt 0) {
   if (Test-Path $dependencySeed) { Remove-Item -LiteralPath $dependencySeed -Recurse -Force }
   New-Item -ItemType Directory -Force $dependencySeed | Out-Null
   [ordered]@{
-    name = "dsh-desktop-plugin-dependency-seed"
+    name = "starweave-plugin-dependency-seed"
     version = "0.0.0"
     private = $true
     dependencies = $pluginDependencies

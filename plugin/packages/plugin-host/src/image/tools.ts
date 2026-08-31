@@ -175,7 +175,7 @@ export function defineImageTools(service: ImageToolService) {
   return [
     defineTool({
       name: 'image_generate',
-      description: 'Generate one image with prompt, or multiple images with prompts, using the image model selected in DSH-DeskTop settings. Each result is saved as its own session-scoped image task and all results appear in one chat card. prompt and prompts are mutually exclusive.',
+      description: 'Generate one image with prompt, or multiple images with prompts, using the image model selected in StarWeave settings. Each result is saved as its own session-scoped image task and all results appear in one chat card. prompt and prompts are mutually exclusive.',
       parameters: {
         prompt: { type: 'string', description: 'Complete instruction for one image. Mutually exclusive with prompts.' },
         prompts: {

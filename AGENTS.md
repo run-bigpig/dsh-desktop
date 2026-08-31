@@ -109,14 +109,14 @@ Strong success criteria let you loop independently. Weak criteria ("make it work
 - Use the minimum number of sub-agents needed. Avoid delegation for simple inspections, single-file changes, or inherently sequential work.
 - When a sub-agent is needed, use `5.6 Terra`, `5.6 Luna`, `5.5`, or `5.4`. Do not use `5.6 Sol`.
 
-## 10. DSH-DeskTop Project Identity And Scope
+## 10. StarWeave Project Identity And Scope
 
 These project-specific rules override generic preferences when they conflict.
 
-- Product name: `DSH-DeskTop`.
-- Windows executable name: `dsh-desktop.exe`.
-- Default per-user install directory: `%LOCALAPPDATA%\Programs\DSH-DeskTop`.
-- Default private data directory: `%APPDATA%\DSH-DeskTop`.
+- Product name: `StarWeave`.
+- Windows executable name: `StarWeave.exe`.
+- Default per-user install directory: `%LOCALAPPDATA%\Programs\StarWeave`.
+- Default private data directory: `%APPDATA%\StarWeave`.
 - Inspect the current branch before editing. The active development branch is expected to be `dev-frontend` unless the user changes it; do not switch branches without authorization.
 - This repository is an independent Wails 3 desktop shell. Do not fork, copy, patch, or vendor the DeepSeek Harness repository into the project as application source.
 - Do not add Git submodules or depend on an adjacent repository to build a release.
@@ -137,7 +137,7 @@ These project-specific rules override generic preferences when they conflict.
 - Do not add npm or npx merely because a package invokes a package-manager command. Prefer the embedded pnpm path and fix the invocation or packaging boundary.
 - Do not package a full Harness `node_modules` tree.
 - Package the pinned Harness source/workspace build outputs required for deployment. Install dependencies that are not present in the official Harness repository during installation with embedded pnpm and the official lockfile.
-- Preserve and reuse `%APPDATA%\DSH-DeskTop\pnpm-store`. Reinstall, upgrade, plugin install, and plugin uninstall must not delete it.
+- Preserve and reuse `%APPDATA%\StarWeave\pnpm-store`. Reinstall, upgrade, plugin install, and plugin uninstall must not delete it.
 - The installer may offer only these registries:
   - `https://registry.npmjs.org/` (default);
   - `https://registry.npmmirror.com/`.
@@ -314,7 +314,7 @@ For source changes, run the smallest relevant checks first, then the release-app
 
 ### Runtime smoke checks
 
-- Confirm both `dsh-desktop.exe` and the embedded Node Harness process are running.
+- Confirm both `StarWeave.exe` and the embedded Node Harness process are running.
 - Confirm the desktop log records strict readiness, the one-second hold, navigation, and completed window swap.
 - Confirm the installed built-in plugin version matches the source version.
 - Confirm the live profile has no position-dependent `pnpm-lock.yaml` after plugin management.
@@ -360,7 +360,7 @@ For source changes, run the smallest relevant checks first, then the release-app
 - NSIS upgrades must close the running desktop app after user confirmation (silent mode may close automatically), preserve private data and pnpm store, and restore the previous resources/EXE if dependency deployment fails.
 - Installer dependency deployment uses embedded pnpm and the selected allowed registry.
 - Large old resources or dependency directories should be detached by rename and cleaned outside the critical install path.
-- After generating `dist/windows/DSH-DeskTop-Setup-x64.exe`, calculate a new SHA-256 and update the sidecar. Never reuse a previous checksum.
+- After generating `dist/windows/StarWeave-Setup-x64.exe`, calculate a new SHA-256 and update the sidecar. Never reuse a previous checksum.
 - NSIS packaging must fingerprint the verified seed, desktop executable, installer sources, app version, and compiler version. If that manifest, installer hash, and sidecar all match, reuse the installer without recompression.
 - A real NSIS rebuild must write to a temporary installer path and replace the public installer only after successful compilation.
 - `desktop-build.json` and `resources/seed/build-manifest.json` are build-verification metadata only. Validate them before packaging, but do not include them in the installed payload.

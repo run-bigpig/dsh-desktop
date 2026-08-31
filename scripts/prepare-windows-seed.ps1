@@ -399,8 +399,33 @@ if (-not $readyUrl) {
   @($lines) | ForEach-Object { Write-Warning ("Harness smoke: " + $_) }
   throw "Seed smoke did not publish a strict loopback ready URL"
 }
-$homePage = Invoke-WebRequest -UseBasicParsing -Uri $readyUrl -TimeoutSec 8
-if ($homePage.Content -notmatch '(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])') { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke homepage is missing the Harness boot manifest" }
+$smokeSession = New-Object Microsoft.PowerShell.Commands.WebRequestSession
+$homePage = Invoke-WebRequest -UseBasicParsing -Uri $readyUrl -WebSession $smokeSession -TimeoutSec 8
+$bootMatch = [Text.RegularExpressions.Regex]::Match(
+  $homePage.Content,
+  '(?:window\.__DSH_BOOT__|globalThis\["__DSH_BOOT__"\])\s*=\s*(?<graph>\{.*?\})\s*</script>',
+  [Text.RegularExpressions.RegexOptions]::Singleline
+)
+if (-not $bootMatch.Success) { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke homepage is missing the Harness boot manifest" }
+$bootGraph = $bootMatch.Groups["graph"].Value | ConvertFrom-Json
+$clientModules = '@deepseek-ai/dsh-client-modules'
+if (-not @($bootGraph.entries | Where-Object { $_.id -eq $clientModules }).Count) {
+  & taskkill /PID $smoke.Id /T /F | Out-Null
+  throw "Seed smoke boot graph is missing $clientModules"
+}
+$bootstrapBatch = $bootGraph.batches | Where-Object {
+  $_.phase -eq 'bootstrap' -and @($_.entries) -contains $clientModules
+} | Select-Object -First 1
+if (-not $bootstrapBatch -or [string]::IsNullOrWhiteSpace($bootstrapBatch.url)) {
+  & taskkill /PID $smoke.Id /T /F | Out-Null
+  throw "Seed smoke HTML did not preload $clientModules/client.js"
+}
+$bootstrapUrl = [Uri]::new([Uri]$readyUrl, [string]$bootstrapBatch.url).AbsoluteUri
+$bootstrapResponse = Invoke-WebRequest -UseBasicParsing -Uri $bootstrapUrl -WebSession $smokeSession -TimeoutSec 8
+if ($bootstrapResponse.StatusCode -ne 200 -or $bootstrapResponse.Content -notmatch [Text.RegularExpressions.Regex]::Escape($clientModules)) {
+  & taskkill /PID $smoke.Id /T /F | Out-Null
+  throw "Seed smoke client-modules bootstrap bundle failed validation"
+}
 $smoke.StandardInput.WriteLine('{"type":"shutdown","source":"release-smoke"}'); $smoke.StandardInput.Close()
 if (-not $smoke.WaitForExit(10000)) { & taskkill /PID $smoke.Id /T /F | Out-Null; throw "Seed smoke did not shut down gracefully" }
 if ($smoke.ExitCode -ne 0) { throw "Seed smoke exited with code $($smoke.ExitCode)" }

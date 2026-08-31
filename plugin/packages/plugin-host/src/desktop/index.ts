@@ -16,7 +16,7 @@ const CONTROL_TOKEN = process.env.DSH_DESKTOP_CONTROL_TOKEN
 
 async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (CONTROL_URL === undefined || CONTROL_TOKEN === undefined) {
-    throw new Error('DSH-DeskTop control bridge is unavailable')
+    throw new Error('StarWeave control bridge is unavailable')
   }
   const response = await fetch(new URL(path, CONTROL_URL), {
     ...init,

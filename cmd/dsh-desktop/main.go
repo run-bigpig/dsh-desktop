@@ -134,9 +134,9 @@ func main() {
 		showSplash()
 	}
 	var app *application.App
-	app = application.New(application.Options{Name: "DSH-DeskTop", Description: "Independent desktop runtime for the official DeepSeek Harness web UI", Icon: desktopassets.AppIcon, Logger: logger,
+	app = application.New(application.Options{Name: "StarWeave", Description: "Independent desktop runtime for the official DeepSeek Harness web UI", Icon: desktopassets.AppIcon, Logger: logger,
 		Assets:  application.AssetOptions{Handler: application.BundledAssetFileServer(desktopassets.Frontend)},
-		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true, WebviewUserDataPath: paths.State + string(os.PathSeparator) + "webview2"}, Linux: application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "deepseek-harness-desktop"},
+		Windows: application.WindowsOptions{DisableQuitOnLastWindowClosed: true, WebviewUserDataPath: paths.State + string(os.PathSeparator) + "webview2"}, Linux: application.LinuxOptions{DisableQuitOnLastWindowClosed: true, ProgramName: "starweave"},
 		SingleInstance: &application.SingleInstanceOptions{UniqueID: "ai.deepseek.harness-desktop", OnSecondInstanceLaunch: func(data application.SecondInstanceData) {
 			for _, arg := range data.Args {
 				if arg == "--quit-for-update" {
@@ -162,8 +162,8 @@ func main() {
 		windowHeight += desktopChromeHeight
 		minWindowHeight += desktopChromeHeight
 	}
-	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "DSH-DeskTop", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
-	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "DSH-DeskTop", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
+	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
+	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
 	coordinator.SetWindow(mainWindow)
 	service.SetWindow(splashWindow)
 	finishHarnessNavigation := func(*application.WindowEvent) {
@@ -194,7 +194,7 @@ func main() {
 		showSplash()
 	})
 	tray := app.SystemTray.New()
-	tray.SetTooltip("DSH-DeskTop")
+	tray.SetTooltip("StarWeave")
 	if runtime.GOOS == "darwin" {
 		tray.SetTemplateIcon(icons.SystrayMacTemplate)
 	} else {

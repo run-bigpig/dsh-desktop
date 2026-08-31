@@ -1,7 +1,7 @@
 # Built-in Desktop Plugin
 
 This directory contains the source for the three trusted packages that integrate
-DSH-DeskTop with the official Harness web profile. The Windows seed build copies
+StarWeave with the official Harness web profile. The Windows seed build copies
 these packages into the locked Harness workspace, compiles them against that
 Harness commit, and stages ordinary package directories in the installer.
 

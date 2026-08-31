@@ -40,7 +40,10 @@ const token="AAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
 const server=http.createServer((req,res)=>{
   const url=new URL(req.url,"http://127.0.0.1");
   if(url.pathname==="/"&&url.searchParams.get("token")===token&&[...url.searchParams].length===1){res.writeHead(303,{"set-cookie":"dsh-auth-test=valid; Path=/; HttpOnly; SameSite=Strict","location":"/"});res.end();return;}
-  if(url.pathname==="/"&&url.search===""&&req.headers.cookie?.includes("dsh-auth-test=valid")){res.end('<script>window.__DSH_BOOT__={}</script>');return;}
+  if(url.search===""&&req.headers.cookie?.includes("dsh-auth-test=valid")){
+    if(url.pathname==="/"){res.end('<script>window.__DSH_BOOT__={"entries":[{"id":"@deepseek-ai/dsh-client-modules"}],"batches":[{"phase":"bootstrap","url":"/plugins/bootstrap.js","entries":["@deepseek-ai/dsh-client-modules"]}]}</script>');return;}
+    if(url.pathname==="/plugins/bootstrap.js"){res.end('window.__ModuleLoader__.load({id:"@deepseek-ai/dsh-client-modules"})');return;}
+  }
   res.writeHead(401);res.end("authentication required");
 });
 server.listen(0,"127.0.0.1",()=>{console.log("dsh web: http://127.0.0.1:"+server.address().port+"/?token="+token);` + func() string {

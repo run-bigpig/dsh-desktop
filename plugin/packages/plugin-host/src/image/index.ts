@@ -219,7 +219,7 @@ export class ImageGateway extends TypertRemoteService implements ImageToolServic
 
   private selectedModel(): ImageSettingsDocument['image'] {
     if (this.document.image.provider.length === 0 || this.document.image.model.length === 0) {
-      throw new Error('image-workbench: select an image model in DSH-DeskTop settings first')
+      throw new Error('image-workbench: select an image model in StarWeave settings first')
     }
     return this.document.image
   }

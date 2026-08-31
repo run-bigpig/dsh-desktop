@@ -94,7 +94,7 @@ export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) 
   };
 }
 
-/** Built-in updates are delivered only with a verified DSH-DeskTop release. */
+/** Built-in updates are delivered only with a verified StarWeave release. */
 async function checkVersion(): Promise<VersionCheckView> {
   return { currentVersion: CURRENT_VERSION, updateAvailable: false };
 }

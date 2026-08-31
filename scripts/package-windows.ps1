@@ -14,12 +14,15 @@ $installer = Join-Path $repoRoot "build/windows/installer.nsi"
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
 $desktopManifestPath = Join-Path $stage "desktop-build.json"
 $seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
-$desktopExe = Join-Path $stage "dsh-desktop.exe"
-$output = Join-Path $repoRoot "dist/windows/DSH-DeskTop-Setup-x64.exe"
+$desktopExe = Join-Path $stage "StarWeave.exe"
+$output = Join-Path $repoRoot "dist/windows/StarWeave-Setup-x64.exe"
 $checksumPath = $output + ".sha256"
 $installerManifestPath = Join-Path $repoRoot "dist/windows/installer-build.json"
 if (-not (Test-Path $desktopExe)) {
   throw "Windows stage is missing the desktop executable"
+}
+if (Test-Path (Join-Path $stage "dsh-desktop.exe")) {
+  throw "Windows stage still contains the legacy desktop executable; run task build:windows"
 }
 if (-not (Test-Path $desktopManifestPath)) {
   throw "Windows stage is missing its desktop build manifest; run task build:windows"
@@ -84,7 +87,10 @@ $compilerVersion = (& makensis.exe /VERSION).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $compilerVersion) { throw "Unable to determine the NSIS compiler version" }
 $installerSourceFingerprint = Get-SourceFingerprint -RepoRoot $repoRoot -Paths @(
   "build/windows/installer.nsi",
-  "build/windows/icon.ico"
+  "build/windows/icon.ico",
+  "build/windows/install-runtime.ps1",
+  "build/windows/cleanup-resources.ps1",
+  "scripts/materialize-workspace-runtime.mjs"
 )
 $installerFingerprint = Get-SHA256Text ((@(
   "installerSource=$installerSourceFingerprint",
@@ -118,7 +124,7 @@ foreach ($letter in [char[]](90..68)) {
   if ($candidate -notin $usedDrives) { $drive = $candidate; break }
 }
 if (-not $drive) { throw "No free drive letter is available for long-path-safe NSIS packaging" }
-$temporaryOutput = Join-Path $repoRoot ("dist/windows/DSH-DeskTop-Setup-x64.tmp-" + [Guid]::NewGuid().ToString("N") + ".exe")
+$temporaryOutput = Join-Path $repoRoot ("dist/windows/StarWeave-Setup-x64.tmp-" + [Guid]::NewGuid().ToString("N") + ".exe")
 
 try {
   & subst.exe $drive $stage

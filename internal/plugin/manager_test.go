@@ -140,8 +140,8 @@ func TestDetachAndRestoreProfileModules(t *testing.T) {
 
 func TestMigrateLegacyProfilePaths(t *testing.T) {
 	root := t.TempDir()
-	legacyRoot := filepath.Join(root, "DeepSeekHarnessDesktop")
-	currentRoot := filepath.Join(root, "DSH-DeskTop")
+	legacyRoot := filepath.Join(root, "DSH-DeskTop")
+	currentRoot := filepath.Join(root, "StarWeave")
 	profile := filepath.Join(currentRoot, "harness-home", "profiles", "web")
 	if err := os.MkdirAll(profile, 0o700); err != nil {
 		t.Fatal(err)

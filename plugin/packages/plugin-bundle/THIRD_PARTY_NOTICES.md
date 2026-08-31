@@ -58,14 +58,14 @@ in `LICENSES/dsh-aionui-panel-BSD-3-Clause.txt`.
 That upstream package is itself a behavioral re-implementation of the AionUi
 right-panel system (`iOfficeAI/AionUi`, version 2.1.53), which is licensed under
 the Apache License, Version 2.0. No AionUi application source is vendored by
-DSH-DeskTop.
+StarWeave.
 
 The built-in web search, web fetch, provider credential-pool, and browser-based
 X/Twitter and Xiaohongshu capabilities adapt source from `A3Boy/dsh-web-tools`
 version `0.3.0`, commit `e664521d51c4e6fa738e79126bf2e78e2cc62455`, and integrate
 it into the built-in Host and Client packages. The upstream project is
 distributed under the MIT License. It was modified so updates are
-delivered with DSH-DeskTop releases, browser state is kept under the desktop
+delivered with StarWeave releases, browser state is kept under the desktop
 private data directory, Windows browser child processes remain hidden, and the
 desktop Bundle remains the sole Cordis patch owner. The license text is
 included in `LICENSES/dsh-web-tools-MIT.txt`.

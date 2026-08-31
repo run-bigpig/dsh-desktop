@@ -17,7 +17,10 @@ if (-not $Worker) {
 
 $oldPath = $env:DSH_DESKTOP_CLEAN_OLD
 $emptyPath = $env:DSH_DESKTOP_CLEAN_EMPTY
-$logDir = Join-Path $env:APPDATA "DSH-DeskTop\logs"
+$logDir = $env:DSH_DESKTOP_CLEAN_LOG_DIR
+if ([string]::IsNullOrWhiteSpace($logDir)) {
+  $logDir = Join-Path $env:APPDATA "StarWeave\logs"
+}
 $logPath = Join-Path $logDir "installer-cleanup.log"
 
 New-Item -ItemType Directory -Force $logDir | Out-Null

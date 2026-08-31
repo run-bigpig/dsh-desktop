@@ -1,2 +1,2 @@
-/** Host loader entry for the DSH-DeskTop browser integrations. */
+/** Host loader entry for the StarWeave browser integrations. */
 export function apply(): void {}

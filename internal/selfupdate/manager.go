@@ -65,7 +65,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 		return nil, m.fail(err)
 	}
 	request.Header.Set("Accept", "application/vnd.github+json")
-	request.Header.Set("User-Agent", "DeepSeek-Harness-Desktop/"+m.currentVersion)
+	request.Header.Set("User-Agent", "StarWeave/"+m.currentVersion)
 	response, err := m.client.Do(request)
 	if err != nil {
 		return nil, m.fail(fmt.Errorf("check desktop release: %w", err))
@@ -88,7 +88,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	}
 	if !newer {
 		m.store.SetAvailableUpdate(nil)
-		m.set(state.Ready, "DSH-DeskTop "+m.currentVersion+" 已是最新版本")
+		m.set(state.Ready, "StarWeave "+m.currentVersion+" 已是最新版本")
 		return nil, nil
 	}
 	assetName, err := platformAssetName()
@@ -126,7 +126,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 	if err != nil {
 		return "", m.fail(err)
 	}
-	request.Header.Set("User-Agent", "DeepSeek-Harness-Desktop/"+m.currentVersion)
+	request.Header.Set("User-Agent", "StarWeave/"+m.currentVersion)
 	response, err := m.client.Do(request)
 	if err != nil {
 		return "", m.fail(fmt.Errorf("download desktop update: %w", err))
@@ -194,7 +194,7 @@ func (m *Manager) resolveChecksum(ctx context.Context, assets []githubAsset, ass
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", "DeepSeek-Harness-Desktop/"+m.currentVersion)
+	request.Header.Set("User-Agent", "StarWeave/"+m.currentVersion)
 	response, err := m.client.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download release checksum: %w", err)

@@ -68,7 +68,7 @@ func (m *Manager) fetchCatalogFile(ctx context.Context, rawURL string, limit int
 	}
 	request.Header.Set("Accept", "application/vnd.github.raw+json")
 	request.Header.Set("X-GitHub-Api-Version", "2022-11-28")
-	request.Header.Set("User-Agent", "DSH-DeskTop-Marketplace/"+desktopPluginVersion)
+	request.Header.Set("User-Agent", "StarWeave-Marketplace/"+desktopPluginVersion)
 	response, err := m.catalogClient.Do(request)
 	if err != nil {
 		return nil, err

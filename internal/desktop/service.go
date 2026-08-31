@@ -55,7 +55,7 @@ func (s *RecoveryService) CheckForUpdates() error {
 			return nil
 		}
 		if update == nil {
-			s.showInfo("已是最新版本", "当前 DSH-DeskTop 已是最新版本。")
+			s.showInfo("已是最新版本", "当前 StarWeave 已是最新版本。")
 			return nil
 		}
 		if !s.showAvailableUpdate(update) {
@@ -98,7 +98,7 @@ func (s *RecoveryService) OpenDataDirectory() error {
 func (s *RecoveryService) showAvailableUpdate(update *state.DesktopUpdate) bool {
 	install := false
 	dialog := s.app.Dialog.Question().SetTitle("发现桌面更新").SetMessage(
-		"DSH-DeskTop " + update.Version + " 已发布。\n\n是否下载完整安装包并自动升级？Harness 私有数据会保留。",
+		"StarWeave " + update.Version + " 已发布。\n\n是否下载完整安装包并自动升级？Harness 私有数据会保留。",
 	)
 	s.attach(dialog)
 	dialog.AddButton("稍后").SetAsCancel()

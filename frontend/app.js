@@ -1,16 +1,16 @@
 const service="github.com/run-bigpig/dsh-desktop/internal/desktop.RecoveryService.";
 const phases={
-  idle:{text:"正在唤醒桌面核心",progress:8},
-  starting:{text:"正在启动 Harness",progress:68},
-  checking:{text:"正在检查桌面更新",progress:82},
-  building:{text:"正在构建运行时",progress:72},
-  downloading:{text:"正在下载桌面更新",progress:88},
-  installing:{text:"正在准备桌面升级",progress:94},
-  pending:{text:"更新已准备完成",progress:96},
-  activating:{text:"正在切换内置运行时",progress:58},
-  recovering:{text:"正在恢复运行环境",progress:44},
-  failed:{text:"Harness 未能启动",progress:100},
-  ready:{text:"Harness 已就绪",progress:100}
+  idle:{text:"星织启动中",progress:8},
+  starting:{text:"星织启动中",progress:68},
+  checking:{text:"星织启动中",progress:82},
+  building:{text:"星织启动中",progress:72},
+  downloading:{text:"星织启动中",progress:88},
+  installing:{text:"星织启动中",progress:94},
+  pending:{text:"星织启动中",progress:96},
+  activating:{text:"星织启动中",progress:58},
+  recovering:{text:"星织启动中",progress:44},
+  failed:{text:"星织启动失败",progress:100},
+  ready:{text:"星织已就绪",progress:100}
 };
 
 const $=id=>document.getElementById(id);
@@ -37,21 +37,21 @@ function animateProgress(){
   const value=Math.max(0,Math.min(100,Math.round(visibleProgress)));
   const meta=phases[currentPhase]||phases.idle;
   $("progressText").textContent=`${meta.text} · ${String(value).padStart(2,"0")}%`;
-  paintAbsorption(visibleProgress);
+  paintConvergence(visibleProgress);
   requestAnimationFrame(animateProgress);
 }
 
-function paintAbsorption(progress){
+function paintConvergence(progress){
   const ratio=Math.max(0,Math.min(1,progress/100));
   const root=document.documentElement;
-  root.style.setProperty("--water-scale",(1.16-ratio*.9).toFixed(4));
-  root.style.setProperty("--water-opacity",Math.max(.025,1-ratio*.975).toFixed(4));
-  root.style.setProperty("--ring-scale",Math.max(.18,.98-ratio*.8).toFixed(4));
-  root.style.setProperty("--bubble-opacity",Math.max(0,.76-ratio*.8).toFixed(4));
-  root.style.setProperty("--fish-scale",(.78+ratio*.72).toFixed(4));
-  root.style.setProperty("--fish-brightness",Math.max(.035,1-ratio*.965).toFixed(4));
-  root.style.setProperty("--fish-glow",Math.max(.08,.78-ratio*.7).toFixed(4));
-  root.style.setProperty("--ambient-opacity",Math.max(.035,.42-ratio*.385).toFixed(4));
+  root.style.setProperty("--field-scale",(1.08-ratio*.26).toFixed(4));
+  root.style.setProperty("--stream-opacity",(.38+ratio*.38).toFixed(4));
+  root.style.setProperty("--stream-scale",Math.max(.58,1.04-ratio*.46).toFixed(4));
+  root.style.setProperty("--orbit-scale",Math.max(.72,1.06-ratio*.34).toFixed(4));
+  root.style.setProperty("--logo-scale",(.8+ratio*.2).toFixed(4));
+  root.style.setProperty("--logo-brightness",(.9+ratio*.16).toFixed(4));
+  root.style.setProperty("--logo-glow",(.44+ratio*.44).toFixed(4));
+  root.style.setProperty("--ambient-opacity",(.3+ratio*.18).toFixed(4));
 }
 
 async function refresh(){
@@ -69,8 +69,8 @@ function resetSplash(){
   document.body.dataset.phase="idle";
   document.body.classList.remove("handoff");
   document.body.classList.add("instant");
-  paintAbsorption(6);
-  $("progressText").textContent="正在唤醒桌面核心 · 06%";
+  paintConvergence(6);
+  $("progressText").textContent="星织启动中 · 06%";
   void document.body.offsetWidth;
   document.body.classList.remove("instant");
 }

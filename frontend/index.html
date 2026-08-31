@@ -4,7 +4,7 @@
   <meta charset="utf-8">
   <meta name="viewport" content="width=device-width,initial-scale=1">
   <meta name="color-scheme" content="dark">
-  <title>DSH-DeskTop</title>
+  <title>StarWeave</title>
   <link rel="stylesheet" href="styles.css">
   <script src="/wails/runtime.js" type="module"></script>
 </head>
@@ -12,23 +12,35 @@
   <div class="atmosphere" aria-hidden="true">
     <i class="glow glow-one"></i>
     <i class="glow glow-two"></i>
+    <i class="star-field stars-near"></i>
+    <i class="star-field stars-far"></i>
   </div>
 
   <main class="app-frame">
-    <section class="boot-view" aria-label="Harness 启动进度">
-      <div class="absorption-stage" id="absorptionStage">
-        <div class="water-mass" aria-hidden="true">
-          <i class="water-ring ring-outer"></i>
-          <i class="water-ring ring-middle"></i>
-          <i class="water-ring ring-inner"></i>
-          <span class="bubble bubble-a"></span>
-          <span class="bubble bubble-b"></span>
-          <span class="bubble bubble-c"></span>
-          <span class="bubble bubble-d"></span>
-          <span class="bubble bubble-e"></span>
+    <section class="boot-view" aria-label="星织启动进度">
+      <div class="convergence-stage" id="convergenceStage">
+        <div class="weave-field" aria-hidden="true">
+          <i class="weave-thread thread-1"></i>
+          <i class="weave-thread thread-2"></i>
+          <i class="weave-thread thread-3"></i>
+          <i class="weave-thread thread-4"></i>
+          <i class="weave-thread thread-5"></i>
+          <i class="weave-thread thread-6"></i>
+          <i class="weave-thread thread-7"></i>
+          <i class="weave-thread thread-8"></i>
+          <i class="weave-thread thread-9"></i>
+          <i class="weave-thread thread-10"></i>
+          <i class="weave-orbit orbit-outer"></i>
+          <i class="weave-orbit orbit-middle"></i>
+          <i class="weave-orbit orbit-inner"></i>
         </div>
-        <span class="fish-core" aria-hidden="true"><img src="avilo-bird.png" alt=""></span>
-        <p id="progressText" aria-live="polite">正在唤醒桌面核心 · 06%</p>
+
+        <span class="logo-core" aria-hidden="true">
+          <i class="logo-halo"></i>
+          <img src="starweave-logo.png" alt="">
+        </span>
+
+        <p id="progressText" aria-live="polite">星织启动中 · 06%</p>
       </div>
     </section>
   </main>

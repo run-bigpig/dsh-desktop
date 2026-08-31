@@ -46,7 +46,7 @@ test("Paths: URL allowlist strictly guards platforms, rejects http/ftp and looka
 });
 
 test("Paths: desktop data override keeps browser state inside the private data root", () => {
-  const root = path.join("desktop-private-data", "DSH-DeskTop");
+  const root = path.join("desktop-private-data", "StarWeave");
   assert.equal(
     getDedicatedProfileDir("x", root),
     path.join(root, "web-tools", "browser-profiles", "x"),

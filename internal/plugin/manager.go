@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.61"
+const desktopPluginVersion = "0.1.62"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{
@@ -860,7 +860,7 @@ func (m *Manager) download(ctx context.Context, entry catalogPlugin) (string, er
 	if err != nil {
 		return "", err
 	}
-	request.Header.Set("User-Agent", "DSH-DeskTop-Marketplace/"+desktopPluginVersion)
+	request.Header.Set("User-Agent", "StarWeave-Marketplace/"+desktopPluginVersion)
 	response, err := m.httpClient.Do(request)
 	if err != nil {
 		return "", fmt.Errorf("download plugin release: %w", err)

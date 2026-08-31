@@ -6,8 +6,8 @@
   "license": "MIT",
   "adaptations": [
     "Desktop Bundle owns the Cordis patch layer",
-    "updates are delivered only with DSH-DeskTop releases",
-    "browser state is stored under the DSH-DeskTop private data root",
+    "updates are delivered only with StarWeave releases",
+    "browser state is stored under the StarWeave private data root",
     "Windows browser child processes hide console windows",
     "runtime dependency and Harness peer versions are locked by the desktop build"
   ]

@@ -9,8 +9,8 @@ import (
 )
 
 const (
-	AppDirName       = "DSH-DeskTop"
-	legacyAppDirName = "DeepSeekHarnessDesktop"
+	AppDirName       = "StarWeave"
+	legacyAppDirName = "DSH-DeskTop"
 )
 
 type Paths struct {

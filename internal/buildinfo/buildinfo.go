@@ -9,4 +9,4 @@ var (
 	MarketplaceCatalogPublicKey    = "ugr1XnWCQuIrDJJ/OQcNncQyUCGWhe/QhDezHfmCLqo="
 )
 
-const WindowsX64Asset = "DSH-DeskTop-Setup-x64.exe"
+const WindowsX64Asset = "StarWeave-Setup-x64.exe"

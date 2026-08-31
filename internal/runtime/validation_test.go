@@ -61,9 +61,10 @@ func TestHarnessLaunchArgsDisableBrowser(t *testing.T) {
 }
 
 func TestProbeBootManifest(t *testing.T) {
+	graph := `{"entries":[{"id":"@deepseek-ai/dsh-client-modules"}],"batches":[{"phase":"bootstrap","url":"/plugins/bootstrap.js","entries":["@deepseek-ai/dsh-client-modules"]}]}`
 	for _, manifest := range []string{
-		`window.__DSH_BOOT__={}`,
-		`globalThis["__DSH_BOOT__"] = {}`,
+		`window.__DSH_BOOT__=` + graph,
+		`globalThis["__DSH_BOOT__"] = ` + graph,
 	} {
 		server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.URL.RawQuery == "token="+strings.Repeat("A", 43) {
@@ -72,8 +73,16 @@ func TestProbeBootManifest(t *testing.T) {
 				return
 			}
 			cookie, err := r.Cookie("dsh-auth-test")
-			if err != nil || cookie.Value != "valid" || r.URL.Path != "/" || r.URL.RawQuery != "" {
+			if err != nil || cookie.Value != "valid" || r.URL.RawQuery != "" {
 				http.Error(w, "authentication required", http.StatusUnauthorized)
+				return
+			}
+			if r.URL.Path == "/plugins/bootstrap.js" {
+				_, _ = w.Write([]byte(`window.__ModuleLoader__.load({id:"@deepseek-ai/dsh-client-modules"})`))
+				return
+			}
+			if r.URL.Path != "/" {
+				http.NotFound(w, r)
 				return
 			}
 			_, _ = w.Write([]byte(`<script>` + manifest + `</script>`))
@@ -84,6 +93,22 @@ func TestProbeBootManifest(t *testing.T) {
 			t.Fatalf("manifest %q was rejected: %v", manifest, err)
 		}
 		server.Close()
+	}
+}
+
+func TestProbeBootManifestRejectsEmptyGraph(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.RawQuery == "token="+strings.Repeat("A", 43) {
+			http.SetCookie(w, &http.Cookie{Name: "dsh-auth-test", Value: "valid", Path: "/", HttpOnly: true})
+			http.Redirect(w, r, "/", http.StatusSeeOther)
+			return
+		}
+		_, _ = w.Write([]byte(`<script>globalThis["__DSH_BOOT__"] = {"entries":[],"batches":[]}</script>`))
+	}))
+	defer server.Close()
+	raw := strings.Replace(server.URL, "localhost", "127.0.0.1", 1) + "/?token=" + strings.Repeat("A", 43)
+	if err := ProbeBootManifest(server.Client(), raw, 250*time.Millisecond); err == nil {
+		t.Fatal("accepted an empty Harness boot graph")
 	}
 }
 

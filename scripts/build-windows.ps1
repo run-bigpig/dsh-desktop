@@ -13,8 +13,9 @@ $buildLock = Enter-WindowsBuildLock $repoRoot
 $fingerprint = Get-WindowsDesktopFingerprint -RepoRoot $repoRoot -Version $Version -ReleaseAPI $ReleaseAPI
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $outputRoot = Join-Path $repoRoot "dist/windows/desktop-build"
-$temporaryExe = Join-Path $outputRoot "dsh-desktop.exe"
-$stageExe = Join-Path $stage "dsh-desktop.exe"
+$temporaryExe = Join-Path $outputRoot "StarWeave.exe"
+$stageExe = Join-Path $stage "StarWeave.exe"
+$legacyStageExe = Join-Path $stage "dsh-desktop.exe"
 $manifestPath = Join-Path $stage "desktop-build.json"
 New-Item -ItemType Directory -Force $stage,$outputRoot | Out-Null
 Remove-Item -LiteralPath $temporaryExe -Force -ErrorAction SilentlyContinue
@@ -38,12 +39,13 @@ if ($finalFingerprint -ne $fingerprint) {
 }
 $exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $temporaryExe).Hash.ToLowerInvariant()
 Move-Item -LiteralPath $temporaryExe -Destination $stageExe -Force
+Remove-Item -LiteralPath $legacyStageExe -Force -ErrorAction SilentlyContinue
 Write-JsonAtomic -Path $manifestPath -Value ([ordered]@{
   schemaVersion = 1
   fingerprint = $fingerprint
   version = $Version
   releaseAPI = $ReleaseAPI
-  executable = "dsh-desktop.exe"
+  executable = "StarWeave.exe"
   executableSHA256 = $exeHash
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })
