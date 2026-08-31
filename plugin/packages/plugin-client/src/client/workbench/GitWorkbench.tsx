@@ -290,10 +290,12 @@ function ChangeItem({ row, selected, busy, primaryLabel, discardLabel, onToggle,
       <span className={css.statusCode} data-state={row.state}>{statusCode(row)}</span>
       <span className={css.fileNames}><strong>{displayName(row)}</strong><small>{directoryOf(row.path)}</small></span>
     </button>
-    {!conflicted(row) && <div className={css.fileActions}>
-      <button type="button" disabled={busy} title={primaryLabel} onClick={() => { onPrimary(row) }}>{row.staged ? '−' : '+'}</button>
-      <button type="button" disabled={busy} title={discardLabel} onClick={() => { onDiscard(row) }}><IconTrashOutline16 size={12} /></button>
-    </div>}
+    <div className={css.fileActions} data-unavailable={conflicted(row) || undefined} aria-hidden={conflicted(row) || undefined}>
+      {!conflicted(row) && <>
+        <button type="button" disabled={busy} title={primaryLabel} onClick={() => { onPrimary(row) }}>{row.staged ? '−' : '+'}</button>
+        <button type="button" disabled={busy} title={discardLabel} onClick={() => { onDiscard(row) }}><IconTrashOutline16 size={12} /></button>
+      </>}
+    </div>
   </div>
 }
 
@@ -311,7 +313,9 @@ function TreeRows({ rows, render }: { readonly rows: readonly ChangeRow[]; reado
     const hidden = collapsed.has(directory)
     return <div className={css.directoryGroup} key={directory}>
       <button className={css.directoryRow} type="button" aria-expanded={!hidden} onClick={() => { setCollapsed(current => toggleSet(current, directory)) }}>
-        {hidden ? '›' : '⌄'} <span>{directory}</span><small>{entries.length}</small>
+        <span className={css.directoryChevron} aria-hidden="true">{hidden ? '›' : '⌄'}</span>
+        <span className={css.directoryName}>{directory}</span>
+        <small className={css.directoryCount}>{entries.length}</small>
       </button>
       {!hidden && entries.map(render)}
     </div>

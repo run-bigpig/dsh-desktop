@@ -11,7 +11,7 @@
 .search { display: flex; height: 32px; align-items: center; gap: 6px; padding: 0 9px; border-bottom: 1px solid var(--dsw-alias-border-l2-darkmode-thin); color: var(--dsw-alias-label-caption); }
 .search input { min-width: 0; height: 24px; flex: 1; padding: 0; border: 0; outline: 0; background: transparent; color: var(--dsw-alias-label-primary); font: inherit; font-size: 11px; }
 .search:focus-within { box-shadow: inset 2px 0 0 var(--dsw-alias-state-business-primary); }
-.tree { min-height: 0; overflow: auto; padding: 5px 5px 12px; scrollbar-color: var(--dsh-scrollbar-thumb) transparent; }
+.tree { min-height: 0; overflow-x: hidden; overflow-y: auto; padding: 5px 5px 12px; scrollbar-color: var(--dsh-scrollbar-thumb) transparent; scrollbar-gutter: stable; }
 .treeRow { box-sizing: border-box; display: flex; min-width: 0; min-height: 27px; align-items: center; gap: 4px; padding-top: 3px; padding-right: 7px; padding-bottom: 3px; border-radius: 6px; color: var(--dsw-alias-label-primary); font-size: 11px; line-height: 17px; cursor: default; user-select: none; }
 .treeRow:hover, .treeRow[data-selected='true'] { background: var(--dsw-alias-interactive-bg-hover); }
 .treeRow[data-selected='true'] { color: var(--dsw-alias-state-business-primary); }
@@ -19,7 +19,7 @@
 .treeRow[data-kind='file']:active { cursor: grabbing; }
 .chevron { display: grid; width: 14px; flex: none; place-items: center; color: var(--dsw-alias-label-caption); }
 .fileIcon { display: grid; width: 17px; flex: none; place-items: center; color: var(--dsw-alias-label-secondary); }
-.entryName { overflow: hidden; min-width: 0; text-overflow: ellipsis; white-space: nowrap; }
+.entryName { overflow: hidden; min-width: 0; flex: 1; text-overflow: ellipsis; white-space: nowrap; }
 .fileGlyph { display: inline-grid; width: 17px; height: 14px; place-items: center; border: 1px solid color-mix(in srgb, currentColor 62%, transparent); border-radius: 3px; color: var(--dsw-alias-label-caption); font-size: 6px; font-style: normal; font-weight: 700; letter-spacing: -.02em; }
 .statusRow { padding-top: 7px; padding-right: 8px; padding-bottom: 7px; color: var(--dsw-alias-label-caption); font-size: 10px; line-height: 15px; }
 .inlineError { width: 100%; padding-top: 6px; padding-right: 8px; padding-bottom: 6px; border: 0; background: transparent; color: var(--dsw-alias-state-error-label); font: inherit; font-size: 10px; text-align: left; }

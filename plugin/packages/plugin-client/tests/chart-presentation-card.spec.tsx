@@ -1,11 +1,22 @@
 // @vitest-environment jsdom
 
-import { cleanup, fireEvent, render } from '@testing-library/react'
+import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 
 vi.mock('@ant-design/plots', () => {
-  const plot = (name: string) => (props: { readonly data?: readonly unknown[] }) => (
-    <div data-antv={name} data-count={props.data?.length ?? 0} />
+  const plot = (name: string) => (props: {
+    readonly data?: readonly unknown[]
+    readonly axis?: { readonly x?: { readonly labelFill?: string } }
+    readonly legend?: { readonly color?: { readonly labelFill?: string } }
+    readonly scale?: { readonly color?: { readonly range?: readonly string[] } }
+  }) => (
+    <div
+      data-antv={name}
+      data-axis-label={props.axis?.x?.labelFill}
+      data-count={props.data?.length ?? 0}
+      data-legend-label={props.legend?.color?.labelFill}
+      data-series={props.scale?.color?.range?.join('|')}
+    />
   )
   return {
     Bar: plot('bar'),
@@ -29,6 +40,8 @@ const MARKER = '[DSH_CHART_PRESENTATION_V1]'
 afterEach(() => {
   cleanup()
   vi.restoreAllMocks()
+  document.body.removeAttribute('data-ds-dark-theme')
+  document.body.removeAttribute('style')
 })
 
 function translate(key: keyof typeof chartPresentationEn, params?: Readonly<Record<string, unknown>>): string {
@@ -83,7 +96,7 @@ describe('general chart presentation card', () => {
     expect(view.getByText(/chart interface/)).toBeTruthy()
   })
 
-  it('renders metadata, chart, and the bounded data table', () => {
+  it('renders the chart directly without a chart/data switch', () => {
     const inspect = vi.fn()
     const view = render(<ChartPresentationCard {...props(settled(), inspect)} />)
 
@@ -92,11 +105,43 @@ describe('general chart presentation card', () => {
     expect(view.getByText('Display limited')).toBeTruthy()
     expect(view.getByRole('img', { name: 'Daily active users chart' })).toBeTruthy()
     expect(view.container.querySelector('[data-antv="line"]')?.getAttribute('data-count')).toBe('2')
-    fireEvent.click(view.getByRole('tab', { name: 'Data' }))
-    expect(view.getByRole('region', { name: 'Daily active users data table' })).toBeTruthy()
-    expect(view.getByText('180')).toBeTruthy()
+    expect(view.queryByRole('tab')).toBeNull()
+    expect(view.queryByRole('region', { name: 'Daily active users data table' })).toBeNull()
     fireEvent.click(view.getByRole('button', { name: 'Inspect call' }))
     expect(inspect).toHaveBeenCalledOnce()
+  })
+
+  it('renders a table presentation directly as a table', () => {
+    const table: ChartPresentationModel = {
+      ...model,
+      view: 'table',
+      title: 'Summary',
+      truncated: false,
+      payload: { columns: ['Metric', 'Value'], rows: [['Users', 180]] },
+    }
+    const view = render(<ChartPresentationCard {...props(settled(table))} />)
+    expect(view.getByRole('region', { name: 'Summary data table' })).toBeTruthy()
+    expect(view.getByText('180')).toBeTruthy()
+    expect(view.queryByRole('tab')).toBeNull()
+  })
+
+  it('passes resolved Harness theme colors to AntV and follows dark theme changes', async () => {
+    document.body.style.setProperty('--dsw-alias-label-secondary', 'rgb(61, 66, 71)')
+    document.body.style.setProperty('--dsw-alias-border-l2', 'rgba(0, 0, 0, 0.1)')
+    document.body.style.setProperty('--dsw-alias-state-business-primary', 'rgb(65, 118, 230)')
+    const view = render(<ChartPresentationCard {...props(settled())} />)
+    const chart = view.container.querySelector('[data-antv="line"]')
+    expect(chart?.getAttribute('data-axis-label')).toBe('rgb(61, 66, 71)')
+    expect(chart?.getAttribute('data-legend-label')).toBe('rgb(61, 66, 71)')
+    expect(chart?.getAttribute('data-series')).toContain('rgb(65, 118, 230)')
+
+    document.body.setAttribute('data-ds-dark-theme', '')
+    document.body.style.setProperty('--dsw-alias-label-secondary', 'rgb(207, 211, 214)')
+    document.body.style.setProperty('--dsw-alias-border-l2', 'rgba(255, 255, 255, 0.12)')
+    await waitFor(() => {
+      expect(chart?.getAttribute('data-axis-label')).toBe('rgb(207, 211, 214)')
+      expect(chart?.getAttribute('data-legend-label')).toBe('rgb(207, 211, 214)')
+    })
   })
 
   it('renders heatmap and Sankey payloads from the common interface', () => {

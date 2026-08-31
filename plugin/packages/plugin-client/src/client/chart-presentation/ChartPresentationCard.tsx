@@ -1,4 +1,4 @@
-import { useMemo, useState, type ReactNode } from 'react'
+import { useEffect, useMemo, useState, type ReactNode } from 'react'
 import { Bar, Funnel, Heatmap, Line, Sankey } from '@ant-design/plots'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
 import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
@@ -13,9 +13,6 @@ import type {
 import css from './ChartPresentationCard.module.css'
 
 const CHART_PRESENTATION_MARKER = '[DSH_CHART_PRESENTATION_V1]'
-const SERIES_COLORS = ['#28a596', '#e3a348', '#4e86d8', '#d86f70', '#8d72cf', '#6c9f45', '#c26fba', '#5e9ca0']
-const CHART_TEXT = '#78838f'
-const CHART_GRID = 'rgba(120, 131, 143, 0.18)'
 const MAX_LABELS = 500
 const MAX_SERIES = 8
 const MAX_TABLE_COLUMNS = 16
@@ -27,6 +24,86 @@ const MAX_TEXT_LENGTH = 160
 const MAX_CELL_LENGTH = 500
 
 export type ChartPresentationCardProps = ToolCallViewProps & PropsLocale<'desktop.chartPresentation'>
+
+interface ChartTheme {
+  readonly textPrimary: string
+  readonly textSecondary: string
+  readonly onAccent: string
+  readonly grid: string
+  readonly series: string[]
+  readonly heatmap: string[]
+}
+
+function fallbackTheme(dark: boolean): ChartTheme {
+  return dark ? {
+    textPrimary: '#f1f3f5',
+    textSecondary: '#adb2b8',
+    onAccent: '#0f1115',
+    grid: 'rgba(255, 255, 255, 0.12)',
+    series: ['#679efe', '#4ed17e', '#f2b84b', '#f25a5a', '#93c5fd', '#b7c8fe', '#d7a8ff', '#70c7d4'],
+    heatmap: ['#2c2c2e', '#34415b', '#679efe'],
+  } : {
+    textPrimary: '#0f1115',
+    textSecondary: '#61666b',
+    onAccent: '#ffffff',
+    grid: 'rgba(0, 0, 0, 0.10)',
+    series: ['#4176e6', '#22c55e', '#d99520', '#ec1313', '#3b82f6', '#5268b2', '#8b5cf6', '#1596a8'],
+    heatmap: ['#f1f3f5', '#d3e2ff', '#4176e6'],
+  }
+}
+
+function readChartTheme(): ChartTheme {
+  if (typeof document === 'undefined' || typeof getComputedStyle === 'undefined') return fallbackTheme(false)
+  const dark = document.body.hasAttribute('data-ds-dark-theme')
+  const fallback = fallbackTheme(dark)
+  const styles = getComputedStyle(document.body)
+  const token = (name: string, value: string): string => styles.getPropertyValue(name).trim() || value
+  return {
+    textPrimary: token('--dsw-alias-label-primary', fallback.textPrimary),
+    textSecondary: token('--dsw-alias-label-secondary', fallback.textSecondary),
+    onAccent: token('--dsw-alias-label-primary-foreground', fallback.onAccent),
+    grid: token('--dsw-alias-border-l2', fallback.grid),
+    series: [
+      token('--dsw-alias-state-business-primary', fallback.series[0] ?? '#4176e6'),
+      token('--dsw-alias-state-success-primary', fallback.series[1] ?? '#22c55e'),
+      token('--dsw-alias-state-warn-primary', fallback.series[2] ?? '#d99520'),
+      token('--dsw-alias-state-error-primary', fallback.series[3] ?? '#ec1313'),
+      token('--dsw-static-blue-400', fallback.series[4] ?? '#3b82f6'),
+      token('--dsw-static-deepseek-600', fallback.series[5] ?? '#5268b2'),
+      token('--dsw-static-purple-400', fallback.series[6] ?? '#8b5cf6'),
+      token('--dsw-static-cyan-500', fallback.series[7] ?? '#1596a8'),
+    ],
+    heatmap: [
+      token('--dsw-alias-bg-layer-2', fallback.heatmap[0] ?? '#f1f3f5'),
+      token('--dsw-alias-state-business-tertiary', fallback.heatmap[1] ?? '#d3e2ff'),
+      token('--dsw-alias-state-business-primary', fallback.heatmap[2] ?? '#4176e6'),
+    ],
+  }
+}
+
+function sameTheme(left: ChartTheme, right: ChartTheme): boolean {
+  return left.textPrimary === right.textPrimary
+    && left.textSecondary === right.textSecondary
+    && left.onAccent === right.onAccent
+    && left.grid === right.grid
+    && left.series.every((value, index) => value === right.series[index])
+    && left.heatmap.every((value, index) => value === right.heatmap[index])
+}
+
+function useChartTheme(): ChartTheme {
+  const [theme, setTheme] = useState(readChartTheme)
+  useEffect(() => {
+    if (typeof MutationObserver === 'undefined' || typeof document === 'undefined') return undefined
+    const update = (): void => {
+      const next = readChartTheme()
+      setTheme(current => sameTheme(current, next) ? current : next)
+    }
+    const observer = new MutationObserver(update)
+    observer.observe(document.body, { attributes: true, attributeFilter: ['data-ds-dark-theme', 'style'] })
+    return () => { observer.disconnect() }
+  }, [])
+  return theme
+}
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
@@ -177,7 +254,11 @@ function AntvFrame({ label, children }: { readonly label: string; readonly child
   return <div className={css.antvChart} role="img" aria-label={label}>{children}</div>
 }
 
-function LineChart({ payload, label }: { readonly payload: ChartCartesianPayload; readonly label: string }): ReactNode {
+function LineChart({ payload, label, theme }: {
+  readonly payload: ChartCartesianPayload
+  readonly label: string
+  readonly theme: ChartTheme
+}): ReactNode {
   const data = cartesianData(payload)
   if (data.length === 0) return <EmptyChart label={label} />
   return (
@@ -185,14 +266,14 @@ function LineChart({ payload, label }: { readonly payload: ChartCartesianPayload
       <Line
         animation={false}
         axis={{
-          x: { labelAutoHide: true, labelAutoRotate: true, labelFill: CHART_TEXT, lineStroke: CHART_GRID, title: false },
-          y: { gridStroke: CHART_GRID, labelFill: CHART_TEXT, title: false },
+          x: { labelAutoHide: true, labelAutoRotate: true, labelFill: theme.textSecondary, lineStroke: theme.grid, title: false },
+          y: { gridStroke: theme.grid, labelFill: theme.textSecondary, title: false },
         }}
         colorField="series"
         data={data}
-        legend={{ color: { labelFill: CHART_TEXT, position: 'bottom' } }}
+        legend={{ color: { labelFill: theme.textSecondary, position: 'bottom' } }}
         point={data.length <= 64 ? { sizeField: 3 } : false}
-        scale={{ color: { range: SERIES_COLORS } }}
+        scale={{ color: { range: theme.series } }}
         style={{ lineWidth: 2 }}
         xField="label"
         yField="value"
@@ -201,7 +282,11 @@ function LineChart({ payload, label }: { readonly payload: ChartCartesianPayload
   )
 }
 
-function BarChart({ payload, label }: { readonly payload: ChartCartesianPayload; readonly label: string }): ReactNode {
+function BarChart({ payload, label, theme }: {
+  readonly payload: ChartCartesianPayload
+  readonly label: string
+  readonly theme: ChartTheme
+}): ReactNode {
   const data = cartesianData(payload)
   if (data.length === 0) return <EmptyChart label={label} />
   return (
@@ -209,14 +294,14 @@ function BarChart({ payload, label }: { readonly payload: ChartCartesianPayload;
       <Bar
         animation={false}
         axis={{
-          x: { gridStroke: CHART_GRID, labelFill: CHART_TEXT, title: false },
-          y: { labelAutoHide: true, labelFill: CHART_TEXT, lineStroke: CHART_GRID, title: false },
+          x: { gridStroke: theme.grid, labelFill: theme.textSecondary, title: false },
+          y: { labelAutoHide: true, labelFill: theme.textSecondary, lineStroke: theme.grid, title: false },
         }}
         colorField="series"
         data={data}
         group={payload.series.length > 1}
-        legend={{ color: { labelFill: CHART_TEXT, position: 'bottom' } }}
-        scale={{ color: { range: SERIES_COLORS }, x: { padding: 0.35 } }}
+        legend={{ color: { labelFill: theme.textSecondary, position: 'bottom' } }}
+        scale={{ color: { range: theme.series }, x: { padding: 0.35 } }}
         xField="label"
         yField="value"
       />
@@ -224,7 +309,11 @@ function BarChart({ payload, label }: { readonly payload: ChartCartesianPayload;
   )
 }
 
-function FunnelChart({ payload, label }: { readonly payload: ChartFunnelPayload; readonly label: string }): ReactNode {
+function FunnelChart({ payload, label, theme }: {
+  readonly payload: ChartFunnelPayload
+  readonly label: string
+  readonly theme: ChartTheme
+}): ReactNode {
   if (payload.steps.length === 0) return <EmptyChart label={label} />
   return (
     <AntvFrame label={label}>
@@ -234,9 +323,9 @@ function FunnelChart({ payload, label }: { readonly payload: ChartFunnelPayload;
         data={payload.steps}
         label={{
           text: (datum: ChartFunnelPayload['steps'][number]) => `${datum.label}\n${formatValue(datum.value)}`,
-          style: { fill: '#ffffff', fontWeight: 600 },
+          style: { fill: theme.onAccent, fontWeight: 600 },
         }}
-        scale={{ color: { range: SERIES_COLORS } }}
+        scale={{ color: { range: theme.series } }}
         xField="label"
         yField="value"
       />
@@ -244,7 +333,11 @@ function FunnelChart({ payload, label }: { readonly payload: ChartFunnelPayload;
   )
 }
 
-function HeatmapChart({ payload, label }: { readonly payload: ChartHeatmapPayload; readonly label: string }): ReactNode {
+function HeatmapChart({ payload, label, theme }: {
+  readonly payload: ChartHeatmapPayload
+  readonly label: string
+  readonly theme: ChartTheme
+}): ReactNode {
   const data = heatmapData(payload)
   if (data.length === 0) return <EmptyChart label={label} />
   return (
@@ -252,13 +345,13 @@ function HeatmapChart({ payload, label }: { readonly payload: ChartHeatmapPayloa
       <Heatmap
         animation={false}
         axis={{
-          x: { labelAutoHide: true, labelFill: CHART_TEXT, lineStroke: CHART_GRID, title: false },
-          y: { labelAutoHide: true, labelFill: CHART_TEXT, lineStroke: CHART_GRID, title: false },
+          x: { labelAutoHide: true, labelFill: theme.textSecondary, lineStroke: theme.grid, title: false },
+          y: { labelAutoHide: true, labelFill: theme.textSecondary, lineStroke: theme.grid, title: false },
         }}
         colorField="value"
         data={data}
-        label={{ text: (datum: { readonly value: number }) => formatValue(datum.value, payload.format), style: { fontSize: 10 } }}
-        scale={{ color: { range: ['#e8f2f0', '#a8d9d2', '#5db9ad', '#28a596', '#126b62'] } }}
+        label={{ text: (datum: { readonly value: number }) => formatValue(datum.value, payload.format), style: { fill: theme.textPrimary, fontSize: 10 } }}
+        scale={{ color: { range: theme.heatmap } }}
         xField="column"
         yField="cohort"
       />
@@ -266,7 +359,11 @@ function HeatmapChart({ payload, label }: { readonly payload: ChartHeatmapPayloa
   )
 }
 
-function SankeyChart({ payload, label }: { readonly payload: ChartSankeyPayload; readonly label: string }): ReactNode {
+function SankeyChart({ payload, label, theme }: {
+  readonly payload: ChartSankeyPayload
+  readonly label: string
+  readonly theme: ChartTheme
+}): ReactNode {
   if (payload.links.length === 0) return <EmptyChart label={label} />
   return (
     <AntvFrame label={label}>
@@ -274,43 +371,11 @@ function SankeyChart({ payload, label }: { readonly payload: ChartSankeyPayload;
         animation={false}
         data={payload.links}
         layout={{ nodeWidth: 0.012 }}
-        scale={{ color: { range: SERIES_COLORS } }}
-        style={{ labelFill: CHART_TEXT, labelFontSize: 11, linkFillOpacity: 0.35, nodeLineWidth: 0 }}
+        scale={{ color: { range: theme.series } }}
+        style={{ labelFill: theme.textPrimary, labelFontSize: 11, linkFillOpacity: 0.35, nodeLineWidth: 0 }}
       />
     </AntvFrame>
   )
-}
-
-function tableOf(model: ChartPresentationModel): ChartTablePayload {
-  switch (model.view) {
-    case 'line':
-    case 'bar': {
-      const payload = model.payload as ChartCartesianPayload
-      return {
-        columns: ['Label', ...payload.series.map(series => series.name)],
-        rows: payload.labels.map((label, index) => [label, ...payload.series.map(series => series.values[index] ?? null)]),
-      }
-    }
-    case 'funnel':
-      return {
-        columns: ['Step', 'Value'],
-        rows: (model.payload as ChartFunnelPayload).steps.map(step => [step.label, step.value]),
-      }
-    case 'heatmap': {
-      const payload = model.payload as ChartHeatmapPayload
-      return {
-        columns: ['Cohort', 'Initial', ...payload.columns],
-        rows: payload.rows.map(row => [row.label, row.initial ?? null, ...row.values]),
-      }
-    }
-    case 'sankey':
-      return {
-        columns: ['Source', 'Target', 'Value'],
-        rows: (model.payload as ChartSankeyPayload).links.map(link => [link.source, link.target, link.value]),
-      }
-    case 'table':
-      return model.payload as ChartTablePayload
-  }
 }
 
 function DataTable({ payload, label }: { readonly payload: ChartTablePayload; readonly label: string }): ReactNode {
@@ -334,12 +399,13 @@ function PresentationChart({ model, label }: {
   readonly model: ChartPresentationModel
   readonly label: string
 }): ReactNode {
+  const theme = useChartTheme()
   switch (model.view) {
-    case 'line': return <LineChart payload={model.payload as ChartCartesianPayload} label={label} />
-    case 'bar': return <BarChart payload={model.payload as ChartCartesianPayload} label={label} />
-    case 'funnel': return <FunnelChart payload={model.payload as ChartFunnelPayload} label={label} />
-    case 'heatmap': return <HeatmapChart payload={model.payload as ChartHeatmapPayload} label={label} />
-    case 'sankey': return <SankeyChart payload={model.payload as ChartSankeyPayload} label={label} />
+    case 'line': return <LineChart payload={model.payload as ChartCartesianPayload} label={label} theme={theme} />
+    case 'bar': return <BarChart payload={model.payload as ChartCartesianPayload} label={label} theme={theme} />
+    case 'funnel': return <FunnelChart payload={model.payload as ChartFunnelPayload} label={label} theme={theme} />
+    case 'heatmap': return <HeatmapChart payload={model.payload as ChartHeatmapPayload} label={label} theme={theme} />
+    case 'sankey': return <SankeyChart payload={model.payload as ChartSankeyPayload} label={label} theme={theme} />
     case 'table': return <DataTable payload={model.payload as ChartTablePayload} label={label} />
   }
 }
@@ -351,7 +417,6 @@ function rawError(block: Extract<ChartPresentationCardProps['block'], { kind: 't
 
 export function ChartPresentationCard({ block, inspect, t }: ChartPresentationCardProps): ReactNode {
   const [expanded, setExpanded] = useState(true)
-  const [tab, setTab] = useState<'chart' | 'data'>('chart')
   const model = useMemo(() => presentationFromBlock(block), [block])
   const settled = 'kind' in block
   const failed = settled && block.isError
@@ -392,21 +457,16 @@ export function ChartPresentationCard({ block, inspect, t }: ChartPresentationCa
           )}
           {model !== undefined && !failed && (
             <>
-              <div className={css.toolbar}>
-                <div className={css.tabs} role="tablist" aria-label={t('viewMode')}>
-                  <button type="button" role="tab" aria-selected={tab === 'chart'} onClick={() => { setTab('chart') }}>{t('chart')}</button>
-                  <button type="button" role="tab" aria-selected={tab === 'data'} onClick={() => { setTab('data') }}>{t('data')}</button>
-                </div>
+              {(model.generatedAt !== undefined || model.truncated) && (
                 <div className={css.provenance}>
                   {model.generatedAt !== undefined && <span>{model.generatedAt}</span>}
                   {model.truncated && <span className={css.truncated}>{t('truncated')}</span>}
                 </div>
-              </div>
-              <div role="tabpanel">
-                {tab === 'chart'
-                  ? <PresentationChart model={model} label={t('chartLabel', { title: model.title })} />
-                  : <DataTable payload={tableOf(model)} label={t('dataLabel', { title: model.title })} />}
-              </div>
+              )}
+              <PresentationChart
+                model={model}
+                label={t(model.view === 'table' ? 'dataLabel' : 'chartLabel', { title: model.title })}
+              />
             </>
           )}
         </div>

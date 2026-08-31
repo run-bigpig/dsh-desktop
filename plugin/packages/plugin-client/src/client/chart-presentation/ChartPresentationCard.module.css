@@ -1,16 +1,18 @@
 .card {
-  --chart-border: color-mix(in srgb, currentColor 13%, transparent);
-  --chart-muted: color-mix(in srgb, currentColor 56%, transparent);
-  --chart-panel: color-mix(in srgb, currentColor 3.5%, transparent);
-  --chart-accent: #28a596;
+  --chart-border: var(--dsw-alias-border-l1, rgba(0, 0, 0, 0.06));
+  --chart-border-strong: var(--dsw-alias-border-l2, rgba(0, 0, 0, 0.1));
+  --chart-muted: var(--dsw-alias-label-secondary, #61666b);
+  --chart-tertiary: var(--dsw-alias-label-tertiary, #81858c);
+  --chart-panel: var(--dsw-alias-bg-layer-1, #fff);
+  --chart-inset: var(--dsw-alias-bg-layer-2, #f9fafb);
+  --chart-accent: var(--dsw-alias-state-business-primary, #4176e6);
+  --chart-danger: var(--dsw-alias-state-error-primary, #ec1313);
+  --chart-warning: var(--dsw-alias-state-warn-label, #b27621);
   width: min(100%, 920px);
   overflow: hidden;
-  border: 1px solid var(--chart-border);
-  border-radius: 13px;
-  background:
-    linear-gradient(135deg, color-mix(in srgb, var(--chart-accent) 5%, transparent), transparent 38%),
-    var(--ds-background-2, var(--chart-panel));
-  box-shadow: 0 12px 34px color-mix(in srgb, #000 9%, transparent);
+  border-radius: 12px;
+  color: var(--dsw-alias-label-primary, #0f1115);
+  background: var(--dsw-alias-markdown-code-block, var(--chart-panel));
 }
 
 .header {
@@ -40,8 +42,7 @@
 }
 
 .headingButton:focus-visible,
-.inspect:focus-visible,
-.tabs button:focus-visible {
+.inspect:focus-visible {
   outline: 2px solid var(--chart-accent);
   outline-offset: -2px;
 }
@@ -51,10 +52,10 @@
   width: 32px;
   height: 32px;
   place-items: center;
-  border: 1px solid color-mix(in srgb, var(--chart-accent) 28%, transparent);
+  border: 1px solid var(--chart-border-strong);
   border-radius: 9px;
   color: var(--chart-accent);
-  background: color-mix(in srgb, var(--chart-accent) 10%, transparent);
+  background: var(--chart-inset);
 }
 
 .mark {
@@ -89,7 +90,7 @@
 
 .headingCopy span {
   color: var(--chart-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-size: 10px;
 }
 
@@ -107,8 +108,8 @@
 
 .card[data-phase='error'] .stateDot,
 .card[data-phase='invalid'] .stateDot {
-  background: #d86f70;
-  box-shadow: 0 0 0 4px color-mix(in srgb, #d86f70 12%, transparent);
+  background: var(--chart-danger);
+  box-shadow: 0 0 0 4px color-mix(in srgb, var(--chart-danger) 12%, transparent);
 }
 
 .chevron {
@@ -119,7 +120,7 @@
   stroke-linecap: round;
   stroke-linejoin: round;
   stroke-width: 1.6;
-  transition: transform 160ms ease;
+  transition: transform var(--ds-transition-duration-fast, 100ms) var(--ds-ease-in-out, ease);
 }
 
 .chevron[data-open] {
@@ -147,55 +148,23 @@
   padding: 12px;
 }
 
-.toolbar {
-  display: flex;
-  min-height: 32px;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-  margin-bottom: 10px;
-}
-
-.tabs {
-  display: inline-flex;
-  padding: 2px;
-  border: 1px solid var(--chart-border);
-  border-radius: 8px;
-  background: color-mix(in srgb, currentColor 3%, transparent);
-}
-
-.tabs button {
-  padding: 4px 11px;
-  border: 0;
-  border-radius: 6px;
-  color: var(--chart-muted);
-  background: transparent;
-  font-size: 11px;
-  cursor: pointer;
-}
-
-.tabs button[aria-selected='true'] {
-  color: inherit;
-  background: var(--ds-background-1, color-mix(in srgb, currentColor 8%, transparent));
-  box-shadow: 0 1px 3px color-mix(in srgb, #000 10%, transparent);
-}
-
 .provenance {
   display: flex;
   min-width: 0;
   align-items: center;
   justify-content: flex-end;
   gap: 8px;
-  color: var(--chart-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  margin: -2px 2px 8px;
+  color: var(--chart-tertiary);
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-size: 9px;
 }
 
 .truncated {
   padding: 2px 6px;
   border-radius: 999px;
-  color: #b27621;
-  background: color-mix(in srgb, #e3a348 14%, transparent);
+  color: var(--chart-warning);
+  background: var(--dsw-alias-state-warn-tertiary, color-mix(in srgb, var(--chart-warning) 12%, transparent));
 }
 
 .antvChart,
@@ -203,7 +172,7 @@
 .tableWrap {
   border: 1px solid var(--chart-border);
   border-radius: 10px;
-  background: color-mix(in srgb, currentColor 1.8%, transparent);
+  background: var(--chart-panel);
 }
 
 .antvChart {
@@ -224,7 +193,7 @@
   min-height: 220px;
   place-items: center;
   color: var(--chart-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Consolas, monospace);
 }
 
 .tableWrap {
@@ -257,7 +226,7 @@
   z-index: 1;
   top: 0;
   color: var(--chart-muted);
-  background: var(--ds-background-2, #f5f5f5);
+  background: var(--chart-inset);
   font-size: 9px;
   font-weight: 600;
   letter-spacing: .04em;
@@ -277,6 +246,7 @@
   padding: 30px 16%;
   border: 1px solid var(--chart-border);
   border-radius: 10px;
+  background: var(--chart-panel);
 }
 
 .loading span {
@@ -299,20 +269,20 @@
 
 .error {
   padding: 16px;
-  border: 1px solid color-mix(in srgb, #d86f70 24%, transparent);
+  border: 1px solid color-mix(in srgb, var(--chart-danger) 28%, transparent);
   border-radius: 10px;
-  background: color-mix(in srgb, #d86f70 7%, transparent);
+  background: var(--dsw-alias-interactive-bg-hover-danger, color-mix(in srgb, var(--chart-danger) 7%, transparent));
 }
 
 .error strong {
-  color: #c85759;
+  color: var(--chart-danger);
   font-size: 12px;
 }
 
 .error p {
   margin: 6px 0 0;
   color: var(--chart-muted);
-  font-family: ui-monospace, SFMono-Regular, Consolas, monospace;
+  font-family: var(--ds-font-family-code, ui-monospace, SFMono-Regular, Consolas, monospace);
   font-size: 10px;
   white-space: pre-wrap;
 }
@@ -326,11 +296,6 @@
 }
 
 @media (max-width: 680px) {
-  .toolbar {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
   .provenance {
     justify-content: flex-start;
   }
