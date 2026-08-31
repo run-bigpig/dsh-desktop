@@ -25,6 +25,10 @@ import type {
   ImageModelSettingsSnapshot,
   MarketplaceOperation,
   MarketplaceSnapshot,
+  ThinkingDataSaveRequest,
+  ThinkingDataSnapshot,
+  ThinkingDataTestRequest,
+  ThinkingDataTestResult,
   VisionBridgeSnapshot,
   VisionSaveRequest,
   VisionTestRequest,
@@ -44,6 +48,9 @@ import {
   type DesktopWindowControlsInjected,
 } from './desktop-window/DesktopWindowControls.tsx'
 import { McpSettingsTab, type McpSettingsTabInjected } from './mcp/McpSettingsTab.tsx'
+import {
+  ThinkingDataSettingsSection, type ThinkingDataSettingsInjected,
+} from './thinkingdata/ThinkingDataSettingsSection.tsx'
 import { VisionSettingsTab, type VisionSettingsTabInjected } from './vision/VisionSettingsTab.tsx'
 import { ImageSettingsTab, type ImageSettingsTabInjected } from './image/ImageSettingsTab.tsx'
 import {
@@ -85,10 +92,11 @@ import {
 } from './skin/skin-controller.ts'
 import {
   desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, skinEn, skinZh,
+  thinkingDataEn, thinkingDataZh,
   chartPresentationEn, chartPresentationZh,
   visionEn, visionZh, workbenchEn, workbenchZh, zh,
   type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
-  type ChartPresentationLocaleKey, type SkinLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
+  type ChartPresentationLocaleKey, type SkinLocaleKey, type ThinkingDataLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
 
@@ -96,6 +104,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'settings.marketplace': MarketplaceLocaleKey
     'settings.mcp': McpLocaleKey
+    'settings.thinkingdata': ThinkingDataLocaleKey
     'settings.vision': VisionLocaleKey
     'settings.image': ImageLocaleKey
     'desktop.integration': DesktopLocaleKey
@@ -110,6 +119,7 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.marketplace'
 export const DESKTOP_NS = 'desktop.integration'
 export const MCP_NS = 'settings.mcp'
+export const THINKINGDATA_NS = 'settings.thinkingdata'
 export const VISION_NS = 'settings.vision'
 export const IMAGE_NS = 'settings.image'
 export const DOCUMENTS_NS = 'documents.upload'
@@ -140,6 +150,12 @@ interface McpSettingsRemote {
   list: () => Promise<RemoteResult<McpSettingsSnapshot>>
   upsert: (request: McpServerUpsertRequest) => Promise<RemoteResult<{ ok: true }>>
   delete: (request: { serverName: string }) => Promise<RemoteResult<{ ok: true }>>
+}
+
+interface ThinkingDataRemote {
+  snapshot: () => Promise<RemoteResult<ThinkingDataSnapshot>>
+  save: (request: ThinkingDataSaveRequest) => Promise<RemoteResult<{ ok: true }>>
+  testConnection: (request: ThinkingDataTestRequest) => Promise<RemoteResult<ThinkingDataTestResult>>
 }
 
 interface VisionBridgeRemote {
@@ -219,6 +235,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-marketplace: dictionaries')
   ctx.effect(() => ctx.locale.register(DESKTOP_NS, { zh: desktopZh, en: desktopEn }), 'desktop-integration: dictionaries')
   ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), 'desktop-mcp: dictionaries')
+  ctx.effect(() => ctx.locale.register(THINKINGDATA_NS, { zh: thinkingDataZh, en: thinkingDataEn }), 'thinkingdata: dictionaries')
   ctx.effect(() => ctx.locale.register(VISION_NS, { zh: visionZh, en: visionEn }), 'desktop-vision: dictionaries')
   ctx.effect(() => ctx.locale.register(IMAGE_NS, { zh: imageZh, en: imageEn }), 'desktop-image-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(DOCUMENTS_NS, { zh: documentsZh, en: documentsEn }), 'desktop-documents: dictionaries')
@@ -331,6 +348,18 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         save: async request => { unwrap(await remotes.imageWorkbench.save(request)) },
       }),
     }, ImageSettingsTab))
+  })
+  ctx.inject(['remote.thinkingData'], (inner: ClientContext) => {
+    const remote = (inner.remote as ClientContext['remote'] & { thinkingData: ThinkingDataRemote }).thinkingData
+    const t = inner.locale.bind(THINKINGDATA_NS)
+    inner.slots.inject('settings.section', () => inner.slots.register({
+      name: 'settings.section', id: 'thinkingdata', order: 35, label: () => t('nav'), locale: THINKINGDATA_NS,
+      inject: (): ThinkingDataSettingsInjected => ({
+        snapshot: async () => unwrap(await remote.snapshot()),
+        save: async request => { unwrap(await remote.save(request)) },
+        testConnection: async request => unwrap(await remote.testConnection(request)),
+      }),
+    }, ThinkingDataSettingsSection))
   })
   ctx.inject(['uiConversation'], (inner: ClientContext) => {
     const imageToolActions: ImageToolViewInjected = {

@@ -127,6 +127,41 @@ export interface McpSettingsMutationResult {
   readonly ok: true
 }
 
+export type ThinkingDataConnectionPhase =
+  | 'disabled'
+  | 'missing-token'
+  | 'pending'
+  | 'loading'
+  | 'active'
+  | 'failed'
+  | 'unloading'
+
+export interface ThinkingDataSnapshot {
+  readonly enabled: boolean
+  readonly url: string
+  readonly effectiveUrl: string
+  readonly tokenConfigured: boolean
+  readonly phase: ThinkingDataConnectionPhase
+}
+
+export interface ThinkingDataSaveRequest {
+  readonly enabled: boolean
+  readonly url: string
+  readonly token?: string
+}
+
+export interface ThinkingDataTestRequest {
+  readonly url: string
+  readonly token?: string
+}
+
+export type ThinkingDataTestStatus = 'ready' | 'connected' | 'missing-token' | 'unauthorized' | 'not-ready' | 'unreachable'
+
+export interface ThinkingDataTestResult {
+  readonly ok: boolean
+  readonly status: ThinkingDataTestStatus
+}
+
 export interface VisionEndpointView {
   readonly provider: string
   readonly model: string

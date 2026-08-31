@@ -1,0 +1,106 @@
+.section {
+  display: flex;
+  width: 100%;
+  max-width: 760px;
+  flex-direction: column;
+  gap: 18px;
+  color: var(--dsw-alias-label-primary);
+}
+
+.header,
+.switchRow,
+.actions,
+.failure {
+  display: flex;
+  align-items: center;
+}
+
+.header,
+.switchRow,
+.actions {
+  justify-content: space-between;
+}
+
+.header { gap: 24px; }
+.header h2 { margin: 0; font-size: 20px; line-height: 28px; }
+.header p,
+.status,
+.failure p,
+.field small,
+.switchRow small,
+.notice { margin: 0; color: var(--dsw-alias-label-tertiary); font-size: 13px; line-height: 20px; }
+
+.connection {
+  display: inline-flex;
+  flex: none;
+  align-items: center;
+  gap: 7px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 999px;
+  padding: 5px 10px;
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+}
+
+.connection > span { width: 7px; height: 7px; border-radius: 50%; background: var(--dsw-alias-label-tertiary); }
+.connection[data-phase='active'] { color: var(--dsw-alias-state-success-primary); }
+.connection[data-phase='active'] > span { background: var(--dsw-alias-state-success-primary); }
+.connection[data-phase='failed'],
+.connection[data-phase='missing-token'] { color: var(--dsw-alias-state-error-primary); }
+.connection[data-phase='failed'] > span,
+.connection[data-phase='missing-token'] > span { background: var(--dsw-alias-state-error-primary); }
+
+.card {
+  display: flex;
+  flex-direction: column;
+  gap: 16px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 12px;
+  padding: 18px;
+  background: var(--dsw-alias-bg-layer-3);
+}
+
+.switchRow { gap: 20px; cursor: pointer; }
+.switchRow > span { display: flex; flex-direction: column; gap: 2px; }
+.switchRow strong { font-size: 14px; line-height: 21px; }
+.switchRow input { width: 18px; height: 18px; }
+.divider { height: 1px; background: var(--dsw-alias-border-l2); }
+
+.field { display: flex; flex-direction: column; gap: 7px; }
+.field > label { font-size: 13px; font-weight: 600; }
+.field input {
+  min-height: 38px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 7px 10px;
+  background: var(--dsw-alias-bg-layer-2);
+  color: var(--dsw-alias-label-primary);
+  font: inherit;
+}
+.field input:focus { border-color: var(--dsw-alias-border-l3); outline: none; }
+.notice[data-kind='success'] { color: var(--dsw-alias-state-success-primary); }
+.notice[data-kind='error'], .failure { color: var(--dsw-alias-state-error-primary); }
+.actions, .failure { gap: 10px; }
+.actions { justify-content: flex-end; padding-top: 2px; }
+
+.primary,
+.secondary,
+.failure button {
+  min-height: 34px;
+  border: 1px solid var(--dsw-alias-border-l2);
+  border-radius: 8px;
+  padding: 6px 14px;
+  font: inherit;
+  cursor: pointer;
+}
+.primary { border-color: transparent; background: var(--dsw-alias-button-primary-fill); color: var(--dsw-alias-label-primary-foreground); }
+.secondary,
+.failure button { background: var(--dsw-alias-bg-layer-2); color: var(--dsw-alias-label-primary); }
+.primary:disabled,
+.secondary:disabled { cursor: not-allowed; opacity: .5; }
+
+@media (max-width: 640px) {
+  .header { align-items: flex-start; flex-direction: column; gap: 10px; }
+  .connection { align-self: flex-start; }
+  .card { padding: 15px; }
+}

@@ -10,6 +10,7 @@ import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
   countMcpTools,
   emptyMcpSettingsDocument,
+  isReservedMcpServerName,
   MCP_CLIENT_MODULE,
   parseMcpSettingsDocument,
   removeMcpServerRecord,
@@ -119,7 +120,7 @@ export class McpSettingsGateway extends TypertRemoteService {
 
   private snapshot(): McpServerView[] {
     const toolNames = this.toolNames()
-    const settings = this.document.servers.map(record => viewMcpServerRecord(
+    const settings = this.document.servers.filter(record => !isReservedMcpServerName(record.serverName)).map(record => viewMcpServerRecord(
       record,
       'settings',
       fiberPhase(this.fibers.get(record.serverName)),
@@ -147,6 +148,9 @@ export class McpSettingsGateway extends TypertRemoteService {
   }
 
   private assertNotComposition(serverName: string, action: 'upsert' | 'delete'): void {
+    if (isReservedMcpServerName(serverName)) {
+      throw new Error(`mcp-settings: cannot ${action} reserved server ${JSON.stringify(serverName)}`)
+    }
     if (this.compositionNames().has(serverName)) {
       throw new Error(`mcp-settings: cannot ${action} ${JSON.stringify(serverName)} because a composition owns it`)
     }
@@ -155,7 +159,7 @@ export class McpSettingsGateway extends TypertRemoteService {
   private syncAll(): void {
     const compositionNames = this.compositionNames()
     for (const record of this.document.servers) {
-      if (record.enabled && !compositionNames.has(record.serverName)) this.mount(record)
+      if (record.enabled && !isReservedMcpServerName(record.serverName) && !compositionNames.has(record.serverName)) this.mount(record)
     }
   }
 

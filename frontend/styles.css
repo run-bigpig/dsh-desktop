@@ -11,7 +11,6 @@
   --stream-opacity: .46;
   --stream-scale: 1;
   --orbit-scale: 1;
-  --logo-scale: .82;
   --logo-brightness: .92;
   --logo-glow: .54;
 }
@@ -157,6 +156,12 @@ body.handoff .convergence-stage {
   transition: opacity .22s linear, transform .22s ease-out;
 }
 
+body[data-phase="ready"] .weave-field {
+  opacity: .14;
+  transform: translate(-50%, -50%) scale(.38) rotate(18deg);
+  transition-duration: .58s;
+}
+
 .weave-field::before,
 .weave-field::after {
   content: "";
@@ -185,7 +190,6 @@ body.handoff .convergence-stage {
 
 .weave-thread {
   --angle: 0deg;
-  --delay: 0s;
   position: absolute;
   left: 50%;
   top: 50%;
@@ -209,36 +213,93 @@ body.handoff .convergence-stage {
 }
 
 .weave-thread::after {
-  content: "";
-  position: absolute;
-  left: 100%;
-  top: 50%;
-  width: 5px;
-  height: 5px;
-  border-radius: 50%;
-  background: #d9fbff;
-  box-shadow: 0 0 8px #7aeaff, 0 0 18px #587dff;
-  transform: translate(-50%, -50%);
-  animation: convergeParticle 2.5s linear infinite;
-  animation-delay: var(--delay);
+  content: none;
 }
 
-.thread-1 { --angle: 0deg; --delay: -1.7s; }
-.thread-2 { --angle: 36deg; --delay: -.35s; }
-.thread-3 { --angle: 72deg; --delay: -2.1s; }
-.thread-4 { --angle: 108deg; --delay: -1.05s; }
-.thread-5 { --angle: 144deg; --delay: -.1s; }
-.thread-6 { --angle: 180deg; --delay: -1.35s; }
-.thread-7 { --angle: 216deg; --delay: -2.3s; }
-.thread-8 { --angle: 252deg; --delay: -.7s; }
-.thread-9 { --angle: 288deg; --delay: -1.95s; }
-.thread-10 { --angle: 324deg; --delay: -.55s; }
+.thread-1 { --angle: 0deg; }
+.thread-2 { --angle: 36deg; }
+.thread-3 { --angle: 72deg; }
+.thread-4 { --angle: 108deg; }
+.thread-5 { --angle: 144deg; }
+.thread-6 { --angle: 180deg; }
+.thread-7 { --angle: 216deg; }
+.thread-8 { --angle: 252deg; }
+.thread-9 { --angle: 288deg; }
+.thread-10 { --angle: 324deg; }
 
 .thread-2,
 .thread-5,
 .thread-7,
 .thread-10 {
   background: linear-gradient(90deg, rgba(167, 116, 255, .68), rgba(99, 74, 255, .24) 44%, transparent 96%);
+}
+
+.star-convergence {
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  overflow: hidden;
+  pointer-events: none;
+}
+
+.star-particle {
+  --size: 6px;
+  --duration: 4.2s;
+  --delay: 0s;
+  --x0: -54vw;
+  --y0: -26vh;
+  --x1: -31vw;
+  --y1: 20vh;
+  --x2: -11vw;
+  --y2: -8vh;
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: var(--size);
+  height: var(--size);
+  opacity: 0;
+  clip-path: polygon(50% 0, 61% 38%, 100% 50%, 61% 62%, 50% 100%, 39% 62%, 0 50%, 39% 38%);
+  background: #e8fdff;
+  box-shadow: 0 0 8px rgba(91, 229, 255, .95), 0 0 18px rgba(74, 118, 255, .8);
+  animation: starConverge var(--duration) cubic-bezier(.38, .04, .23, 1) infinite;
+  animation-delay: var(--delay);
+  will-change: transform, opacity;
+}
+
+.star-particle:nth-child(3n) {
+  background: #cbbcff;
+  box-shadow: 0 0 8px rgba(173, 123, 255, .92), 0 0 18px rgba(102, 67, 255, .72);
+}
+
+.star-01 { --x0: -55vw; --y0: -34vh; --x1: -31vw; --y1: 19vh; --x2: -11vw; --y2: -8vh; --delay: -3.7s; --duration: 4.7s; --size: 7px; }
+.star-02 { --x0: -54vw; --y0: -11vh; --x1: -29vw; --y1: -25vh; --x2: -9vw; --y2: 8vh; --delay: -1.1s; --duration: 4.1s; --size: 4px; }
+.star-03 { --x0: -57vw; --y0: 12vh; --x1: -28vw; --y1: 31vh; --x2: -8vw; --y2: -7vh; --delay: -2.4s; --duration: 4.5s; --size: 6px; }
+.star-04 { --x0: -53vw; --y0: 31vh; --x1: -34vw; --y1: -16vh; --x2: -12vw; --y2: 9vh; --delay: -.3s; --duration: 3.8s; --size: 5px; }
+.star-05 { --x0: -56vw; --y0: 43vh; --x1: -25vw; --y1: 17vh; --x2: -9vw; --y2: -10vh; --delay: -2.9s; --duration: 5s; --size: 3px; }
+
+.star-06 { --x0: -37vw; --y0: -57vh; --x1: 22vw; --y1: -32vh; --x2: -8vw; --y2: -11vh; --delay: -1.7s; --duration: 4.8s; --size: 5px; }
+.star-07 { --x0: -14vw; --y0: -55vh; --x1: -28vw; --y1: -29vh; --x2: 9vw; --y2: -9vh; --delay: -4.1s; --duration: 5.2s; --size: 7px; }
+.star-08 { --x0: 9vw; --y0: -58vh; --x1: 27vw; --y1: -27vh; --x2: -7vw; --y2: -8vh; --delay: -.8s; --duration: 3.9s; --size: 4px; }
+.star-09 { --x0: 29vw; --y0: -56vh; --x1: -21vw; --y1: -34vh; --x2: 8vw; --y2: -10vh; --delay: -2.2s; --duration: 4.4s; --size: 6px; }
+.star-10 { --x0: 45vw; --y0: -54vh; --x1: 18vw; --y1: -28vh; --x2: -10vw; --y2: -7vh; --delay: -3.3s; --duration: 4.9s; --size: 3px; }
+
+.star-11 { --x0: 55vw; --y0: -40vh; --x1: 29vw; --y1: 21vh; --x2: 10vw; --y2: -8vh; --delay: -2.7s; --duration: 4.6s; --size: 5px; }
+.star-12 { --x0: 54vw; --y0: -17vh; --x1: 33vw; --y1: -24vh; --x2: 8vw; --y2: 10vh; --delay: -.5s; --duration: 4s; --size: 7px; }
+.star-13 { --x0: 57vw; --y0: 7vh; --x1: 27vw; --y1: 30vh; --x2: 9vw; --y2: -9vh; --delay: -3.8s; --duration: 5.1s; --size: 4px; }
+.star-14 { --x0: 53vw; --y0: 27vh; --x1: 34vw; --y1: -17vh; --x2: 11vw; --y2: 8vh; --delay: -1.4s; --duration: 4.3s; --size: 6px; }
+.star-15 { --x0: 56vw; --y0: 44vh; --x1: 24vw; --y1: 15vh; --x2: 8vw; --y2: -11vh; --delay: -2s; --duration: 3.7s; --size: 3px; }
+
+.star-16 { --x0: -43vw; --y0: 55vh; --x1: 20vw; --y1: 31vh; --x2: -9vw; --y2: 10vh; --delay: -4.3s; --duration: 5.3s; --size: 6px; }
+.star-17 { --x0: -25vw; --y0: 58vh; --x1: -29vw; --y1: 25vh; --x2: 8vw; --y2: 9vh; --delay: -1.9s; --duration: 4.7s; --size: 4px; }
+.star-18 { --x0: -2vw; --y0: 56vh; --x1: 28vw; --y1: 29vh; --x2: -8vw; --y2: 8vh; --delay: -.1s; --duration: 3.9s; --size: 7px; }
+.star-19 { --x0: 22vw; --y0: 57vh; --x1: -20vw; --y1: 33vh; --x2: 10vw; --y2: 9vh; --delay: -3.1s; --duration: 4.5s; --size: 5px; }
+.star-20 { --x0: 42vw; --y0: 54vh; --x1: 24vw; --y1: 27vh; --x2: -9vw; --y2: 11vh; --delay: -1.2s; --duration: 4.2s; --size: 3px; }
+
+body[data-phase="ready"] .star-particle {
+  animation: none;
+  opacity: 0;
+  transform: translate3d(0, 0, 0) rotate(900deg) scale(0);
+  transition: transform .58s cubic-bezier(.18, .84, .2, 1), opacity .38s ease-in;
 }
 
 .weave-orbit {
@@ -278,10 +339,16 @@ body.handoff .convergence-stage {
   top: 50%;
   width: clamp(112px, 12vw, 164px);
   aspect-ratio: 1;
-  transform: translate(-50%, -50%) scale(var(--logo-scale));
+  opacity: 0;
+  transform: translate(-50%, -50%) scale(.28) rotate(-18deg);
   transform-origin: 50% 50%;
   filter: drop-shadow(0 0 calc(36px * var(--logo-glow)) rgba(44, 211, 255, var(--logo-glow)));
-  transition: transform .22s ease-out, filter .22s linear;
+  transition: opacity .2s linear, filter .22s linear;
+}
+
+body[data-phase="ready"] .logo-core {
+  opacity: 1;
+  animation: revealLogo .72s .22s cubic-bezier(.16, .88, .24, 1.18) both;
 }
 
 .logo-halo {
@@ -349,11 +416,12 @@ body[data-phase="failed"] #progressText { color: rgba(255, 178, 188, .88); }
   50% { opacity: .55; transform: translate(-50%, -50%) scale(1.9); }
 }
 
-@keyframes convergeParticle {
-  0% { left: 100%; opacity: 0; }
-  12% { opacity: 1; }
-  76% { opacity: .9; }
-  100% { left: 1%; opacity: 0; }
+@keyframes starConverge {
+  0% { opacity: 0; transform: translate3d(var(--x0), var(--y0), 0) rotate(0deg) scale(.18); }
+  10% { opacity: .95; }
+  42% { opacity: .88; transform: translate3d(var(--x1), var(--y1), 0) rotate(240deg) scale(1); }
+  74% { opacity: .96; transform: translate3d(var(--x2), var(--y2), 0) rotate(530deg) scale(.72); }
+  100% { opacity: 0; transform: translate3d(0, 0, 0) rotate(780deg) scale(.06); }
 }
 
 @keyframes orbitClockwise {
@@ -374,6 +442,12 @@ body[data-phase="failed"] #progressText { color: rgba(255, 178, 188, .88); }
   50% { transform: scale(1.025); }
 }
 
+@keyframes revealLogo {
+  0% { opacity: 0; transform: translate(-50%, -50%) scale(.22) rotate(-20deg); }
+  64% { opacity: 1; transform: translate(-50%, -50%) scale(1.08) rotate(2deg); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+}
+
 @media (max-width: 700px) {
   .weave-field { width: min(104vw, 560px); }
   .logo-core { width: clamp(104px, 29vw, 138px); }
@@ -387,4 +461,7 @@ body[data-phase="failed"] #progressText { color: rgba(255, 178, 188, .88); }
     animation: none !important;
     transition: none !important;
   }
+
+  .star-particle { display: none; }
+  body[data-phase="ready"] .logo-core { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }

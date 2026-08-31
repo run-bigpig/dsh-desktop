@@ -40,6 +40,10 @@
       name: '@run-bigpig/dsh-desktop-plugin-host/mcp'
       config:
         path: !!js dshHomePath('mcp-servers.json')
+    - id: desktop-integration-thinkingdata
+      name: '@run-bigpig/dsh-desktop-plugin-host/thinkingdata'
+      config:
+        path: !!js dshHomePath('thinkingdata.json')
     - id: desktop-integration-vision
       name: '@run-bigpig/dsh-desktop-plugin-host/vision'
       config:

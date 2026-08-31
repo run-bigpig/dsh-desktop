@@ -84,6 +84,32 @@ export const mcpEn = {
   saveFailed: 'Save failed.', removeFailed: 'Delete failed.',
 } satisfies Record<McpLocaleKey, string>
 
+export const thinkingDataZh = {
+  nav: '数数配置', title: '数数配置', tagline: '连接内部数数分析服务，为对话提供数据查询能力。',
+  loading: '正在读取数数配置…', loadFailed: '暂时无法读取数数配置。', retry: '重试',
+  enabled: '启用数数服务', enabledHint: '启用后将在对话中提供数数分析能力。',
+  url: '服务地址', urlHint: '留空时使用内置默认地址。', token: 'Token', tokenPlaceholder: '输入 Token',
+  tokenConfigured: '已配置', tokenHint: 'Token 仅保存在本机凭据存储中。', tokenRetainHint: '留空将保留当前 Token。',
+  save: '保存', saving: '正在保存…', saved: '已保存。', saveFailed: '保存失败。', test: '测试连接', testing: '正在测试…',
+  ready: '连接成功，服务已就绪。', connected: '连接成功。', missingToken: '请先填写 Token。',
+  unauthorized: 'Token 无效或没有访问权限。', notReady: '连接成功，但服务尚未就绪。', unreachable: '无法连接服务，请检查地址和网络。',
+  phaseDisabled: '未启用', phaseMissingToken: '缺少 Token', phaseConnecting: '正在连接', phaseActive: '已连接', phaseFailed: '连接失败',
+} satisfies Record<string, string>
+
+export type ThinkingDataLocaleKey = keyof typeof thinkingDataZh
+
+export const thinkingDataEn = {
+  nav: 'ThinkingData', title: 'ThinkingData', tagline: 'Connect the internal analytics service for data queries in conversations.',
+  loading: 'Loading ThinkingData settings…', loadFailed: 'ThinkingData settings are temporarily unavailable.', retry: 'Retry',
+  enabled: 'Enable ThinkingData', enabledHint: 'Provides ThinkingData analysis capabilities in conversations.',
+  url: 'Service URL', urlHint: 'Leave empty to use the built-in default.', token: 'Token', tokenPlaceholder: 'Enter Token',
+  tokenConfigured: 'Configured', tokenHint: 'The Token is stored only in the local credential store.', tokenRetainHint: 'Leave empty to retain the current Token.',
+  save: 'Save', saving: 'Saving…', saved: 'Saved.', saveFailed: 'Save failed.', test: 'Test connection', testing: 'Testing…',
+  ready: 'Connected and ready.', connected: 'Connected.', missingToken: 'Enter a Token first.',
+  unauthorized: 'The Token is invalid or lacks access.', notReady: 'Connected, but the service is not ready.', unreachable: 'Unable to connect. Check the URL and network.',
+  phaseDisabled: 'Disabled', phaseMissingToken: 'Token required', phaseConnecting: 'Connecting', phaseActive: 'Connected', phaseFailed: 'Connection failed',
+} satisfies Record<ThinkingDataLocaleKey, string>
+
 export const visionZh = {
   tab: '视觉', loading: '正在读取视觉设置…', error: '暂时无法读取视觉设置。', retry: '重试',
   endpoint: '视觉模型',

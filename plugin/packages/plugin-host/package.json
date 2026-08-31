@@ -1,13 +1,14 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.63",
+  "version": "0.1.64",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./mcp": { "types": "./lib/types/mcp.d.ts", "default": "./lib/mcp.js" },
+    "./thinkingdata": { "types": "./lib/types/thinkingdata.d.ts", "default": "./lib/thinkingdata.js" },
     "./vision": { "types": "./lib/types/vision.d.ts", "default": "./lib/vision.js" },
     "./image": { "types": "./lib/types/image.d.ts", "default": "./lib/image.js" },
     "./documents": { "types": "./lib/types/documents.d.ts", "default": "./lib/documents.js" },
@@ -23,6 +24,7 @@
   "files": [
     "lib/index.js",
     "lib/mcp.js",
+    "lib/thinkingdata.js",
     "lib/vision.js",
     "lib/image.js",
     "lib/documents.js",
@@ -35,7 +37,9 @@
     "lib/typert.host.js",
     "lib/typert.host.d.ts",
     "lib/typert.remote-client.js",
-    "lib/typert.remote-client.d.ts"
+    "lib/typert.remote-client.d.ts",
+    "skills/**/*.md",
+    "skills/**/*.yaml"
   ],
   "license": "MIT",
   "dependencies": {
@@ -55,6 +59,7 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
+    "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",
@@ -74,6 +79,7 @@
     "@deepseek-ai/dsh-session": "workspace:^",
     "@deepseek-ai/dsh-session-projection": "workspace:^",
     "@deepseek-ai/dsh-settings": "workspace:^",
+    "@deepseek-ai/dsh-skill": "workspace:^",
     "@deepseek-ai/dsh-system-prompt": "workspace:^",
     "@deepseek-ai/dsh-tools": "workspace:^",
     "@deepseek-ai/dsh-typert-protocol": "workspace:^",

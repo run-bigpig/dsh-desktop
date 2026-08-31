@@ -9,6 +9,7 @@ import type {
 } from '../shared/types.ts'
 
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
+export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server'])
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
@@ -168,6 +169,10 @@ export function viewMcpServerRecord(
     envKeys: [],
     headerKeys: Object.keys(record.headers),
   } satisfies McpHttpServerView
+}
+
+export function isReservedMcpServerName(serverName: string): boolean {
+  return RESERVED_MCP_SERVER_NAMES.has(serverName)
 }
 
 export function viewCompositionConfig(

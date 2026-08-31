@@ -48,7 +48,6 @@ function paintConvergence(progress){
   root.style.setProperty("--stream-opacity",(.38+ratio*.38).toFixed(4));
   root.style.setProperty("--stream-scale",Math.max(.58,1.04-ratio*.46).toFixed(4));
   root.style.setProperty("--orbit-scale",Math.max(.72,1.06-ratio*.34).toFixed(4));
-  root.style.setProperty("--logo-scale",(.8+ratio*.2).toFixed(4));
   root.style.setProperty("--logo-brightness",(.9+ratio*.16).toFixed(4));
   root.style.setProperty("--logo-glow",(.44+ratio*.44).toFixed(4));
   root.style.setProperty("--ambient-opacity",(.3+ratio*.18).toFixed(4));

@@ -18,6 +18,7 @@
     { "path": "../../core/session" },
     { "path": "../../session/session-projection" },
     { "path": "../../settings/settings" },
+    { "path": "../../skill/skill" },
     { "path": "../../util/atomic-write" },
     { "path": "../../typert/protocol" }
   ]

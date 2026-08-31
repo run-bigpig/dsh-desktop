@@ -170,10 +170,13 @@ for (const root of ['vendor', 'packages', 'apps', 'native']) {
 }
 await stagePackage(hostDir, resolve(output, 'plugin-host'), {
   files: [
-    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/chart-presentation.js', 'lib/web-tools.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
+    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/thinkingdata.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/chart-presentation.js', 'lib/web-tools.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
     'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts',
   ],
-  trees: [{ path: 'lib/types', suffixes: ['.js', '.d.ts'] }],
+  trees: [
+    { path: 'lib/types', suffixes: ['.js', '.d.ts'] },
+    { path: 'skills', suffixes: ['.md', '.yaml'] },
+  ],
 }, versions)
 await stagePackage(resolve(overlay, 'plugin-client'), resolve(output, 'plugin-client'), {
   files: ['package.json', 'lib/index.js', 'lib/client.js', 'lib/client.js.map'],
