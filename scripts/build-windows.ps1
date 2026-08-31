@@ -37,7 +37,7 @@ if ($finalFingerprint -ne $fingerprint) {
   Remove-Item -LiteralPath $temporaryExe -Force -ErrorAction SilentlyContinue
   throw "Desktop sources changed during the Windows build; retry from a stable worktree"
 }
-$exeHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $temporaryExe).Hash.ToLowerInvariant()
+$exeHash = Get-SHA256File $temporaryExe
 Move-Item -LiteralPath $temporaryExe -Destination $stageExe -Force
 Remove-Item -LiteralPath $legacyStageExe -Force -ErrorAction SilentlyContinue
 Write-JsonAtomic -Path $manifestPath -Value ([ordered]@{

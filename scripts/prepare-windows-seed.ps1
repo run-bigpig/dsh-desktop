@@ -129,7 +129,7 @@ function Get-VerifiedArtifact($artifact) {
   if ($artifact.sha256 -notmatch '^[0-9a-f]{64}$') { throw "Invalid SHA-256 lock for $($artifact.name)" }
   $target = Join-Path $downloads ([IO.Path]::GetFileName($artifact.url))
   if (-not (Test-Path $target)) { Invoke-WebRequest -UseBasicParsing $artifact.url -OutFile $target }
-  $actual = (Get-FileHash -Algorithm SHA256 $target).Hash.ToLowerInvariant()
+  $actual = Get-SHA256File $target
   if ($actual -ne $artifact.sha256) { throw "SHA-256 mismatch for $($artifact.name): expected $($artifact.sha256), got $actual" }
   return $target
 }

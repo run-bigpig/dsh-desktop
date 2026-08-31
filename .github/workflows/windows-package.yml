@@ -106,9 +106,10 @@ jobs:
       - name: Verify installer checksum
         shell: pwsh
         run: |
+          . ./scripts/windows-build-common.ps1
           $installer = "dist/windows/StarWeaveInstaller.exe"
           $sidecar = $installer + ".sha256"
-          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          $actual = Get-SHA256File $installer
           $expected = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
           if ($actual -ne $expected) {
             throw "Installer checksum sidecar does not match the generated installer"

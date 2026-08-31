@@ -40,7 +40,7 @@ if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.ve
 if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit) {
   throw "Windows seed stage is stale; run task seed:windows"
 }
-$desktopHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $desktopExe).Hash.ToLowerInvariant()
+$desktopHash = Get-SHA256File $desktopExe
 if ($desktopManifest.executableSHA256 -ne $desktopHash) {
   throw "Windows desktop executable does not match its build manifest"
 }
@@ -104,7 +104,7 @@ $installerFingerprint = Get-SHA256Text ((@(
 if ((Test-Path -LiteralPath $installerManifestPath) -and (Test-Path -LiteralPath $output) -and (Test-Path -LiteralPath $checksumPath)) {
   try {
     $installerManifest = Get-Content $installerManifestPath -Raw | ConvertFrom-Json
-    $outputHash = (Get-FileHash -Algorithm SHA256 -LiteralPath $output).Hash.ToLowerInvariant()
+    $outputHash = Get-SHA256File $output
     $expectedChecksum = $outputHash + "  " + [IO.Path]::GetFileName($output)
     $checksumMatches = (Get-Content $checksumPath -Raw).Trim() -eq $expectedChecksum
     if ($installerManifest.fingerprint -eq $installerFingerprint -and $installerManifest.installerSHA256 -eq $outputHash -and $checksumMatches) {
@@ -145,7 +145,7 @@ try {
 
 if (-not (Test-Path -LiteralPath $temporaryOutput)) { throw "NSIS did not create the temporary Windows installer" }
 Move-Item -LiteralPath $temporaryOutput -Destination $output -Force
-$checksum = (Get-FileHash -Algorithm SHA256 $output).Hash.ToLowerInvariant()
+$checksum = Get-SHA256File $output
 Set-Content -Encoding ASCII -NoNewline -Path $checksumPath -Value ($checksum + "  " + [IO.Path]::GetFileName($output))
 Write-JsonAtomic -Path $installerManifestPath -Value ([ordered]@{
   schemaVersion = 1

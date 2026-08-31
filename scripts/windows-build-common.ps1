@@ -8,6 +8,20 @@ function Get-SHA256Text([string]$Text) {
   }
 }
 
+function Get-SHA256File([string]$Path) {
+  $stream = [IO.File]::OpenRead([IO.Path]::GetFullPath($Path))
+  try {
+    $sha = [Security.Cryptography.SHA256]::Create()
+    try {
+      return ([BitConverter]::ToString($sha.ComputeHash($stream))).Replace("-", "").ToLowerInvariant()
+    } finally {
+      $sha.Dispose()
+    }
+  } finally {
+    $stream.Dispose()
+  }
+}
+
 function Get-SourceFingerprint {
   param(
     [Parameter(Mandatory = $true)][string]$RepoRoot,
@@ -46,7 +60,7 @@ function Get-SourceFingerprint {
 
   $entries = foreach ($file in $files) {
     $relative = $file.FullName.Substring($root.Length).TrimStart('\').Replace('\', '/')
-    $hash = (Get-FileHash -Algorithm SHA256 -LiteralPath $file.FullName).Hash.ToLowerInvariant()
+    $hash = Get-SHA256File $file.FullName
     $relative + "`t" + $hash
   }
   return (Get-SHA256Text ((@($entries) | Sort-Object) -join "`n"))
