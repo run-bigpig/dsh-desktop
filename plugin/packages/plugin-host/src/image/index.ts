@@ -4,7 +4,7 @@ import { Service, type Context } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -291,7 +291,7 @@ export class ImageGateway extends TypertRemoteService implements ImageToolServic
   }
 
   private providerProfile(settingsNs: string, settingsPath: readonly string[]): Record<string, unknown> {
-    const section = this.ctx.settings.get(settingsNamespace(settingsNs))
+    const section = this.ctx.settings.get(settingsNs)
     const profile = valueAtPath(section, settingsPath)
     if (!isRecord(profile)) throw new Error('image-workbench: provider profile is missing from Harness settings')
     return profile

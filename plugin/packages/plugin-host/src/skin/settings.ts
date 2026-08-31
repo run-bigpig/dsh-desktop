@@ -1,5 +1,5 @@
 import type { Context } from '@deepseek-ai/cordis'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import z from '@deepseek-ai/schemastery'
 
 export const SKIN_SETTINGS_NAMESPACE = 'desktop-skin'
@@ -52,7 +52,7 @@ export const SkinSettingsSchema: z<SkinSettings> = z.object({
 export function registerSkinSettings(ctx: Context): void {
   ctx.inject(['settings'], settingsCtx => {
     settingsCtx.settings.register(
-      settingsNamespace(SKIN_SETTINGS_NAMESPACE),
+      SKIN_SETTINGS_NAMESPACE,
       SkinSettingsSchema,
     )
   })

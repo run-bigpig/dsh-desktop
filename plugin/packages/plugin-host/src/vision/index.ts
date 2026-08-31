@@ -7,7 +7,7 @@ import { AttachmentId, type ImageMediaType } from '@deepseek-ai/dsh-attachment'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { ToolCallId, type GenerateOptions, type LlmResolvedModelInfo, type StreamChunk } from '@deepseek-ai/dsh-llm'
-import { settingsNamespace } from '@deepseek-ai/dsh-settings'
+import type {} from '@deepseek-ai/dsh-settings'
 import type {} from '@deepseek-ai/dsh-system-prompt'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
@@ -311,7 +311,7 @@ export class VisionBridgeGateway extends TypertRemoteService {
   private async isProviderUsable(provider: string): Promise<boolean> {
     const directory = this.ctx.llm.listConfigurableProviders().find(entry => entry.provider === provider)
     if (directory === undefined) return true
-    const section = this.ctx.settings.get(settingsNamespace(directory.settingsNs))
+    const section = this.ctx.settings.get(directory.settingsNs)
     const profile = valueAtPath(section, directory.settingsPath)
     if (!isRecord(profile)) return false
     const ref = profile.apiKeyEnv
