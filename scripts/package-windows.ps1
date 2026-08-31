@@ -15,7 +15,7 @@ $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | Co
 $desktopManifestPath = Join-Path $stage "desktop-build.json"
 $seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
 $desktopExe = Join-Path $stage "StarWeave.exe"
-$output = Join-Path $repoRoot "dist/windows/StarWeave-Setup-x64.exe"
+$output = Join-Path $repoRoot "dist/windows/StarWeaveInstaller.exe"
 $checksumPath = $output + ".sha256"
 $installerManifestPath = Join-Path $repoRoot "dist/windows/installer-build.json"
 if (-not (Test-Path $desktopExe)) {
@@ -124,7 +124,7 @@ foreach ($letter in [char[]](90..68)) {
   if ($candidate -notin $usedDrives) { $drive = $candidate; break }
 }
 if (-not $drive) { throw "No free drive letter is available for long-path-safe NSIS packaging" }
-$temporaryOutput = Join-Path $repoRoot ("dist/windows/StarWeave-Setup-x64.tmp-" + [Guid]::NewGuid().ToString("N") + ".exe")
+$temporaryOutput = Join-Path $repoRoot ("dist/windows/StarWeaveInstaller.tmp-" + [Guid]::NewGuid().ToString("N") + ".exe")
 
 try {
   & subst.exe $drive $stage

@@ -10,11 +10,14 @@ import (
 	"os/exec"
 	"path/filepath"
 	"strconv"
+	"time"
 
 	"golang.org/x/sys/windows"
 )
 
 const helperMode = "--apply-desktop-update"
+
+const parentExitTimeout = 60 * time.Second
 
 func StartApplyHelper(installer, logsDir string) error {
 	executable, err := os.Executable()
@@ -32,7 +35,10 @@ func StartApplyHelper(installer, logsDir string) error {
 		"--log", filepath.Join(logsDir, "update-helper.log"),
 	)
 	command.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
-	return command.Start()
+	if err := command.Start(); err != nil {
+		return err
+	}
+	return command.Process.Release()
 }
 
 func HandleHelperMode(args []string) (bool, error) {
@@ -61,17 +67,20 @@ func HandleHelperMode(args []string) (bool, error) {
 	}
 	fmt.Fprintf(output, "waiting for desktop process %d to exit\n", *parentPID)
 	if err := waitForProcess(uint32(*parentPID)); err != nil {
+		fmt.Fprintf(output, "desktop process wait failed: %v\n", err)
 		return true, err
 	}
 	command := exec.Command(*installer, "/S", "/UPDATE")
 	command.Stdout, command.Stderr = output, output
 	command.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
 	if err := command.Run(); err != nil {
+		fmt.Fprintf(output, "installer failed: %v; restarting the existing desktop\n", err)
+		if restartErr := startDesktop(*target); restartErr != nil {
+			return true, fmt.Errorf("installer failed: %v; restart existing desktop: %w", err, restartErr)
+		}
 		return true, fmt.Errorf("installer failed: %w", err)
 	}
-	restart := exec.Command(*target)
-	restart.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
-	if err := restart.Start(); err != nil {
+	if err := startDesktop(*target); err != nil {
 		return true, fmt.Errorf("restart updated desktop: %w", err)
 	}
 	return true, nil
@@ -86,14 +95,26 @@ func waitForProcess(pid uint32) error {
 		return err
 	}
 	defer windows.CloseHandle(handle)
-	result, err := windows.WaitForSingleObject(handle, windows.INFINITE)
+	result, err := windows.WaitForSingleObject(handle, uint32(parentExitTimeout/time.Millisecond))
 	if err != nil {
 		return err
 	}
 	if result != windows.WAIT_OBJECT_0 {
+		if result == uint32(windows.WAIT_TIMEOUT) {
+			return fmt.Errorf("desktop process %d did not exit within %s", pid, parentExitTimeout)
+		}
 		return fmt.Errorf("unexpected wait result %d", result)
 	}
 	return nil
+}
+
+func startDesktop(target string) error {
+	restart := exec.Command(target)
+	restart.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	if err := restart.Start(); err != nil {
+		return err
+	}
+	return restart.Process.Release()
 }
 
 func copyFile(source, target string) error {

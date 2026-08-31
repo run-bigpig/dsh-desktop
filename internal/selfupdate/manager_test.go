@@ -103,6 +103,68 @@ func TestCheckUsesChecksumSidecar(t *testing.T) {
 	}
 }
 
+func TestChecksumSidecarMustNameInstallerAsset(t *testing.T) {
+	digest := "0123456789abcdef0123456789abcdef0123456789abcdef0123456789abcdef"
+	if _, err := parseChecksumFile([]byte(digest+"  unrelated.exe\n"), buildinfo.WindowsX64Asset); err == nil {
+		t.Fatal("checksum for an unrelated asset was accepted")
+	}
+	got, err := parseChecksumFile([]byte(digest+" *"+buildinfo.WindowsX64Asset+"\n"), buildinfo.WindowsX64Asset)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if got != digest {
+		t.Fatalf("checksum = %q", got)
+	}
+}
+
+func TestFailedCheckClearsStaleUpdate(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		http.Error(writer, "unavailable", http.StatusServiceUnavailable)
+	}))
+	defer server.Close()
+	paths := appconfig.NewPaths(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	store := state.NewStore(paths.State)
+	store.SetAvailableUpdate(&state.DesktopUpdate{Version: "9.9.9"})
+	manager := New(paths, store, "0.2.0", server.URL, server.Client())
+	if _, err := manager.Check(context.Background()); err == nil {
+		t.Fatal("failed release check returned no error")
+	}
+	if store.Snapshot().AvailableUpdate != nil {
+		t.Fatal("failed release check left a stale update available")
+	}
+}
+
+func TestDownloadRejectsSizeMismatch(t *testing.T) {
+	payload := []byte("larger than declared")
+	digest := sha256.Sum256(payload)
+	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
+		_, _ = writer.Write(payload)
+	}))
+	defer server.Close()
+	paths := appconfig.NewPaths(t.TempDir())
+	if err := paths.Ensure(); err != nil {
+		t.Fatal(err)
+	}
+	store := state.NewStore(paths.State)
+	store.SetAvailableUpdate(&state.DesktopUpdate{
+		Version:     "0.3.0",
+		AssetName:   buildinfo.WindowsX64Asset,
+		DownloadURL: server.URL,
+		SHA256:      hex.EncodeToString(digest[:]),
+		Size:        int64(len(payload) - 1),
+	})
+	manager := New(paths, store, "0.2.0", server.URL, server.Client())
+	if _, err := manager.Download(context.Background()); err == nil {
+		t.Fatal("download with a mismatched size was accepted")
+	}
+	if store.Snapshot().Phase != state.Failed {
+		t.Fatalf("unexpected phase %q", store.Snapshot().Phase)
+	}
+}
+
 func TestCheckReportsCurrentVersion(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(writer http.ResponseWriter, _ *http.Request) {
 		_ = json.NewEncoder(writer).Encode(map[string]any{"tag_name": "v0.2.0", "assets": []any{}})

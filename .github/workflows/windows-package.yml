@@ -1,0 +1,135 @@
+name: Windows Package
+
+on:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: Desktop version without the v prefix
+        required: true
+        default: 0.2.1
+  push:
+    tags:
+      - "v*"
+
+permissions:
+  contents: read
+
+concurrency:
+  group: windows-package-${{ github.ref }}
+  cancel-in-progress: false
+
+jobs:
+  package:
+    name: Build Windows x64 installer
+    runs-on: windows-2022
+    timeout-minutes: 120
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v6
+
+      - name: Set up Go
+        uses: actions/setup-go@v7
+        with:
+          go-version-file: go.mod
+          cache-dependency-path: go.sum
+
+      - name: Restore Windows release cache
+        uses: actions/cache@v4
+        with:
+          path: |
+            dist/windows/downloads
+            dist/windows/seed-cache
+            dist/windows/seed-build/pnpm-store
+          key: windows-release-${{ runner.os }}-${{ hashFiles('release/seed.lock.json', 'release/toolchain.lock.json', 'scripts/prepare-windows-seed.ps1', 'scripts/stage-workspace-runtime.mjs', 'scripts/materialize-workspace-runtime.mjs', 'scripts/windows-build-common.ps1', 'internal/desktop/child-control.mjs', 'plugin/**') }}
+
+      - name: Install build commands
+        shell: pwsh
+        run: |
+          go install github.com/go-task/task/v3/cmd/task@v3.52.0
+          go install github.com/wailsapp/wails/v3/cmd/wails3@v3.0.0-beta.9
+          (go env GOPATH) + "\bin" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          if (-not (Get-Command makensis.exe -ErrorAction SilentlyContinue)) {
+            choco install nsis --version=3.10 -y --no-progress
+            "C:\Program Files (x86)\NSIS" | Out-File -FilePath $env:GITHUB_PATH -Encoding utf8 -Append
+          }
+
+      - name: Resolve package version
+        id: version
+        shell: pwsh
+        env:
+          DISPATCH_VERSION: ${{ inputs.version }}
+        run: |
+          $version = if ($env:GITHUB_REF_TYPE -eq "tag") {
+            $env:GITHUB_REF_NAME.TrimStart("v")
+          } else {
+            $env:DISPATCH_VERSION.Trim()
+          }
+          if ($version -notmatch '^\d+\.\d+\.\d+(?:-[0-9A-Za-z.-]+)?$') {
+            throw "Invalid desktop version: $version"
+          }
+          "version=$version" | Out-File -FilePath $env:GITHUB_OUTPUT -Encoding utf8 -Append
+
+      - name: Verify release tools
+        shell: pwsh
+        run: |
+          task --version
+          wails3 version
+          makensis.exe /VERSION
+          go version
+
+      - name: Build verified NSIS installer
+        shell: pwsh
+        run: task VERSION=${{ steps.version.outputs.version }} release:windows
+
+      - name: Verify installer checksum
+        shell: pwsh
+        run: |
+          $installer = "dist/windows/StarWeaveInstaller.exe"
+          $sidecar = $installer + ".sha256"
+          $actual = (Get-FileHash -Algorithm SHA256 -LiteralPath $installer).Hash.ToLowerInvariant()
+          $expected = ((Get-Content -LiteralPath $sidecar -Raw).Trim() -split '\s+')[0].ToLowerInvariant()
+          if ($actual -ne $expected) {
+            throw "Installer checksum sidecar does not match the generated installer"
+          }
+
+      - name: Upload Windows installer
+        uses: actions/upload-artifact@v4
+        with:
+          name: StarWeave-Windows-x64-${{ steps.version.outputs.version }}
+          path: |
+            dist/windows/StarWeaveInstaller.exe
+            dist/windows/StarWeaveInstaller.exe.sha256
+          if-no-files-found: error
+          retention-days: 14
+
+  release:
+    name: Publish tag release assets
+    if: github.ref_type == 'tag'
+    needs: package
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - name: Download Windows installer
+        uses: actions/download-artifact@v5
+        with:
+          pattern: StarWeave-Windows-x64-*
+          path: release-assets
+          merge-multiple: true
+
+      - name: Publish GitHub Release assets
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+          GH_REPO: ${{ github.repository }}
+          TAG: ${{ github.ref_name }}
+        run: |
+          if ! gh release view "$TAG" >/dev/null 2>&1; then
+            prerelease=()
+            if [[ "$TAG" == *-* ]]; then prerelease=(--prerelease); fi
+            gh release create "$TAG" --verify-tag --generate-notes "${prerelease[@]}"
+          fi
+          gh release upload "$TAG" \
+            release-assets/StarWeaveInstaller.exe \
+            release-assets/StarWeaveInstaller.exe.sha256 \
+            --clobber

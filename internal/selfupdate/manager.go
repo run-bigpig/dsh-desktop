@@ -14,15 +14,22 @@ import (
 	"runtime"
 	"strconv"
 	"strings"
+	"time"
 
 	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
 	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
 	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
-const maxReleaseResponse = 2 << 20
+const (
+	maxReleaseResponse  = 2 << 20
+	maxChecksumResponse = 4 << 10
+	maxInstallerSize    = int64(2 << 30)
+	checkTimeout        = 30 * time.Second
+	downloadTimeout     = 30 * time.Minute
+)
 
-var sha256Pattern = regexp.MustCompile(`(?i)\b[0-9a-f]{64}\b`)
+var sha256Pattern = regexp.MustCompile(`(?i)^[0-9a-f]{64}$`)
 
 type httpDoer interface {
 	Do(*http.Request) (*http.Response, error)
@@ -59,6 +66,9 @@ func New(paths appconfig.Paths, store *state.Store, currentVersion, releaseAPI s
 }
 
 func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
+	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
+	defer cancel()
+	m.store.SetAvailableUpdate(nil)
 	m.set(state.Checking, "正在检查桌面应用更新")
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, m.releaseAPI, nil)
 	if err != nil {
@@ -99,6 +109,12 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	if !ok {
 		return nil, m.fail(fmt.Errorf("release %s does not contain %s", release.TagName, assetName))
 	}
+	if asset.Size <= 0 {
+		return nil, m.fail(fmt.Errorf("desktop update has an invalid size: %d bytes", asset.Size))
+	}
+	if asset.Size > maxInstallerSize {
+		return nil, m.fail(fmt.Errorf("desktop update is too large: %d bytes", asset.Size))
+	}
 	checksum, err := m.resolveChecksum(ctx, release.Assets, asset)
 	if err != nil {
 		return nil, m.fail(err)
@@ -110,9 +126,20 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 }
 
 func (m *Manager) Download(ctx context.Context) (string, error) {
+	ctx, cancel := context.WithTimeout(ctx, downloadTimeout)
+	defer cancel()
 	update := m.store.Snapshot().AvailableUpdate
 	if update == nil {
 		return "", fmt.Errorf("no desktop update is available; check for updates first")
+	}
+	if !sha256Pattern.MatchString(update.SHA256) {
+		return "", m.fail(fmt.Errorf("desktop update SHA-256 is invalid"))
+	}
+	if update.Size <= 0 {
+		return "", m.fail(fmt.Errorf("desktop update has an invalid size: %d bytes", update.Size))
+	}
+	if update.Size > maxInstallerSize {
+		return "", m.fail(fmt.Errorf("desktop update is too large: %d bytes", update.Size))
 	}
 	m.set(state.Downloading, "正在下载桌面应用 "+update.Version)
 	dir := filepath.Join(m.paths.Updates, "v"+update.Version)
@@ -135,12 +162,18 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 	if response.StatusCode != http.StatusOK {
 		return "", m.fail(fmt.Errorf("desktop update download returned HTTP %d", response.StatusCode))
 	}
+	if response.ContentLength > maxInstallerSize {
+		return "", m.fail(fmt.Errorf("desktop update download is too large: %d bytes", response.ContentLength))
+	}
+	if response.ContentLength > 0 && response.ContentLength != update.Size {
+		return "", m.fail(fmt.Errorf("desktop update size mismatch: expected %d, got %d", update.Size, response.ContentLength))
+	}
 	file, err := os.OpenFile(partial, os.O_CREATE|os.O_TRUNC|os.O_WRONLY, 0o600)
 	if err != nil {
 		return "", m.fail(err)
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), response.Body)
+	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, maxInstallerSize+1))
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(partial)
@@ -150,7 +183,11 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 		_ = os.Remove(partial)
 		return "", m.fail(closeErr)
 	}
-	if update.Size > 0 && written != update.Size {
+	if written > maxInstallerSize {
+		_ = os.Remove(partial)
+		return "", m.fail(fmt.Errorf("desktop update download exceeds %d bytes", maxInstallerSize))
+	}
+	if written != update.Size {
 		_ = os.Remove(partial)
 		return "", m.fail(fmt.Errorf("desktop update size mismatch: expected %d, got %d", update.Size, written))
 	}
@@ -182,7 +219,7 @@ func (m *Manager) DownloadAndLaunch(ctx context.Context) error {
 func (m *Manager) resolveChecksum(ctx context.Context, assets []githubAsset, asset githubAsset) (string, error) {
 	if strings.HasPrefix(strings.ToLower(asset.Digest), "sha256:") {
 		value := strings.TrimSpace(asset.Digest[len("sha256:"):])
-		if sha256Pattern.MatchString(value) && len(value) == 64 {
+		if sha256Pattern.MatchString(value) {
 			return strings.ToLower(value), nil
 		}
 	}
@@ -203,15 +240,28 @@ func (m *Manager) resolveChecksum(ctx context.Context, assets []githubAsset, ass
 	if response.StatusCode != http.StatusOK {
 		return "", fmt.Errorf("release checksum returned HTTP %d", response.StatusCode)
 	}
-	body, err := io.ReadAll(io.LimitReader(response.Body, 4096))
+	body, err := io.ReadAll(io.LimitReader(response.Body, maxChecksumResponse+1))
 	if err != nil {
 		return "", err
 	}
-	match := sha256Pattern.FindString(string(body))
-	if match == "" {
-		return "", fmt.Errorf("release checksum is invalid")
+	if len(body) > maxChecksumResponse {
+		return "", fmt.Errorf("release checksum is too large")
 	}
-	return strings.ToLower(match), nil
+	return parseChecksumFile(body, asset.Name)
+}
+
+func parseChecksumFile(body []byte, assetName string) (string, error) {
+	for _, line := range strings.Split(string(body), "\n") {
+		fields := strings.Fields(strings.TrimSpace(line))
+		if len(fields) < 2 || !sha256Pattern.MatchString(fields[0]) {
+			continue
+		}
+		name := strings.TrimPrefix(fields[1], "*")
+		if name == assetName {
+			return strings.ToLower(fields[0]), nil
+		}
+	}
+	return "", fmt.Errorf("release checksum does not contain %s", assetName)
 }
 
 func (m *Manager) set(phase state.Phase, message string) {

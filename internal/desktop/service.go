@@ -3,6 +3,7 @@ package desktop
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 
 	"github.com/run-bigpig/dsh-desktop/internal/backup"
@@ -42,7 +43,7 @@ func (s *RecoveryService) OpenDSHTerminal() error {
 			window.Restore()
 			window.Focus()
 		}
-		s.showError("无法打开 dsh 终端", err.Error())
+		s.showError("无法打开终端", err.Error())
 		return err
 	}
 	return nil
@@ -97,14 +98,48 @@ func (s *RecoveryService) OpenDataDirectory() error {
 }
 func (s *RecoveryService) showAvailableUpdate(update *state.DesktopUpdate) bool {
 	install := false
-	dialog := s.app.Dialog.Question().SetTitle("发现桌面更新").SetMessage(
-		"StarWeave " + update.Version + " 已发布。\n\n是否下载完整安装包并自动升级？Harness 私有数据会保留。",
-	)
+	dialog := s.app.Dialog.Question().SetTitle("发现桌面更新").SetMessage(desktopUpdateMessage(update))
 	s.attach(dialog)
 	dialog.AddButton("稍后").SetAsCancel()
 	dialog.AddButton("下载并安装").SetAsDefault().OnClick(func() { install = true })
 	dialog.Show()
 	return install
+}
+
+func desktopUpdateMessage(update *state.DesktopUpdate) string {
+	message := fmt.Sprintf(
+		"StarWeave %s 已发布。\n安装包大小：%s\n\n是否下载完整安装包并自动升级？Harness 私有数据会保留。",
+		update.Version,
+		formatBytes(update.Size),
+	)
+	notes := strings.TrimSpace(update.ReleaseNotes)
+	if notes == "" {
+		return message
+	}
+	const maximumRunes = 800
+	runes := []rune(notes)
+	if len(runes) > maximumRunes {
+		notes = string(runes[:maximumRunes]) + "…"
+	}
+	return message + "\n\n更新说明：\n" + notes
+}
+
+func formatBytes(size int64) string {
+	const (
+		kib = int64(1 << 10)
+		mib = int64(1 << 20)
+		gib = int64(1 << 30)
+	)
+	switch {
+	case size >= gib:
+		return fmt.Sprintf("%.2f GiB", float64(size)/float64(gib))
+	case size >= mib:
+		return fmt.Sprintf("%.1f MiB", float64(size)/float64(mib))
+	case size >= kib:
+		return fmt.Sprintf("%.1f KiB", float64(size)/float64(kib))
+	default:
+		return fmt.Sprintf("%d B", size)
+	}
 }
 func (s *RecoveryService) showInfo(title, message string) {
 	dialog := s.app.Dialog.Info().SetTitle(title).SetMessage(message)

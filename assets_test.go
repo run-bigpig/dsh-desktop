@@ -84,6 +84,44 @@ func TestWindowsIconContainsLargeThirtyPixelMark(t *testing.T) {
 	t.Fatal("Windows icon is missing its 32x32 image")
 }
 
+func TestWindowsInstallerIdentityDoesNotMatchApplicationWindow(t *testing.T) {
+	data, err := os.ReadFile("build/windows/installer.nsi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	if !strings.Contains(text, `Caption "StarWeave 安装"`) {
+		t.Fatal("Windows installer must use a caption distinct from the StarWeave application window")
+	}
+	if !strings.Contains(text, `StarWeaveInstaller.exe`) {
+		t.Fatal("Windows installer process must use the StarWeaveInstaller executable name")
+	}
+	if !strings.Contains(text, `FindWindow $1 "WailsWebviewWindow" "StarWeave"`) {
+		t.Fatal("Windows installer must distinguish the StarWeave Wails window from its own NSIS window")
+	}
+}
+
+func TestTrayMenuUsesConciseLabelsInOrder(t *testing.T) {
+	data, err := os.ReadFile("cmd/dsh-desktop/main.go")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	position := -1
+	for _, label := range []string{"显示", "终端", "更新", "重启", "日志"} {
+		next := strings.Index(text[position+1:], `menu.Add("`+label+`")`)
+		if next < 0 {
+			t.Fatalf("tray menu is missing %q", label)
+		}
+		position += next + 1
+	}
+	for _, oldLabel := range []string{"打开 Harness", "打开 dsh 终端", "检查桌面更新", "重启 Harness", "打开日志"} {
+		if strings.Contains(text, `menu.Add("`+oldLabel+`")`) {
+			t.Fatalf("tray menu still contains %q", oldLabel)
+		}
+	}
+}
+
 func assertVisibleSize(t *testing.T, icon image.Image, targetSize, minimumVisible int) {
 	t.Helper()
 	bounds := icon.Bounds()

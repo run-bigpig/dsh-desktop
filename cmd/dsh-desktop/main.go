@@ -202,14 +202,14 @@ func main() {
 		tray.SetDarkModeIcon(desktopassets.AppIcon)
 	}
 	menu := app.NewMenu()
-	menu.Add("打开 Harness").OnClick(func(*application.Context) { openHarness() })
-	menu.Add("打开 dsh 终端").OnClick(func(*application.Context) { _ = service.OpenDSHTerminal() })
-	menu.Add("重启 Harness").OnClick(func(*application.Context) { _ = service.RestartHarness() })
-	menu.Add("检查桌面更新").OnClick(func(*application.Context) {
+	menu.Add("显示").OnClick(func(*application.Context) { openHarness() })
+	menu.Add("终端").OnClick(func(*application.Context) { _ = service.OpenDSHTerminal() })
+	menu.Add("更新").OnClick(func(*application.Context) {
 		openHarness()
 		_ = service.CheckForUpdates()
 	})
-	menu.Add("打开日志").OnClick(func(*application.Context) { _ = service.OpenLogs() })
+	menu.Add("重启").OnClick(func(*application.Context) { _ = service.RestartHarness() })
+	menu.Add("日志").OnClick(func(*application.Context) { _ = service.OpenLogs() })
 	menu.AddSeparator()
 	menu.Add("退出").OnClick(func(*application.Context) { quitting.Store(true); app.Quit() })
 	tray.SetMenu(menu)

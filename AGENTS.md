@@ -360,7 +360,7 @@ For source changes, run the smallest relevant checks first, then the release-app
 - NSIS upgrades must close the running desktop app after user confirmation (silent mode may close automatically), preserve private data and pnpm store, and restore the previous resources/EXE if dependency deployment fails.
 - Installer dependency deployment uses embedded pnpm and the selected allowed registry.
 - Large old resources or dependency directories should be detached by rename and cleaned outside the critical install path.
-- After generating `dist/windows/StarWeave-Setup-x64.exe`, calculate a new SHA-256 and update the sidecar. Never reuse a previous checksum.
+- After generating `dist/windows/StarWeaveInstaller.exe`, calculate a new SHA-256 and update the sidecar. Never reuse a previous checksum.
 - NSIS packaging must fingerprint the verified seed, desktop executable, installer sources, app version, and compiler version. If that manifest, installer hash, and sidecar all match, reuse the installer without recompression.
 - A real NSIS rebuild must write to a temporary installer path and replace the public installer only after successful compilation.
 - `desktop-build.json` and `resources/seed/build-manifest.json` are build-verification metadata only. Validate them before packaging, but do not include them in the installed payload.

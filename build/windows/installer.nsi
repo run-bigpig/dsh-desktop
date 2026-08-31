@@ -1,8 +1,9 @@
 Unicode true
 RequestExecutionLevel user
 Name "StarWeave"
+Caption "StarWeave 安装"
 !ifndef INSTALLER_OUTPUT
-!define INSTALLER_OUTPUT "../../dist/windows/StarWeave-Setup-x64.exe"
+!define INSTALLER_OUTPUT "../../dist/windows/StarWeaveInstaller.exe"
 !endif
 OutFile "${INSTALLER_OUTPUT}"
 InstallDir "$LOCALAPPDATA\Programs\StarWeave"
@@ -66,6 +67,16 @@ Page Custom RegistryPageCreate RegistryPageLeave
 !insertmacro MUI_LANGUAGE "SimpChinese"
 !insertmacro MUI_LANGUAGE "English"
 
+Function FindRunningDesktopWindow
+  FindWindow $1 "WailsWebviewWindow" "StarWeave"
+  ${If} $1 == 0
+    FindWindow $1 "WailsWebviewWindow" "DSH-DeskTop"
+    ${If} $1 == 0
+      FindWindow $1 "WailsWebviewWindow" "DeepSeek Harness Desktop"
+    ${EndIf}
+  ${EndIf}
+FunctionEnd
+
 Function .onInit
   StrCpy $RegistryURL "https://registry.npmjs.org/"
   ReadRegStr $LegacyInstallDir HKCU "Software\DSH-DeskTop" "InstallDir"
@@ -92,13 +103,7 @@ Function .onInit
     StrCpy $LegacyInstallDir "$LOCALAPPDATA\Programs\DeepSeek Harness Desktop"
     legacy_default_deepseek_missing:
   ${EndIf}
-  FindWindow $1 "" "StarWeave"
-  ${If} $1 == 0
-    FindWindow $1 "" "DSH-DeskTop"
-    ${If} $1 == 0
-      FindWindow $1 "" "DeepSeek Harness Desktop"
-    ${EndIf}
-  ${EndIf}
+  Call FindRunningDesktopWindow
   ${If} $1 != 0
     IfSilent close_desktop
     MessageBox MB_YESNO|MB_ICONQUESTION "StarWeave 正在运行。是否关闭程序并继续安装？" IDYES close_desktop
@@ -118,13 +123,7 @@ Function .onInit
     Exec '"$LegacyInstallDir\deepseek-harness-desktop.exe" --quit-for-update'
     wait_for_desktop:
       Sleep 100
-      FindWindow $1 "" "StarWeave"
-      ${If} $1 == 0
-        FindWindow $1 "" "DSH-DeskTop"
-        ${If} $1 == 0
-          FindWindow $1 "" "DeepSeek Harness Desktop"
-        ${EndIf}
-      ${EndIf}
+      Call FindRunningDesktopWindow
       ${If} $1 == 0
         Goto desktop_closed
       ${EndIf}
@@ -138,13 +137,7 @@ Function .onInit
       nsExec::Exec '"$SYSDIR\taskkill.exe" /IM deepseek-harness-desktop.exe /T /F'
       Pop $0
       Sleep 300
-      FindWindow $1 "" "StarWeave"
-      ${If} $1 == 0
-        FindWindow $1 "" "DSH-DeskTop"
-        ${If} $1 == 0
-          FindWindow $1 "" "DeepSeek Harness Desktop"
-        ${EndIf}
-      ${EndIf}
+      Call FindRunningDesktopWindow
       ${If} $1 != 0
         IfSilent desktop_close_failed
         MessageBox MB_ICONSTOP "无法关闭 StarWeave。请稍后重试。"
