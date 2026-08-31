@@ -38,6 +38,11 @@ export class DesktopGateway extends TypertRemoteService {
   constructor(ctx: Context) {
     super(ctx, 'desktop')
     registerSkinSettings(ctx)
+    ctx.get('systemPrompt')?.section({
+      name: 'starweave:identity',
+      order: -1000,
+      text: '你的名字是小织，是一个 AI 智能体。默认使用中文回答；仅当用户明确要求使用其他语言时切换语言。',
+    })
   }
 
   @Remote('capabilities')

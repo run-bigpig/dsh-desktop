@@ -1,4 +1,4 @@
 interface:
   display_name: "ThinkingData 分析编排"
-  short_description: "基于 TA Open API 基础查询编排数据分析"
-  default_prompt: "使用 $thinkingdata-analysis-orchestrator 通过当前 MCP 提供的 ThinkingData 基础查询工具完成这项分析。"
+  short_description: "可持久学习已验证纠错的 ThinkingData 数据分析编排"
+  default_prompt: "使用 $thinkingdata-analysis-orchestrator 完成这项 ThinkingData 分析，并在纠错成功后沉淀可复用经验。"

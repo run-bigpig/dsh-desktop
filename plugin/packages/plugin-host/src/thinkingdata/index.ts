@@ -24,7 +24,11 @@ import {
   validateThinkingDataUrl,
   type ThinkingDataDocument,
 } from './document.ts'
-import { registerThinkingDataSkill } from './skill.ts'
+import {
+  registerThinkingDataLearningTool,
+  replaceThinkingDataSkill,
+  thinkingDataLearningPath,
+} from './skill.ts'
 
 export interface ThinkingDataConfig {
   readonly path: string
@@ -59,14 +63,17 @@ export class ThinkingDataGateway extends TypertRemoteService {
   static Config: z<ThinkingDataConfig> = z.object({ path: z.string().required() })
 
   private readonly filename: string
+  private readonly learningPath: string
   private document: ThinkingDataDocument = emptyThinkingDataDocument()
   private fiber: Fiber | undefined
   private disposeSkill: (() => void) | undefined
+  private disposeLearningTool: (() => void) | undefined
   private chain: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: ThinkingDataConfig) {
     super(ctx, 'thinkingData')
     this.filename = resolve(config.path)
+    this.learningPath = thinkingDataLearningPath(this.filename)
   }
 
   protected async [Service.init](): Promise<void> {
@@ -131,7 +138,12 @@ export class ThinkingDataGateway extends TypertRemoteService {
     if (!this.document.enabled) return
     const token = (await this.ctx.credentials.resolve(TOKEN_REF))?.value
     if (token === undefined || token.length === 0) return
-    this.disposeSkill = await registerThinkingDataSkill(this.ctx)
+    await this.refreshSkill()
+    this.disposeLearningTool = registerThinkingDataLearningTool(
+      this.ctx,
+      this.learningPath,
+      async () => { await this.refreshSkill() },
+    )
     this.fiber = this.ctx.plugin({
       name: mcpClient.name,
       inject: mcpClient.inject,
@@ -156,8 +168,16 @@ export class ThinkingDataGateway extends TypertRemoteService {
 
   private async dropRuntime(): Promise<void> {
     await this.dropFiber()
+    this.disposeLearningTool?.()
+    this.disposeLearningTool = undefined
     this.disposeSkill?.()
     this.disposeSkill = undefined
+  }
+
+  private async refreshSkill(): Promise<void> {
+    const disposePrevious = this.disposeSkill
+    this.disposeSkill = undefined
+    this.disposeSkill = await replaceThinkingDataSkill(this.ctx, this.learningPath, disposePrevious)
   }
 
   private async readDocument(): Promise<ThinkingDataDocument> {

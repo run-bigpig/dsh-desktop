@@ -16,7 +16,6 @@
 
 - 模型接口不支持的表关联；
 - 原始记录验证；
-- 元数据检查；
 - 自定义窗口计算；
 - 复现模型计算结果。
 
@@ -42,8 +41,8 @@
 
 1. 复用已经确认的项目、事件、属性和身份字段。
 2. 只有字段未知或 SQL 报列不存在时，才检索对应元数据。
-3. 无法从元数据确定真实表结构时，可以尝试 `SHOW` 或 `DESCRIBE`；若返回权限错误，
-   不得重复调用，改用元数据工具、已知模型结果或带日期分区的最小 `SELECT` 验证。
+3. 无法从元数据确定真实表结构时，停止生成 SQL 并继续使用元数据工具；禁止调用
+   `SHOW`、`DESCRIBE`、系统目录或等价结构探测语句。
 4. 确认字段类型、分区字段、日期覆盖范围和关联键。
 5. 生成能够回答问题的最小查询。
 
@@ -63,9 +62,7 @@
 
 - `SELECT`；
 - `WITH ... SELECT`；
-- 内层语句也满足本节约束的 `EXPLAIN` 或 `EXPLAIN ANALYZE`；
-- `SHOW`；
-- `DESCRIBE`。
+- 内层语句也满足本节约束、且仅访问已确认业务数据表的 `EXPLAIN` 或 `EXPLAIN ANALYZE`。
 
 检查完整 SQL，包括全部 CTE、子查询、注释后的实际语句和 `EXPLAIN` 内层查询。`WITH`
 不是天然只读，最终语句及每个 CTE 都必须只读。允许一个可选的末尾分号，但禁止出现第二条
@@ -80,6 +77,17 @@
 - 权限与安全：`GRANT`、`REVOKE` 及角色、用户、策略修改；
 - 事务与会话：`BEGIN`、`START TRANSACTION`、`COMMIT`、`ROLLBACK`、`SET`、`RESET`、`USE`；
 - 维护与元数据修改：`ANALYZE`、`VACUUM`、`OPTIMIZE`、`REFRESH`、`REPAIR`、`MSCK` 等。
+
+同时禁止所有系统查询、目录查询和结构探测，即使它们只读，包括但不限于：
+
+- `SHOW`、`SHOW TABLES`、`SHOW COLUMNS`、`SHOW CREATE`、`SHOW STATS`、`SHOW FUNCTIONS`；
+- `DESCRIBE`、`DESC`、`PRAGMA`；
+- 查询 `information_schema`、`system`、`sys`、`pg_catalog`、`sqlite_master` 或等价系统对象；
+- 查询版本、当前用户、角色、会话、Catalog、Schema、权限、配置或连接器状态的系统函数；
+- 通过 `EXPLAIN`、CTE、子查询、视图或函数间接包装上述系统查询。
+
+表、列、事件、属性和类型发现只能使用 ThinkingData 元数据工具。元数据不足时停止 SQL
+生成并说明缺口，不得通过猜表名、枚举对象或最小 SQL 试探系统结构。
 
 即使用户明确授权或要求写操作，也不得执行或提供可直接执行的写 SQL。改为提供只读检查、
 影响范围评估或说明该操作超出本 Skill 安全边界。无法确定某个语句、函数或连接器是否有
@@ -141,8 +149,8 @@
 - 只读校验失败：删除多语句或写操作；不要尝试混淆关键字绕过校验。
 - 用户要求执行写 SQL：拒绝生成和执行写语句，改为只读诊断；用户授权不能覆盖安全边界。
 - 无法判断函数或连接器是否写外部系统：停止执行，不以“可能只读”为由尝试调用。
-- 列或表不存在：先用元数据、`SHOW` 或 `DESCRIBE` 确认真名，只改对应标识符。
-- `SHOW` 或 `DESCRIBE` 权限不足：停止该发现路径，切换项目元数据或带分区的最小查询。
+- 列或表不存在：停止 SQL 重试，使用 ThinkingData 元数据工具确认真名，只改对应标识符。
+- 用户要求 `SHOW`、`DESCRIBE` 或查询系统目录：拒绝该 SQL 路径，改用 ThinkingData 元数据工具。
 - 提示事件表缺少 `$part_date`：添加最窄可用日期分区，不要仅添加 `LIMIT` 重试。
 - `ta_execute_sql` 返回 `pageSize` 下限错误：只把 `page_size` 修正为 1000 或更大。
 - `ta_execute_sql` 成功但没有数据行：从返回的 `taskId` 调用 `ta_sql_result_page`，不要

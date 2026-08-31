@@ -6,7 +6,7 @@ on:
       version:
         description: Desktop version without the v prefix
         required: true
-        default: 0.2.1
+        default: 0.2.2
       publish_tag:
         description: Optional existing tag to receive the generated release assets
         required: false

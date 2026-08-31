@@ -87,25 +87,58 @@ export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t 
     }
   }
 
-  if (state.status === 'loading') return <p className={css.status}>{t('loading')}</p>
+  if (state.status === 'loading') {
+    return (
+      <section className={css.section} data-settings-section="thinkingdata">
+        <header className={css.headerCopy}>
+          <h2 className={css.title}>{t('title')}</h2>
+          <p className={css.intro}>{t('tagline')}</p>
+        </header>
+        <p className={css.status} role="status">{t('loading')}</p>
+      </section>
+    )
+  }
   if (state.status === 'error') {
-    return <div className={css.failure}><p role="alert">{t('loadFailed')}</p><button type="button" onClick={load}>{t('retry')}</button></div>
+    return (
+      <section className={css.section} data-settings-section="thinkingdata">
+        <header className={css.headerCopy}>
+          <h2 className={css.title}>{t('title')}</h2>
+          <p className={css.intro}>{t('tagline')}</p>
+        </header>
+        <div className={css.failure}>
+          <p role="alert">{t('loadFailed')}</p>
+          <button type="button" onClick={load}>{t('retry')}</button>
+        </div>
+      </section>
+    )
   }
 
   const dirty = enabled !== state.snapshot.enabled || url.trim() !== state.snapshot.url || token.trim().length > 0
   return (
-    <section className={css.section} aria-busy={saving || testing}>
+    <section className={css.section} data-settings-section="thinkingdata" aria-busy={saving || testing}>
       <header className={css.header}>
-        <div><h2>{t('title')}</h2><p>{t('tagline')}</p></div>
+        <div className={css.headerCopy}>
+          <h2 className={css.title}>{t('title')}</h2>
+          <p className={css.intro}>{t('tagline')}</p>
+        </div>
         <span className={css.connection} data-phase={state.snapshot.phase}>
           <span aria-hidden="true" />{t(PHASE_KEYS[state.snapshot.phase])}
         </span>
       </header>
       <form className={css.card} onSubmit={event => { void submit(event) }}>
-        <label className={css.switchRow}>
+        <div className={css.switchRow}>
           <span><strong>{t('enabled')}</strong><small>{t('enabledHint')}</small></span>
-          <input type="checkbox" checked={enabled} onChange={event => { setEnabled(event.currentTarget.checked); setNotice(null) }} />
-        </label>
+          <button
+            type="button"
+            role="switch"
+            aria-checked={enabled}
+            aria-label={t('enabled')}
+            className={`${css.switch} ${enabled ? css.switchOn : ''}`}
+            onClick={() => { setEnabled(value => !value); setNotice(null) }}
+          >
+            <span className={css.switchThumb} />
+          </button>
+        </div>
         <div className={css.divider} />
         <div className={css.field}>
           <label htmlFor={`${id}-url`}>{t('url')}</label>
