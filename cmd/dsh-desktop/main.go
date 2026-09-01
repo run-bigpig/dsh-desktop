@@ -52,6 +52,7 @@ func main() {
 	}
 	var mainWindow *application.WebviewWindow
 	var splashWindow *application.WebviewWindow
+	var updateWindow *application.WebviewWindow
 	var service *desktop.RecoveryService
 	var quitting atomic.Bool
 	var awaitingHarnessNavigation atomic.Bool
@@ -164,8 +165,10 @@ func main() {
 	}
 	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
 	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
+	updateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "update", Title: "StarWeave 更新", Width: 620, Height: 600, MinWidth: 620, MinHeight: 600, MaxWidth: 620, MaxHeight: 600, DisableResize: true, InitialPosition: application.WindowCentered, Hidden: true, BackgroundColour: application.RGBA{Red: 7, Green: 10, Blue: 22, Alpha: 255}, URL: "/?view=update"})
 	coordinator.SetWindow(mainWindow)
 	service.SetWindow(splashWindow)
+	service.SetUpdateWindow(updateWindow)
 	finishHarnessNavigation := func(*application.WindowEvent) {
 		if awaitingHarnessNavigation.CompareAndSwap(true, false) {
 			logger.Info("Harness navigation completed; swapping desktop windows")
@@ -184,6 +187,10 @@ func main() {
 	}
 	registerClosingHook(mainWindow)
 	registerClosingHook(splashWindow)
+	updateWindow.RegisterHook(events.Common.WindowClosing, func(e *application.WindowEvent) {
+		_ = service.CloseUpdateWindow()
+		e.Cancel()
+	})
 	coordinator.SetNavigation(func(url string) {
 		logger.Info("Harness ready; holding splash before handoff", "delay", time.Second)
 		time.Sleep(time.Second)
@@ -205,7 +212,6 @@ func main() {
 	menu.Add("显示").OnClick(func(*application.Context) { openHarness() })
 	menu.Add("终端").OnClick(func(*application.Context) { _ = service.OpenDSHTerminal() })
 	menu.Add("更新").OnClick(func(*application.Context) {
-		openHarness()
 		_ = service.CheckForUpdates()
 	})
 	menu.Add("重启").OnClick(func(*application.Context) { _ = service.RestartHarness() })

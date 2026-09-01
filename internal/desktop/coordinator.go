@@ -419,22 +419,10 @@ func (c *Coordinator) ensureSeedRuntime() (state.RuntimeRef, error) {
 }
 
 func (c *Coordinator) CheckDesktopUpdate(ctx context.Context) (*state.DesktopUpdate, error) {
-	update, err := c.appUpdates.Check(ctx)
-	if err != nil {
-		c.restoreReadyState("Harness 已就绪；桌面更新检查失败")
-	}
-	return update, err
+	return c.appUpdates.Check(ctx)
 }
 func (c *Coordinator) InstallDesktopUpdate(ctx context.Context) error {
-	err := c.appUpdates.DownloadAndLaunch(ctx)
-	if err != nil {
-		c.restoreReadyState("Harness 已就绪；桌面更新安装失败")
-	}
-	return err
-}
-func (c *Coordinator) restoreReadyState(message string) {
-	snapshot := c.store.Snapshot()
-	c.store.SetRuntimeInfo(state.Ready, message, snapshot.HarnessURL)
+	return c.appUpdates.DownloadAndLaunch(ctx)
 }
 func (c *Coordinator) ListBackups() ([]backup.Info, error) { return c.backups.List() }
 func (c *Coordinator) Rollback(ctx context.Context, confirmed bool) error {

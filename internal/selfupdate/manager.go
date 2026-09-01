@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/hex"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -69,7 +70,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	ctx, cancel := context.WithTimeout(ctx, checkTimeout)
 	defer cancel()
 	m.store.SetAvailableUpdate(nil)
-	m.set(state.Checking, "正在检查桌面应用更新")
+	m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateChecking, Message: "正在检查 StarWeave 更新"})
 	request, err := http.NewRequestWithContext(ctx, http.MethodGet, m.releaseAPI, nil)
 	if err != nil {
 		return nil, m.fail(err)
@@ -98,7 +99,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	}
 	if !newer {
 		m.store.SetAvailableUpdate(nil)
-		m.set(state.Ready, "StarWeave "+m.currentVersion+" 已是最新版本")
+		m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateCurrent, Message: "当前 StarWeave 已是最新版本"})
 		return nil, nil
 	}
 	assetName, err := platformAssetName()
@@ -121,7 +122,7 @@ func (m *Manager) Check(ctx context.Context) (*state.DesktopUpdate, error) {
 	}
 	update := &state.DesktopUpdate{Version: version, Tag: release.TagName, ReleaseURL: release.HTMLURL, ReleaseNotes: release.Body, AssetName: asset.Name, DownloadURL: asset.BrowserDownloadURL, SHA256: checksum, Size: asset.Size}
 	m.store.SetAvailableUpdate(update)
-	m.set(state.Idle, "发现桌面应用新版本 "+version+"，可下载完整安装包升级")
+	m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateAvailable, Message: "StarWeave " + version + " 已准备好下载", Total: update.Size})
 	return update, nil
 }
 
@@ -130,7 +131,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 	defer cancel()
 	update := m.store.Snapshot().AvailableUpdate
 	if update == nil {
-		return "", fmt.Errorf("no desktop update is available; check for updates first")
+		return "", m.fail(fmt.Errorf("no desktop update is available; check for updates first"))
 	}
 	if !sha256Pattern.MatchString(update.SHA256) {
 		return "", m.fail(fmt.Errorf("desktop update SHA-256 is invalid"))
@@ -141,7 +142,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 	if update.Size > maxInstallerSize {
 		return "", m.fail(fmt.Errorf("desktop update is too large: %d bytes", update.Size))
 	}
-	m.set(state.Downloading, "正在下载桌面应用 "+update.Version)
+	m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateDownloading, Message: "正在下载 StarWeave " + update.Version, Total: update.Size, CanCancel: true})
 	dir := filepath.Join(m.paths.Updates, "v"+update.Version)
 	if err := os.MkdirAll(dir, 0o700); err != nil {
 		return "", m.fail(err)
@@ -156,7 +157,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 	request.Header.Set("User-Agent", "StarWeave/"+m.currentVersion)
 	response, err := m.client.Do(request)
 	if err != nil {
-		return "", m.fail(fmt.Errorf("download desktop update: %w", err))
+		return "", m.downloadFailure(ctx, fmt.Errorf("download desktop update: %w", err))
 	}
 	defer response.Body.Close()
 	if response.StatusCode != http.StatusOK {
@@ -173,11 +174,22 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 		return "", m.fail(err)
 	}
 	hash := sha256.New()
-	written, copyErr := io.Copy(io.MultiWriter(file, hash), io.LimitReader(response.Body, maxInstallerSize+1))
+	progress := newProgressWriter(io.MultiWriter(file, hash), update.Size, func(downloaded, total, bytesPerSecond int64) {
+		m.setStatus(state.DesktopUpdateStatus{
+			Phase:          state.DesktopUpdateDownloading,
+			Message:        "正在下载 StarWeave " + update.Version,
+			Downloaded:     downloaded,
+			Total:          total,
+			BytesPerSecond: bytesPerSecond,
+			Progress:       downloadPercent(downloaded, total),
+			CanCancel:      true,
+		})
+	})
+	written, copyErr := io.Copy(progress, io.LimitReader(response.Body, maxInstallerSize+1))
 	closeErr := file.Close()
 	if copyErr != nil {
 		_ = os.Remove(partial)
-		return "", m.fail(copyErr)
+		return "", m.downloadFailure(ctx, copyErr)
 	}
 	if closeErr != nil {
 		_ = os.Remove(partial)
@@ -191,6 +203,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 		_ = os.Remove(partial)
 		return "", m.fail(fmt.Errorf("desktop update size mismatch: expected %d, got %d", update.Size, written))
 	}
+	m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateVerifying, Message: "下载完成，正在校验安装包", Downloaded: written, Total: update.Size, Progress: 100})
 	actual := hex.EncodeToString(hash.Sum(nil))
 	if !strings.EqualFold(actual, update.SHA256) {
 		_ = os.Remove(partial)
@@ -201,7 +214,7 @@ func (m *Manager) Download(ctx context.Context) (string, error) {
 		_ = os.Remove(partial)
 		return "", m.fail(err)
 	}
-	m.set(state.Installing, "安装包校验完成，正在准备升级并重启")
+	m.setStatus(state.DesktopUpdateStatus{Phase: state.DesktopUpdateInstalling, Message: "安装包校验完成，正在启动升级程序", Downloaded: written, Total: update.Size, Progress: 100})
 	return target, nil
 }
 
@@ -213,6 +226,12 @@ func (m *Manager) DownloadAndLaunch(ctx context.Context) error {
 	if err := StartApplyHelper(installer, m.paths.Logs); err != nil {
 		return m.fail(fmt.Errorf("start desktop update helper: %w", err))
 	}
+	status := m.store.Snapshot().DesktopUpdate
+	status.Phase = state.DesktopUpdateInstalling
+	status.Message = "正在关闭 StarWeave 并安装更新"
+	status.CanCancel = false
+	status.CanRetry = false
+	m.setStatus(status)
 	return nil
 }
 
@@ -264,13 +283,71 @@ func parseChecksumFile(body []byte, assetName string) (string, error) {
 	return "", fmt.Errorf("release checksum does not contain %s", assetName)
 }
 
-func (m *Manager) set(phase state.Phase, message string) {
-	m.store.SetRuntimeInfo(phase, message, m.store.Snapshot().HarnessURL)
+func (m *Manager) setStatus(status state.DesktopUpdateStatus) {
+	m.store.SetDesktopUpdateStatus(status)
 }
 
 func (m *Manager) fail(err error) error {
-	m.set(state.Failed, err.Error())
+	status := m.store.Snapshot().DesktopUpdate
+	status.Phase = state.DesktopUpdateFailed
+	status.Message = err.Error()
+	status.CanCancel = false
+	status.CanRetry = true
+	m.setStatus(status)
 	return err
+}
+
+func (m *Manager) downloadFailure(ctx context.Context, err error) error {
+	if errors.Is(ctx.Err(), context.Canceled) {
+		status := m.store.Snapshot().DesktopUpdate
+		status.Phase = state.DesktopUpdateCancelled
+		status.Message = "已取消更新下载"
+		status.CanCancel = false
+		status.CanRetry = true
+		m.setStatus(status)
+		return context.Canceled
+	}
+	return m.fail(err)
+}
+
+type progressWriter struct {
+	writer     io.Writer
+	total      int64
+	report     func(downloaded, total, bytesPerSecond int64)
+	startedAt  time.Time
+	lastReport time.Time
+	written    int64
+}
+
+func newProgressWriter(writer io.Writer, total int64, report func(downloaded, total, bytesPerSecond int64)) *progressWriter {
+	now := time.Now()
+	return &progressWriter{writer: writer, total: total, report: report, startedAt: now}
+}
+
+func (w *progressWriter) Write(data []byte) (int, error) {
+	n, err := w.writer.Write(data)
+	w.written += int64(n)
+	now := time.Now()
+	if n > 0 && (w.lastReport.IsZero() || now.Sub(w.lastReport) >= 100*time.Millisecond || w.written == w.total) {
+		elapsed := now.Sub(w.startedAt).Seconds()
+		var speed int64
+		if elapsed > 0 {
+			speed = int64(float64(w.written) / elapsed)
+		}
+		w.report(w.written, w.total, speed)
+		w.lastReport = now
+	}
+	return n, err
+}
+
+func downloadPercent(downloaded, total int64) int {
+	if downloaded <= 0 || total <= 0 {
+		return 0
+	}
+	if downloaded >= total {
+		return 100
+	}
+	return int(downloaded * 100 / total)
 }
 
 func platformAssetName() (string, error) {

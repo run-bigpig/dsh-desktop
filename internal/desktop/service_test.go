@@ -1,28 +1,30 @@
 package desktop
 
 import (
-	"strings"
+	"context"
 	"testing"
-
-	"github.com/run-bigpig/dsh-desktop/internal/state"
+	"time"
 )
 
-func TestDesktopUpdateMessageIncludesSizeAndReleaseNotes(t *testing.T) {
-	message := desktopUpdateMessage(&state.DesktopUpdate{
-		Version:      "0.3.0",
-		Size:         66 << 20,
-		ReleaseNotes: "修复更新流程",
-	})
-	for _, expected := range []string{"StarWeave 0.3.0", "66.0 MiB", "修复更新流程", "Harness 私有数据会保留"} {
-		if !strings.Contains(message, expected) {
-			t.Fatalf("update message is missing %q: %s", expected, message)
-		}
+func TestUpdateOperationCanBeCancelled(t *testing.T) {
+	service := &RecoveryService{}
+	started := make(chan struct{})
+	finished := make(chan struct{})
+	if err := service.launchUpdate(func(ctx context.Context) error {
+		close(started)
+		<-ctx.Done()
+		close(finished)
+		return ctx.Err()
+	}); err != nil {
+		t.Fatal(err)
 	}
-}
-
-func TestDesktopUpdateMessageLimitsReleaseNotes(t *testing.T) {
-	message := desktopUpdateMessage(&state.DesktopUpdate{Version: "0.3.0", ReleaseNotes: strings.Repeat("更", 900)})
-	if !strings.HasSuffix(message, strings.Repeat("更", 800)+"…") {
-		t.Fatal("release notes were not limited to 800 runes")
+	<-started
+	if err := service.CancelDesktopUpdate(); err != nil {
+		t.Fatal(err)
+	}
+	select {
+	case <-finished:
+	case <-time.After(2 * time.Second):
+		t.Fatal("desktop update operation did not stop after cancellation")
 	}
 }

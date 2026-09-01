@@ -25,6 +25,20 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 	if !strings.Contains(text, "星织启动中") || !strings.Contains(text, "star-particle") {
 		t.Fatal("frontend does not contain the StarWeave convergence splash")
 	}
+	for _, expected := range []string{"downloadProgress", "downloadPercent", "cancelUpdate", "retryUpdate", "SHA-256"} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("frontend update window is missing %q", expected)
+		}
+	}
+	script, err := Frontend.ReadFile("frontend/app.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{"desktopUpdate", "bytesPerSecond", "CancelDesktopUpdate", "InstallDesktopUpdate"} {
+		if !strings.Contains(string(script), expected) {
+			t.Fatalf("frontend update logic is missing %q", expected)
+		}
+	}
 	if _, err := Frontend.ReadFile("frontend/starweave-logo.png"); err != nil {
 		t.Fatal(err)
 	}

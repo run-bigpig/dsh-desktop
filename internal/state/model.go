@@ -18,6 +18,20 @@ const (
 	Failed      Phase = "failed"
 )
 
+type DesktopUpdatePhase string
+
+const (
+	DesktopUpdateIdle        DesktopUpdatePhase = "idle"
+	DesktopUpdateChecking    DesktopUpdatePhase = "checking"
+	DesktopUpdateCurrent     DesktopUpdatePhase = "current"
+	DesktopUpdateAvailable   DesktopUpdatePhase = "available"
+	DesktopUpdateDownloading DesktopUpdatePhase = "downloading"
+	DesktopUpdateVerifying   DesktopUpdatePhase = "verifying"
+	DesktopUpdateInstalling  DesktopUpdatePhase = "installing"
+	DesktopUpdateCancelled   DesktopUpdatePhase = "cancelled"
+	DesktopUpdateFailed      DesktopUpdatePhase = "failed"
+)
+
 type RuntimeRef struct {
 	Commit      string    `json:"commit"`
 	ActivatedAt time.Time `json:"activatedAt,omitempty"`
@@ -48,17 +62,29 @@ type DesktopUpdate struct {
 	Size         int64  `json:"size"`
 }
 
+type DesktopUpdateStatus struct {
+	Phase          DesktopUpdatePhase `json:"phase"`
+	Message        string             `json:"message"`
+	Downloaded     int64              `json:"downloaded"`
+	Total          int64              `json:"total"`
+	BytesPerSecond int64              `json:"bytesPerSecond"`
+	Progress       int                `json:"progress"`
+	CanCancel      bool               `json:"canCancel"`
+	CanRetry       bool               `json:"canRetry"`
+}
+
 type Snapshot struct {
-	Phase             Phase          `json:"phase"`
-	Message           string         `json:"message"`
-	Active            *ActiveState   `json:"active,omitempty"`
-	Pending           *PendingState  `json:"pending,omitempty"`
-	DesktopVersion    string         `json:"desktopVersion"`
-	AvailableUpdate   *DesktopUpdate `json:"availableUpdate,omitempty"`
-	HarnessURL        string         `json:"harnessUrl,omitempty"`
-	LogsDirectory     string         `json:"logsDirectory"`
-	DataDirectory     string         `json:"dataDirectory"`
-	DeveloperMode     bool           `json:"developerMode"`
-	UnverifiedUpdates bool           `json:"unverifiedUpdates"`
-	UpdatedAt         time.Time      `json:"updatedAt"`
+	Phase             Phase               `json:"phase"`
+	Message           string              `json:"message"`
+	Active            *ActiveState        `json:"active,omitempty"`
+	Pending           *PendingState       `json:"pending,omitempty"`
+	DesktopVersion    string              `json:"desktopVersion"`
+	AvailableUpdate   *DesktopUpdate      `json:"availableUpdate,omitempty"`
+	DesktopUpdate     DesktopUpdateStatus `json:"desktopUpdate"`
+	HarnessURL        string              `json:"harnessUrl,omitempty"`
+	LogsDirectory     string              `json:"logsDirectory"`
+	DataDirectory     string              `json:"dataDirectory"`
+	DeveloperMode     bool                `json:"developerMode"`
+	UnverifiedUpdates bool                `json:"unverifiedUpdates"`
+	UpdatedAt         time.Time           `json:"updatedAt"`
 }

@@ -18,7 +18,7 @@ type Store struct {
 }
 
 func NewStore(dir string) *Store {
-	return &Store{dir: dir, snapshot: Snapshot{Phase: Idle, UpdatedAt: time.Now()}}
+	return &Store{dir: dir, snapshot: Snapshot{Phase: Idle, DesktopUpdate: DesktopUpdateStatus{Phase: DesktopUpdateIdle}, UpdatedAt: time.Now()}}
 }
 
 func (s *Store) Snapshot() Snapshot {
@@ -72,6 +72,13 @@ func (s *Store) SetAvailableUpdate(update *DesktopUpdate) {
 		copy := *update
 		s.snapshot.AvailableUpdate = &copy
 	}
+	s.snapshot.UpdatedAt = time.Now()
+}
+
+func (s *Store) SetDesktopUpdateStatus(status DesktopUpdateStatus) {
+	s.mu.Lock()
+	defer s.mu.Unlock()
+	s.snapshot.DesktopUpdate = status
 	s.snapshot.UpdatedAt = time.Now()
 }
 

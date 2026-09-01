@@ -1,4 +1,5 @@
 const service="github.com/run-bigpig/dsh-desktop/internal/desktop.RecoveryService.";
+const isUpdateView=new URLSearchParams(window.location.search).get("view")==="update";
 const phases={
   idle:{text:"星织启动中",progress:8},
   starting:{text:"星织启动中",progress:68},
@@ -17,11 +18,13 @@ const $=id=>document.getElementById(id);
 let visibleProgress=6;
 let targetProgress=8;
 let currentPhase="idle";
-let splashActive=true;
+let splashActive=!isUpdateView;
+let actionPending=false;
 
 async function call(method,...args){if(!window.wails?.Call)throw new Error("Wails 本地接口尚未就绪");return window.wails.Call.ByName(service+method,...args)}
 
 function render(state){
+  if(isUpdateView){renderUpdate(state);return}
   const nextPhase=state.phase||"idle";
   currentPhase=nextPhase;
   const meta=phases[currentPhase]||phases.idle;
@@ -54,11 +57,66 @@ function paintConvergence(progress){
 }
 
 async function refresh(){
-  if(!splashActive)return;
+  if(!splashActive&&!isUpdateView)return;
   try{
     const state=await call("GetState");
-    if(splashActive)render(state);
+    if(splashActive||isUpdateView)render(state);
   }catch{}
+}
+
+function formatBytes(value){
+  const size=Number(value)||0;
+  if(size>=1073741824)return `${(size/1073741824).toFixed(2)} GiB`;
+  if(size>=1048576)return `${(size/1048576).toFixed(1)} MiB`;
+  if(size>=1024)return `${(size/1024).toFixed(1)} KiB`;
+  return `${size} B`;
+}
+
+function renderUpdate(state){
+  const status=state.desktopUpdate||{phase:"idle",message:"准备检查更新"};
+  const update=state.availableUpdate;
+  const phase=status.phase||"idle";
+  const labels={idle:"准备就绪",checking:"正在检查",current:"已是最新",available:"发现更新",downloading:"正在下载",verifying:"正在校验",installing:"准备安装",cancelled:"已取消",failed:"更新失败"};
+  const headings={idle:"检查 StarWeave 更新",checking:"正在检查更新",current:"你使用的是最新版本",available:`StarWeave ${update?.version||"新版本"} 已发布`,downloading:"正在下载安装包",verifying:"正在验证安装包",installing:"即将安装并重启",cancelled:"下载已取消",failed:"更新未完成"};
+  document.body.dataset.updatePhase=phase;
+  $("updateStatus").textContent=labels[phase]||"软件更新";
+  $("updateHeading").textContent=headings[phase]||"软件更新";
+  const sizeSuffix=phase==="available"&&update?.size?` · 安装包 ${formatBytes(update.size)}`:"";
+  $("updateMessage").textContent=(status.message||"")+sizeSuffix;
+  $("currentVersion").textContent=state.desktopVersion||"—";
+  $("availableVersion").textContent=update?.version||"—";
+
+  const notes=String(update?.releaseNotes||"").trim();
+  $("releaseNotes").hidden=!notes;
+  $("releaseNotesText").textContent=notes;
+
+  const total=Number(status.total||update?.size||0);
+  const downloaded=Number(status.downloaded||0);
+  const progress=total>0?Math.max(0,Math.min(100,Number(status.progress)||Math.floor(downloaded*100/total))):0;
+  const showProgress=["downloading","verifying","installing"].includes(phase);
+  const progressPanel=$("downloadProgress");
+  progressPanel.hidden=!showProgress;
+  const track=progressPanel.querySelector(".progress-track");
+  track.classList.toggle("indeterminate",showProgress&&total<=0);
+  track.setAttribute("aria-valuenow",String(progress));
+  $("downloadBar").style.width=`${progress}%`;
+  $("downloadPercent").textContent=total>0?`${progress}%`:"…";
+  $("downloadDetail").textContent=total>0?`${formatBytes(downloaded)} / ${formatBytes(total)}`:"正在接收数据";
+  $("downloadSpeed").textContent=status.bytesPerSecond>0?`${formatBytes(status.bytesPerSecond)}/s`:phase==="verifying"?"SHA-256":"—";
+
+  const busy=["checking","downloading","verifying","installing"].includes(phase);
+  $("closeUpdate").hidden=busy;
+  $("cancelUpdate").hidden=!status.canCancel;
+  $("checkUpdate").hidden=!["idle","current"].includes(phase);
+  $("retryUpdate").hidden=!status.canRetry;
+  $("installUpdate").hidden=phase!=="available";
+  for(const button of document.querySelectorAll(".update-actions button"))button.disabled=actionPending;
+}
+
+async function invokeAction(method){
+  if(actionPending)return;
+  actionPending=true;
+  try{await call(method)}finally{actionPending=false;refresh()}
 }
 
 function resetSplash(){
@@ -76,4 +134,23 @@ function resetSplash(){
 window.parkSplash=()=>{splashActive=false;resetSplash()};
 window.activateSplash=()=>{splashActive=true;resetSplash();refresh()};
 window.finishSplash=()=>document.body.classList.add("handoff");
-window.addEventListener("DOMContentLoaded",()=>{animateProgress();setTimeout(refresh,120);setInterval(refresh,200)});
+window.addEventListener("DOMContentLoaded",()=>{
+  document.body.dataset.view=isUpdateView?"update":"boot";
+  if(isUpdateView){
+    $("closeUpdate").addEventListener("click",()=>invokeAction("CloseUpdateWindow"));
+    $("cancelUpdate").addEventListener("click",()=>invokeAction("CancelDesktopUpdate"));
+    $("checkUpdate").addEventListener("click",()=>invokeAction("CheckForUpdates"));
+    $("installUpdate").addEventListener("click",()=>invokeAction("InstallDesktopUpdate"));
+    $("retryUpdate").addEventListener("click",async()=>{
+      let state;
+      try{state=await call("GetState")}catch{}
+      return invokeAction(state?.availableUpdate?"InstallDesktopUpdate":"CheckForUpdates");
+    });
+    setTimeout(refresh,80);
+    setInterval(refresh,150);
+    return;
+  }
+  animateProgress();
+  setTimeout(refresh,120);
+  setInterval(refresh,200);
+});
