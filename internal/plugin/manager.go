@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.68"
+const desktopPluginVersion = "0.1.69"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{

@@ -1,4 +1,4 @@
 {
-  "fixed": {"file_version": "0.2.3.0", "product_version": "0.2.3.0"},
-  "info": {"0000": {"ProductName": "StarWeave", "CompanyName": "StarWeave contributors", "FileDescription": "Independent Wails runtime for DeepSeek Harness", "FileVersion": "0.2.3", "ProductVersion": "0.2.3", "InternalName": "StarWeave", "OriginalFilename": "StarWeave.exe", "LegalCopyright": "MIT"}}
+  "fixed": {"file_version": "0.2.4.0", "product_version": "0.2.4.0"},
+  "info": {"0000": {"ProductName": "StarWeave", "CompanyName": "StarWeave contributors", "FileDescription": "Independent Wails runtime for DeepSeek Harness", "FileVersion": "0.2.4", "ProductVersion": "0.2.4", "InternalName": "StarWeave", "OriginalFilename": "StarWeave.exe", "LegalCopyright": "MIT"}}
 }

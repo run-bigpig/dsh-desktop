@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.3",
+  [string]$Version = "0.2.4",
   [string]$ReleaseAPI = "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
 )
 
