@@ -61,6 +61,7 @@ Var InstallProgressBar
 Var InstallProgressStyle
 Var UpdateMode
 !define MUI_ABORTWARNING
+!define MUI_CUSTOMFUNCTION_GUIINIT ConfigureInstallerWindow
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipNonProgressPageForUpdate
 !insertmacro MUI_PAGE_WELCOME
 !define MUI_PAGE_CUSTOMFUNCTION_PRE SkipNonProgressPageForUpdate
@@ -187,7 +188,7 @@ Function .onInit
   webview_found:
 FunctionEnd
 
-Function .onGUIInit
+Function ConfigureInstallerWindow
   StrCmp $UpdateMode "1" 0 update_caption_ready
   SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:StarWeave 更新"
   update_caption_ready:

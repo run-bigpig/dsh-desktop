@@ -129,6 +129,8 @@ func TestWindowsUpdateModeShowsInstallerProgressOnly(t *testing.T) {
 	for _, expected := range []string{
 		`!include "FileFunc.nsh"`,
 		`${GetOptions} $0 "/UPDATE" $1`,
+		`!define MUI_CUSTOMFUNCTION_GUIINIT ConfigureInstallerWindow`,
+		`Function ConfigureInstallerWindow`,
 		`SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:StarWeave 更新"`,
 		`Function SkipNonProgressPageForUpdate`,
 		`StrCmp $UpdateMode "1" 0 +2`,
@@ -137,6 +139,9 @@ func TestWindowsUpdateModeShowsInstallerProgressOnly(t *testing.T) {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("Windows update installer is missing %q", expected)
 		}
+	}
+	if strings.Contains(text, "Function .onGUIInit") {
+		t.Fatal("Windows installer must use the MUI2 GUI initialization hook instead of redefining .onGUIInit")
 	}
 }
 
