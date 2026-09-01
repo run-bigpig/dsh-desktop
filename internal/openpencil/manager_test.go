@@ -39,7 +39,10 @@ func TestStatusValidatesDiscoveryAndMCPIdentity(t *testing.T) {
 		t.Fatal(err)
 	}
 	discoveryPath := filepath.Join(t.TempDir(), discoveryFilename)
-	raw, _ := json.Marshal(discovery{Port: port, PID: 321, WriterPID: 321, Token: token, Transport: "json-rpc"})
+	raw, _ := json.Marshal(discovery{
+		Port: port, PID: 321, WriterPID: 321, Token: token,
+		Timestamp: 1_700_000_000_000, Transport: "json-rpc",
+	})
 	if err := os.WriteFile(discoveryPath, raw, 0o600); err != nil {
 		t.Fatal(err)
 	}
@@ -54,6 +57,43 @@ func TestStatusValidatesDiscoveryAndMCPIdentity(t *testing.T) {
 	}
 	if !status.Bundled || !status.Running || status.Owned || status.Port != port || status.Token != token {
 		t.Fatalf("status = %#v", status)
+	}
+}
+
+func TestReadDiscoveryAcceptsOfficialTimestampAndRejectsUnknownFields(t *testing.T) {
+	discoveryPath := filepath.Join(t.TempDir(), discoveryFilename)
+	manager := New(Options{DiscoveryPath: discoveryPath})
+	if err := os.WriteFile(discoveryPath, []byte(`{
+		"port":3100,
+		"pid":4242,
+		"writerPid":4242,
+		"token":"tok-1",
+		"timestamp":1700000000000,
+		"transport":"json-rpc"
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	value, err := manager.readDiscovery()
+	if err != nil {
+		t.Fatal(err)
+	}
+	if value.Timestamp != 1_700_000_000_000 {
+		t.Fatalf("timestamp = %d", value.Timestamp)
+	}
+
+	if err := os.WriteFile(discoveryPath, []byte(`{
+		"port":3100,
+		"pid":4242,
+		"writerPid":4242,
+		"token":"tok-1",
+		"timestamp":1700000000000,
+		"transport":"json-rpc",
+		"unexpected":true
+	}`), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := manager.readDiscovery(); err == nil || !strings.Contains(err.Error(), "unknown field") {
+		t.Fatalf("unknown-field error = %v", err)
 	}
 }
 

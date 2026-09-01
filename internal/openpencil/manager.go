@@ -61,6 +61,7 @@ type discovery struct {
 	PID       int    `json:"pid"`
 	WriterPID int    `json:"writerPid"`
 	Token     string `json:"token"`
+	Timestamp uint64 `json:"timestamp"`
 	Transport string `json:"transport"`
 }
 

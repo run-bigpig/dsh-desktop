@@ -11,7 +11,7 @@ InstallDirRegKey HKCU "Software\StarWeave" "InstallDir"
 SetCompressor /SOLID lzma
 
 !ifndef APP_VERSION
-!define APP_VERSION "0.2.5"
+!define APP_VERSION "0.2.6"
 !endif
 
 VIProductVersion "${APP_VERSION}.0"
