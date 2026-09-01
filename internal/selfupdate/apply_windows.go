@@ -70,9 +70,7 @@ func HandleHelperMode(args []string) (bool, error) {
 		fmt.Fprintf(output, "desktop process wait failed: %v\n", err)
 		return true, err
 	}
-	command := exec.Command(*installer, "/S", "/UPDATE")
-	command.Stdout, command.Stderr = output, output
-	command.SysProcAttr = &windows.SysProcAttr{CreationFlags: windows.CREATE_NO_WINDOW}
+	command := newInstallerCommand(*installer, output)
 	if err := command.Run(); err != nil {
 		fmt.Fprintf(output, "installer failed: %v; restarting the existing desktop\n", err)
 		if restartErr := startDesktop(*target); restartErr != nil {
@@ -84,6 +82,12 @@ func HandleHelperMode(args []string) (bool, error) {
 		return true, fmt.Errorf("restart updated desktop: %w", err)
 	}
 	return true, nil
+}
+
+func newInstallerCommand(installer string, output io.Writer) *exec.Cmd {
+	command := exec.Command(installer, "/UPDATE")
+	command.Stdout, command.Stderr = output, output
+	return command
 }
 
 func waitForProcess(pid uint32) error {

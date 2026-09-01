@@ -31,6 +31,8 @@ VIAddVersionKey "LegalCopyright" "MIT"
 !include "MUI2.nsh"
 !include "nsDialogs.nsh"
 !include "x64.nsh"
+!include "FileFunc.nsh"
+!include "WinMessages.nsh"
 !ifndef PBS_MARQUEE
 !define PBS_MARQUEE 0x00000008
 !endif
@@ -57,12 +59,16 @@ Var OfficialRegistryRadio
 Var ChinaRegistryRadio
 Var InstallProgressBar
 Var InstallProgressStyle
+Var UpdateMode
 !define MUI_ABORTWARNING
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipNonProgressPageForUpdate
 !insertmacro MUI_PAGE_WELCOME
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipNonProgressPageForUpdate
 !insertmacro MUI_PAGE_DIRECTORY
 Page Custom RegistryPageCreate RegistryPageLeave
 !insertmacro MUI_PAGE_INSTFILES
 !define MUI_FINISHPAGE_RUN "$INSTDIR\StarWeave.exe"
+!define MUI_PAGE_CUSTOMFUNCTION_PRE SkipNonProgressPageForUpdate
 !insertmacro MUI_PAGE_FINISH
 !insertmacro MUI_LANGUAGE "SimpChinese"
 !insertmacro MUI_LANGUAGE "English"
@@ -78,6 +84,13 @@ Function FindRunningDesktopWindow
 FunctionEnd
 
 Function .onInit
+  StrCpy $UpdateMode ""
+  ${GetParameters} $0
+  ClearErrors
+  ${GetOptions} $0 "/UPDATE" $1
+  IfErrors update_mode_ready
+  StrCpy $UpdateMode "1"
+  update_mode_ready:
   StrCpy $RegistryURL "https://registry.npmjs.org/"
   ReadRegStr $LegacyInstallDir HKCU "Software\DSH-DeskTop" "InstallDir"
   ${If} $LegacyInstallDir != ""
@@ -174,7 +187,20 @@ Function .onInit
   webview_found:
 FunctionEnd
 
+Function .onGUIInit
+  StrCmp $UpdateMode "1" 0 update_caption_ready
+  SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:StarWeave 更新"
+  update_caption_ready:
+FunctionEnd
+
+Function SkipNonProgressPageForUpdate
+  StrCmp $UpdateMode "1" 0 +2
+  Abort
+FunctionEnd
+
 Function RegistryPageCreate
+  StrCmp $UpdateMode "1" 0 +2
+  Abort
   nsDialogs::Create 1018
   Pop $0
   ${If} $0 == error

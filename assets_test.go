@@ -115,6 +115,26 @@ func TestWindowsInstallerIdentityDoesNotMatchApplicationWindow(t *testing.T) {
 	}
 }
 
+func TestWindowsUpdateModeShowsInstallerProgressOnly(t *testing.T) {
+	data, err := os.ReadFile("build/windows/installer.nsi")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, expected := range []string{
+		`!include "FileFunc.nsh"`,
+		`${GetOptions} $0 "/UPDATE" $1`,
+		`SendMessage $HWNDPARENT ${WM_SETTEXT} 0 "STR:StarWeave 更新"`,
+		`Function SkipNonProgressPageForUpdate`,
+		`StrCmp $UpdateMode "1" 0 +2`,
+		`!insertmacro MUI_PAGE_INSTFILES`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("Windows update installer is missing %q", expected)
+		}
+	}
+}
+
 func TestTrayMenuUsesConciseLabelsInOrder(t *testing.T) {
 	data, err := os.ReadFile("cmd/dsh-desktop/main.go")
 	if err != nil {
