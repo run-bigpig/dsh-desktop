@@ -13,6 +13,8 @@
   --orbit-scale: 1;
   --logo-brightness: .92;
   --logo-glow: .54;
+  --core-opacity: .46;
+  --network-energy: .42;
 }
 
 * { box-sizing: border-box; }
@@ -29,7 +31,7 @@ body {
 body {
   color: var(--text);
   background: var(--bg);
-  font-family: "DM Sans", "Segoe UI", "Microsoft YaHei UI", sans-serif;
+  font-family: "Bahnschrift", "Microsoft YaHei UI", "Segoe UI", sans-serif;
   -webkit-font-smoothing: antialiased;
   -webkit-user-select: none;
   user-select: none;
@@ -42,20 +44,21 @@ body {
   overflow: hidden;
   pointer-events: none;
   background:
-    radial-gradient(circle at 50% 48%, rgba(32, 74, 141, .22), transparent 31%),
-    linear-gradient(145deg, #0b1630 0%, var(--bg-soft) 44%, var(--bg) 100%);
+    radial-gradient(ellipse at 50% 50%, rgba(21, 114, 153, .2), transparent 23%),
+    radial-gradient(circle at 48% 44%, rgba(32, 74, 141, .22), transparent 34%),
+    linear-gradient(145deg, #07152b 0%, var(--bg-soft) 45%, var(--bg) 100%);
 }
 
 .atmosphere::before {
   content: "";
   position: absolute;
   inset: -18%;
-  opacity: .28;
+  opacity: .2;
   background:
     linear-gradient(90deg, transparent 49.92%, rgba(81, 155, 255, .13) 50%, transparent 50.08%),
     linear-gradient(0deg, transparent 49.92%, rgba(81, 155, 255, .1) 50%, transparent 50.08%);
   transform: perspective(480px) rotateX(67deg) translateY(34%);
-  mask-image: radial-gradient(circle, #000 0 18%, transparent 66%);
+  mask-image: radial-gradient(circle, #000 0 14%, transparent 63%);
 }
 
 .atmosphere::after {
@@ -467,60 +470,196 @@ body[data-phase="ready"] .star-particle {
   z-index: 3;
   left: 50%;
   top: 50%;
-  width: clamp(112px, 12vw, 164px);
+  width: clamp(248px, 29vw, 382px);
   aspect-ratio: 1;
-  opacity: 0;
-  transform: translate(-50%, -50%) scale(.28) rotate(-18deg);
+  opacity: var(--core-opacity);
+  transform: translate(-50%, -50%) scale(.94);
   transform-origin: 50% 50%;
-  filter: drop-shadow(0 0 calc(36px * var(--logo-glow)) rgba(44, 211, 255, var(--logo-glow)));
-  transition: opacity .2s linear, filter .22s linear;
+  filter: drop-shadow(0 0 calc(42px * var(--logo-glow)) rgba(44, 211, 255, var(--logo-glow)));
+  transition: opacity .22s linear, filter .22s linear, transform .22s ease-out;
 }
 
 body[data-phase="ready"] .logo-core {
   opacity: 1;
-  animation: revealLogo .72s .22s cubic-bezier(.16, .88, .24, 1.18) both;
+  animation: coreLock .76s cubic-bezier(.16, .88, .24, 1.08) both;
 }
 
 .logo-halo {
   position: absolute;
-  inset: -17%;
+  inset: 13%;
   display: block;
-  border: 1px solid rgba(122, 221, 255, .28);
+  border: 1px solid rgba(126, 230, 255, .18);
   border-radius: 50%;
-  background: radial-gradient(circle, rgba(68, 209, 255, .14), transparent 68%);
-  box-shadow: inset 0 0 36px rgba(108, 56, 255, .12), 0 0 38px rgba(49, 136, 255, .14);
-  animation: logoHalo 2s ease-in-out infinite;
+  background: radial-gradient(circle, rgba(220, 253, 255, .12), rgba(55, 205, 255, .06) 30%, transparent 67%);
+  box-shadow: inset 0 0 42px rgba(54, 209, 255, .12), 0 0 58px rgba(49, 136, 255, .18);
+  animation: logoHalo 2.4s ease-in-out infinite;
 }
 
-.logo-core img {
+.core-network {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  overflow: visible;
+  transform-origin: 50% 50%;
+  animation: networkDrift 16s linear infinite;
+}
+
+.core-ring {
+  fill: none;
+  stroke-width: 1.25;
+  stroke-linecap: round;
+  vector-effect: non-scaling-stroke;
+}
+
+.ring-cyan {
+  stroke: url(#coreRingCyan);
+  stroke-dasharray: 13 4 2 5;
+  animation: ringFlow 6s linear infinite;
+}
+
+.ring-gold {
+  stroke: url(#coreRingGold);
+  stroke-dasharray: 4 5 18 5;
+  opacity: .82;
+  animation: ringFlowReverse 7.8s linear infinite;
+}
+
+.ring-ghost {
+  stroke: rgba(135, 203, 255, .15);
+  stroke-dasharray: 1 8;
+}
+
+.network-links {
+  fill: none;
+  stroke: rgba(105, 220, 255, var(--network-energy));
+  stroke-width: .72;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  filter: drop-shadow(0 0 3px rgba(41, 207, 255, .46));
+  animation: networkBreathe 2.8s ease-in-out infinite;
+}
+
+.agent-nodes circle {
+  fill: url(#coreNodeLight);
+  stroke: rgba(235, 254, 255, .76);
+  stroke-width: .55;
+  filter: drop-shadow(0 0 5px rgba(62, 218, 255, .95));
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: agentPulse 2.2s ease-in-out infinite;
+}
+
+.agent-nodes circle:nth-child(3n + 2) {
+  fill: #ffd990;
+  stroke: #fff4cf;
+  filter: drop-shadow(0 0 5px rgba(255, 196, 89, .78));
+  animation-delay: -.8s;
+}
+
+.agent-nodes circle:nth-child(3n) { animation-delay: -1.45s; }
+
+.core-shell {
+  position: absolute;
+  z-index: 2;
+  left: 50%;
+  top: 50%;
+  display: grid;
+  width: 31%;
+  aspect-ratio: 1;
+  place-items: center;
+  border: 1px solid rgba(190, 247, 255, .42);
+  border-radius: 50%;
+  transform: translate(-50%, -50%);
+  background:
+    radial-gradient(circle at 38% 30%, rgba(255, 255, 255, .2), transparent 19%),
+    radial-gradient(circle, rgba(25, 70, 105, .74), rgba(4, 13, 32, .94) 69%);
+  box-shadow:
+    inset 0 0 18px rgba(142, 237, 255, .18),
+    inset 0 -11px 20px rgba(37, 48, 137, .2),
+    0 0 14px rgba(177, 248, 255, .46),
+    0 0 calc(56px * var(--logo-glow)) rgba(38, 207, 255, .34);
+  animation: coreBreathe 2.4s ease-in-out infinite;
+}
+
+.core-glass {
+  position: absolute;
+  inset: 8%;
+  border: 1px solid rgba(191, 240, 255, .12);
+  border-radius: 50%;
+  background: conic-gradient(from 12deg, transparent, rgba(121, 228, 255, .14), transparent 28%, rgba(255, 214, 139, .1), transparent 52%);
+  animation: glassTurn 8s linear infinite;
+}
+
+.core-shell img {
   position: relative;
   z-index: 1;
   display: block;
-  width: 100%;
-  height: 100%;
+  width: 63%;
+  height: 63%;
   object-fit: contain;
-  filter: brightness(var(--logo-brightness)) saturate(1.16);
+  filter: brightness(var(--logo-brightness)) saturate(.92) drop-shadow(0 0 7px rgba(88, 229, 255, .76));
   transition: filter .22s linear;
-  animation: logoBreathe 2.1s ease-in-out infinite;
+}
+
+.core-signal {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: 50%;
+  width: 3px;
+  height: 3px;
+  border-radius: 50%;
+  background: #fff;
+  box-shadow: 0 0 5px #fff, 0 0 13px #4be4ff;
+  animation: signalOrbit 3.4s linear infinite;
+}
+
+.signal-two { animation-duration: 4.7s; animation-delay: -2.1s; }
+.signal-three { background: #ffe7a8; box-shadow: 0 0 5px #fff, 0 0 12px #ffbd61; animation-duration: 6.1s; animation-delay: -4.2s; }
+
+.core-signature {
+  position: absolute;
+  z-index: 4;
+  left: 50%;
+  top: calc(50% + clamp(126px, 15vw, 186px));
+  display: grid;
+  grid-template-columns: auto auto;
+  align-items: baseline;
+  column-gap: 7px;
+  transform: translateX(-50%);
+  opacity: var(--core-opacity);
+  color: rgba(227, 248, 255, .82);
+  line-height: 1;
+  letter-spacing: .18em;
+  text-shadow: 0 0 15px rgba(69, 194, 255, .3);
+  transition: opacity .22s linear;
+}
+
+.core-signature span { font-size: 10px; font-weight: 350; }
+.core-signature strong { color: #f8fdff; font-size: 14px; font-weight: 660; letter-spacing: .23em; }
+.core-signature i { grid-column: 1 / -1; width: 100%; height: 1px; margin: 8px 0 6px; background: linear-gradient(90deg, transparent, rgba(106, 223, 255, .62), rgba(255, 211, 132, .52), transparent); }
+.core-signature em { grid-column: 1 / -1; color: rgba(160, 196, 219, .52); font-size: 7px; font-style: normal; font-weight: 500; letter-spacing: .28em; text-align: center; white-space: nowrap;
 }
 
 #progressText {
   position: absolute;
   z-index: 4;
   left: 50%;
-  top: calc(50% + clamp(106px, 12vw, 150px));
+  top: calc(50% + clamp(181px, 20vw, 244px));
   width: min(420px, 80vw);
   margin: 0;
   transform: translateX(-50%);
   color: var(--secondary);
-  font-size: 12px;
-  font-weight: 500;
-  letter-spacing: .14em;
+  font-size: 11px;
+  font-weight: 420;
+  letter-spacing: .17em;
   text-align: center;
   text-shadow: 0 0 18px rgba(77, 162, 255, .32);
 }
 
 body[data-phase="failed"] #progressText { color: rgba(255, 178, 188, .88); }
+body[data-phase="failed"] .core-network { filter: hue-rotate(122deg) saturate(.68); }
 .instant,
 .instant * { transition: none !important; }
 
@@ -563,25 +702,39 @@ body[data-phase="failed"] #progressText { color: rgba(255, 178, 188, .88); }
 }
 
 @keyframes logoHalo {
-  0%, 100% { opacity: .55; transform: scale(.9); }
-  50% { opacity: 1; transform: scale(1.05); }
+  0%, 100% { opacity: .42; transform: scale(.9); }
+  50% { opacity: .92; transform: scale(1.05); }
 }
 
-@keyframes logoBreathe {
-  0%, 100% { transform: scale(.975); }
-  50% { transform: scale(1.025); }
+@keyframes networkDrift { to { transform: rotate(360deg); } }
+@keyframes ringFlow { to { stroke-dashoffset: -96; } }
+@keyframes ringFlowReverse { to { stroke-dashoffset: 96; } }
+@keyframes networkBreathe { 50% { opacity: .52; } }
+@keyframes agentPulse { 50% { transform: scale(1.55); opacity: .68; } }
+@keyframes glassTurn { to { transform: rotate(360deg); } }
+
+@keyframes coreBreathe {
+  0%, 100% { transform: translate(-50%, -50%) scale(.965); }
+  50% { transform: translate(-50%, -50%) scale(1.025); }
 }
 
-@keyframes revealLogo {
-  0% { opacity: 0; transform: translate(-50%, -50%) scale(.22) rotate(-20deg); }
-  64% { opacity: 1; transform: translate(-50%, -50%) scale(1.08) rotate(2deg); }
-  100% { opacity: 1; transform: translate(-50%, -50%) scale(1) rotate(0); }
+@keyframes signalOrbit {
+  from { transform: rotate(0) translateX(clamp(76px, 9.5vw, 122px)) rotate(0) scale(.72); opacity: .32; }
+  48% { opacity: 1; }
+  to { transform: rotate(360deg) translateX(clamp(76px, 9.5vw, 122px)) rotate(-360deg) scale(1.2); opacity: .32; }
+}
+
+@keyframes coreLock {
+  0% { opacity: .7; transform: translate(-50%, -50%) scale(.92); }
+  62% { opacity: 1; transform: translate(-50%, -50%) scale(1.035); }
+  100% { opacity: 1; transform: translate(-50%, -50%) scale(1); }
 }
 
 @media (max-width: 700px) {
   .weave-field { width: min(104vw, 560px); }
-  .logo-core { width: clamp(104px, 29vw, 138px); }
-  #progressText { top: calc(50% + 116px); font-size: 11px; }
+  .logo-core { width: clamp(230px, 72vw, 320px); }
+  .core-signature { top: calc(50% + 130px); }
+  #progressText { top: calc(50% + 190px); font-size: 10px; }
 }
 
 @media (prefers-reduced-motion: reduce) {

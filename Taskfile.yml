@@ -2,14 +2,14 @@ version: "3"
 
 vars:
   APP_NAME: StarWeave{{exeExt}}
-  VERSION: "0.2.4"
+  VERSION: "0.2.5"
   RELEASE_API: "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
 
 tasks:
   test:
     desc: Run platform-independent unit and Node fixture tests
     cmds:
-      - go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
+      - go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/openpencil ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
 
   build:windows:
     desc: Build and fingerprint the production Windows x64 desktop executable

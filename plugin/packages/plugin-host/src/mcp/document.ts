@@ -9,7 +9,7 @@ import type {
 } from '../shared/types.ts'
 
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
-export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server'])
+export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server', 'openpencil-mcp'])
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000

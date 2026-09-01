@@ -1,0 +1,17 @@
+{
+  "schemaVersion": 1,
+  "repository": "https://github.com/ZSeven-W/openpencil.git",
+  "version": "0.8.4",
+  "commit": "c51d7ed41a96068a09127bbc096fee143fce0b22",
+  "artifacts": [
+    {
+      "platform": "windows",
+      "architecture": "x64",
+      "name": "openpencil-desktop-windows-x86_64.zip",
+      "url": "https://github.com/ZSeven-W/openpencil/releases/download/v0.8.4/openpencil-desktop-windows-x86_64.zip",
+      "sha256": "469730d56ea2e8678438818434402849cc431e578acbec193440fe867fa012de",
+      "executable": "openpencil-desktop.exe",
+      "executableSha256": "0a60a4a30c5f7f07ce145f30929e805c6fbfcb0e9a85b3b93ec90e7753ad9af0"
+    }
+  ]
+}

@@ -69,6 +69,8 @@ function Get-SourceFingerprint {
 function Get-WindowsSeedFingerprint([string]$RepoRoot) {
   return (Get-SourceFingerprint -RepoRoot $RepoRoot -Paths @(
     "release/seed.lock.json",
+    "release/openpencil.lock.json",
+    "release/openpencil-LICENSE.txt",
     "release/toolchain.lock.json",
     "scripts/prepare-windows-seed.ps1",
     "scripts/stage-workspace-runtime.mjs",

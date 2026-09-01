@@ -39,6 +39,7 @@ describe('ThinkingData settings document', () => {
 
   it('reserves the internal server name from generic MCP settings', () => {
     expect(isReservedMcpServerName('ta-mcp-server')).toBe(true)
+    expect(isReservedMcpServerName('openpencil-mcp')).toBe(true)
     expect(isReservedMcpServerName('other-server')).toBe(false)
   })
 

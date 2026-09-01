@@ -60,8 +60,54 @@
 
         <span class="logo-core" aria-hidden="true">
           <i class="logo-halo"></i>
-          <img src="starweave-logo.png" alt="">
+          <svg class="core-network" viewBox="0 0 240 240" focusable="false">
+            <defs>
+              <linearGradient id="coreRingCyan" x1="0" y1="0" x2="1" y2="1">
+                <stop offset="0" stop-color="#dffeff"/>
+                <stop offset=".36" stop-color="#35e4ff"/>
+                <stop offset="1" stop-color="#4776ff"/>
+              </linearGradient>
+              <linearGradient id="coreRingGold" x1="0" y1="1" x2="1" y2="0">
+                <stop offset="0" stop-color="#4c78ff"/>
+                <stop offset=".62" stop-color="#b8eaff"/>
+                <stop offset="1" stop-color="#ffd98c"/>
+              </linearGradient>
+              <radialGradient id="coreNodeLight">
+                <stop offset="0" stop-color="#fff"/>
+                <stop offset=".4" stop-color="#bff8ff"/>
+                <stop offset="1" stop-color="#38bfff"/>
+              </radialGradient>
+            </defs>
+            <g class="orbital-rings">
+              <ellipse class="core-ring ring-cyan" cx="120" cy="120" rx="96" ry="45" transform="rotate(-18 120 120)"/>
+              <ellipse class="core-ring ring-gold" cx="120" cy="120" rx="84" ry="52" transform="rotate(58 120 120)"/>
+              <ellipse class="core-ring ring-ghost" cx="120" cy="120" rx="69" ry="69"/>
+            </g>
+            <g class="network-links">
+              <path d="M35 86 73 49 119 31 169 48 207 86 190 139 157 191 104 207 55 174 35 86Z"/>
+              <path d="M73 49 88 111 35 86M119 31 88 111 169 48M207 86 151 107 190 139M157 191 151 107 104 207M55 174 88 111 104 207M88 111 120 120 151 107M120 120 157 191"/>
+            </g>
+            <g class="agent-nodes">
+              <circle cx="35" cy="86" r="4.3"/><circle cx="73" cy="49" r="3.2"/>
+              <circle cx="119" cy="31" r="4.8"/><circle cx="169" cy="48" r="3.6"/>
+              <circle cx="207" cy="86" r="4.2"/><circle cx="190" cy="139" r="3.3"/>
+              <circle cx="157" cy="191" r="4.7"/><circle cx="104" cy="207" r="3.4"/>
+              <circle cx="55" cy="174" r="4.1"/><circle cx="88" cy="111" r="3.5"/>
+              <circle cx="151" cy="107" r="3.8"/>
+            </g>
+          </svg>
+          <span class="core-shell">
+            <i class="core-glass"></i>
+            <img src="starweave-logo.png" alt="">
+          </span>
+          <i class="core-signal signal-one"></i>
+          <i class="core-signal signal-two"></i>
+          <i class="core-signal signal-three"></i>
         </span>
+
+        <div class="core-signature" aria-hidden="true">
+          <span>STARWEAVE</span><strong>CORE</strong><i></i><em>AUTONOMOUS AGENT FABRIC</em>
+        </div>
 
         <p id="progressText" aria-live="polite">星织启动中 · 06%</p>
       </div>

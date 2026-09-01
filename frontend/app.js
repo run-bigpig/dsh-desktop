@@ -54,6 +54,8 @@ function paintConvergence(progress){
   root.style.setProperty("--logo-brightness",(.9+ratio*.16).toFixed(4));
   root.style.setProperty("--logo-glow",(.44+ratio*.44).toFixed(4));
   root.style.setProperty("--ambient-opacity",(.3+ratio*.18).toFixed(4));
+  root.style.setProperty("--core-opacity",(.42+ratio*.58).toFixed(4));
+  root.style.setProperty("--network-energy",(.24+ratio*.48).toFixed(4));
 }
 
 async function refresh(){

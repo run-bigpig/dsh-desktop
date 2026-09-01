@@ -6,6 +6,9 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $buildLock = Enter-WindowsBuildLock $repoRoot
 $toolLock = Get-Content (Join-Path $repoRoot "release/toolchain.lock.json") -Raw | ConvertFrom-Json
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
+$openPencilLock = Get-Content (Join-Path $repoRoot "release/openpencil.lock.json") -Raw | ConvertFrom-Json
+$openPencilLicense = Join-Path $repoRoot "release/openpencil-LICENSE.txt"
+$openPencilLicenseSHA256 = Get-SHA256File $openPencilLicense
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $downloads = Join-Path $repoRoot "dist/windows/downloads"
 $buildRoot = Join-Path $repoRoot "dist/windows/seed-build"
@@ -13,6 +16,7 @@ $tools = Join-Path $buildRoot "toolchain"
 $runtimeTools = Join-Path $stage "resources/toolchain"
 $pluginTarget = Join-Path $stage "resources/plugin"
 $marketplaceTarget = Join-Path $stage "resources/marketplace"
+$openPencilTarget = Join-Path $stage "resources/openpencil"
 $seedSourceTarget = Join-Path $stage ("resources/seed/source/" + $seedLock.commit)
 $seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
 $seedFingerprint = Get-WindowsSeedFingerprint $repoRoot
@@ -54,7 +58,7 @@ function Test-VerifiedSeedLayout([string]$Root) {
   } catch {
     return $false
   }
-  if ($manifest.fingerprint -ne $seedFingerprint -or $manifest.commit -ne $seedLock.commit) { return $false }
+  if ($manifest.fingerprint -ne $seedFingerprint -or $manifest.commit -ne $seedLock.commit -or $manifest.openPencilCommit -ne $openPencilLock.commit) { return $false }
   foreach ($required in @(
     "resources/toolchain/node/node.exe",
     "resources/toolchain/node/LICENSE",
@@ -62,6 +66,9 @@ function Test-VerifiedSeedLayout([string]$Root) {
     "resources/toolchain/pnpm/dist/pnpm.mjs",
     "resources/toolchain/pnpm/dist/pnpmrc",
     "resources/toolchain/pnpm/dist/worker.js",
+    "resources/openpencil/openpencil-desktop.exe",
+    "resources/openpencil/openpencil.lock.json",
+    "resources/openpencil/LICENSE.txt",
     ("resources/seed/source/" + $seedLock.commit + "/" + $seedLock.cliEntry),
     "resources/plugin/plugin-host/package.json",
     "resources/plugin/plugin-client/package.json",
@@ -71,13 +78,26 @@ function Test-VerifiedSeedLayout([string]$Root) {
   )) {
     if (-not (Test-Path -LiteralPath (Join-Path $Root $required))) { return $false }
   }
+  try {
+    $stagedOpenPencilLock = Get-Content (Join-Path $Root "resources/openpencil/openpencil.lock.json") -Raw | ConvertFrom-Json
+    $openPencilArtifact = $openPencilLock.artifacts | Where-Object {
+      $_.platform -eq "windows" -and $_.architecture -eq "x64"
+    } | Select-Object -First 1
+    if (-not $openPencilArtifact -or $stagedOpenPencilLock.commit -ne $openPencilLock.commit) { return $false }
+    $executableHash = Get-SHA256File (Join-Path $Root "resources/openpencil/openpencil-desktop.exe")
+    $licenseHash = Get-SHA256File (Join-Path $Root "resources/openpencil/LICENSE.txt")
+    if ($executableHash -ne $openPencilArtifact.executableSha256 -or $manifest.openPencilExecutableSHA256 -ne $executableHash) { return $false }
+    if ($licenseHash -ne $openPencilLicenseSHA256 -or $manifest.openPencilLicenseSHA256 -ne $licenseHash) { return $false }
+  } catch {
+    return $false
+  }
   return $true
 }
 
 function Restore-VerifiedSeedCache([string]$Cache) {
   $stageResources = Join-Path $stage "resources"
   New-Item -ItemType Directory -Force $stageResources | Out-Null
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","openpencil") {
     Remove-DirectoryTree (Join-Path $stageResources $directory)
     Copy-DirectoryTree `
       -Source (Join-Path $Cache ("resources/" + $directory)) `
@@ -92,7 +112,7 @@ function Publish-VerifiedSeedCache {
   $temporaryCache = Join-Path $seedCacheRoot ("seed-cache-tmp-" + [Guid]::NewGuid().ToString("N"))
   $temporaryResources = Join-Path $temporaryCache "resources"
   New-Item -ItemType Directory -Force $temporaryResources | Out-Null
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","openpencil") {
     Copy-DirectoryTree `
       -Source (Join-Path $stage ("resources/" + $directory)) `
       -Destination (Join-Path $temporaryResources $directory)
@@ -163,6 +183,28 @@ foreach ($artifact in $toolLock.artifacts) {
       if ($extractExitCode -ne 0) { throw "PortableGit extraction failed after 3 attempts" }
     }
   }
+}
+
+$openPencilArtifact = $openPencilLock.artifacts | Where-Object {
+  $_.platform -eq "windows" -and $_.architecture -eq "x64"
+} | Select-Object -First 1
+if (-not $openPencilArtifact) { throw "OpenPencil lock has no Windows x64 artifact" }
+$openPencilArchive = Get-VerifiedArtifact $openPencilArtifact
+$openPencilExtract = Join-Path $buildRoot "openpencil-extract"
+Remove-DirectoryTree $openPencilExtract
+Expand-Archive -Force $openPencilArchive $openPencilExtract
+$openPencilFiles = @(Get-ChildItem -LiteralPath $openPencilExtract -File -Recurse)
+if ($openPencilFiles.Count -ne 1 -or $openPencilFiles[0].Name -cne $openPencilArtifact.executable) {
+  throw "Locked OpenPencil archive must contain only $($openPencilArtifact.executable)"
+}
+Remove-DirectoryTree $openPencilTarget
+New-Item -ItemType Directory -Force $openPencilTarget | Out-Null
+Copy-Item -Force $openPencilFiles[0].FullName (Join-Path $openPencilTarget "openpencil-desktop.exe")
+Copy-Item -Force (Join-Path $repoRoot "release/openpencil.lock.json") (Join-Path $openPencilTarget "openpencil.lock.json")
+Copy-Item -Force $openPencilLicense (Join-Path $openPencilTarget "LICENSE.txt")
+$openPencilExecutableSHA256 = Get-SHA256File (Join-Path $openPencilTarget "openpencil-desktop.exe")
+if ($openPencilExecutableSHA256 -ne $openPencilArtifact.executableSha256) {
+  throw "SHA-256 mismatch for extracted OpenPencil executable: expected $($openPencilArtifact.executableSha256), got $openPencilExecutableSHA256"
 }
 
 $node = Join-Path $tools "node/node.exe"
@@ -520,6 +562,11 @@ Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
   node = $seedLock.node
   pnpm = $seedLock.pnpm
   pluginVersion = $pluginVersion
+  openPencilVersion = $openPencilLock.version
+  openPencilCommit = $openPencilLock.commit
+  openPencilArchiveSHA256 = $openPencilArtifact.sha256
+  openPencilExecutableSHA256 = $openPencilExecutableSHA256
+  openPencilLicenseSHA256 = $openPencilLicenseSHA256
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })
 

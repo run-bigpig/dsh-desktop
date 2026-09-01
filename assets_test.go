@@ -25,6 +25,11 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 	if !strings.Contains(text, "星织启动中") || !strings.Contains(text, "star-particle") {
 		t.Fatal("frontend does not contain the StarWeave convergence splash")
 	}
+	for _, marker := range []string{"core-network", "agent-nodes", "AUTONOMOUS AGENT FABRIC"} {
+		if !strings.Contains(text, marker) {
+			t.Fatalf("frontend splash is missing StarWeave Core marker %q", marker)
+		}
+	}
 	for _, expected := range []string{"downloadProgress", "downloadPercent", "cancelUpdate", "retryUpdate", "SHA-256"} {
 		if !strings.Contains(text, expected) {
 			t.Fatalf("frontend update window is missing %q", expected)
@@ -49,7 +54,7 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 	if !strings.Contains(string(styles), "--wails-draggable: drag") {
 		t.Fatal("frontend splash is missing its draggable region")
 	}
-	if !strings.Contains(string(styles), "@keyframes starConverge") || !strings.Contains(string(styles), "body[data-phase=\"ready\"] .logo-core") {
+	if !strings.Contains(string(styles), "@keyframes starConverge") || !strings.Contains(string(styles), "@keyframes agentPulse") || !strings.Contains(string(styles), "body[data-phase=\"ready\"] .logo-core") {
 		t.Fatal("frontend splash is missing rotating convergence or success logo reveal")
 	}
 }

@@ -14,7 +14,7 @@ export type * from '../shared/types.ts'
 const CONTROL_URL = process.env.DSH_DESKTOP_CONTROL_URL
 const CONTROL_TOKEN = process.env.DSH_DESKTOP_CONTROL_TOKEN
 
-async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
+export async function desktopRequest<T>(path: string, init?: RequestInit): Promise<T> {
   if (CONTROL_URL === undefined || CONTROL_TOKEN === undefined) {
     throw new Error('StarWeave control bridge is unavailable')
   }

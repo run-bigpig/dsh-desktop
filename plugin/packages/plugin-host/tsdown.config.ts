@@ -16,6 +16,7 @@ const shared = {
 export default defineConfig([
   { ...shared, entry: ['lib/types/index.js'] },
   { ...shared, entry: ['lib/types/mcp.js'] },
+  { ...shared, entry: ['lib/types/openpencil.js'] },
   { ...shared, entry: ['lib/types/thinkingdata.js'] },
   { ...shared, entry: ['lib/types/vision.js'] },
   { ...shared, entry: ['lib/types/image.js'] },

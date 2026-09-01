@@ -1,13 +1,14 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.69",
+  "version": "0.1.71",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./mcp": { "types": "./lib/types/mcp.d.ts", "default": "./lib/mcp.js" },
+    "./openpencil": { "types": "./lib/types/openpencil.d.ts", "default": "./lib/openpencil.js" },
     "./thinkingdata": { "types": "./lib/types/thinkingdata.d.ts", "default": "./lib/thinkingdata.js" },
     "./vision": { "types": "./lib/types/vision.d.ts", "default": "./lib/vision.js" },
     "./image": { "types": "./lib/types/image.d.ts", "default": "./lib/image.js" },
@@ -24,6 +25,7 @@
   "files": [
     "lib/index.js",
     "lib/mcp.js",
+    "lib/openpencil.js",
     "lib/thinkingdata.js",
     "lib/vision.js",
     "lib/image.js",

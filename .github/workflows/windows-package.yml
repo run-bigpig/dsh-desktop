@@ -6,7 +6,7 @@ on:
       version:
         description: Desktop version without the v prefix
         required: true
-        default: 0.2.2
+        default: 0.2.5
       publish_tag:
         description: Optional existing tag to receive the generated release assets
         required: false
@@ -44,7 +44,7 @@ jobs:
             dist/windows/downloads
             dist/windows/seed-cache
             dist/windows/seed-build/pnpm-store
-          key: windows-release-${{ runner.os }}-${{ hashFiles('release/seed.lock.json', 'release/toolchain.lock.json', 'scripts/prepare-windows-seed.ps1', 'scripts/stage-workspace-runtime.mjs', 'scripts/materialize-workspace-runtime.mjs', 'scripts/windows-build-common.ps1', 'internal/desktop/child-control.mjs', 'plugin/**') }}
+          key: windows-release-${{ runner.os }}-${{ hashFiles('release/seed.lock.json', 'release/openpencil.lock.json', 'release/openpencil-LICENSE.txt', 'release/toolchain.lock.json', 'scripts/prepare-windows-seed.ps1', 'scripts/stage-workspace-runtime.mjs', 'scripts/materialize-workspace-runtime.mjs', 'scripts/windows-build-common.ps1', 'internal/desktop/child-control.mjs', 'plugin/**') }}
 
       - name: Install build commands
         shell: pwsh
@@ -98,6 +98,10 @@ jobs:
           wails3 version
           makensis.exe /VERSION
           go version
+
+      - name: Run Windows unit tests
+        shell: pwsh
+        run: task test
 
       - name: Build verified NSIS installer
         shell: pwsh

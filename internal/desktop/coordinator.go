@@ -19,6 +19,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
 	"github.com/run-bigpig/dsh-desktop/internal/backup"
 	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
+	"github.com/run-bigpig/dsh-desktop/internal/openpencil"
 	"github.com/run-bigpig/dsh-desktop/internal/plugin"
 	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
 	"github.com/run-bigpig/dsh-desktop/internal/seed"
@@ -40,6 +41,7 @@ type Coordinator struct {
 	appUpdates   *selfupdate.Manager
 	plugins      *plugin.Manager
 	pluginBridge *plugin.Bridge
+	openPencil   *openpencil.Manager
 	window       *windowController
 	tools        update.Toolchain
 	log          io.Writer
@@ -72,6 +74,20 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 		store.SetRuntimeInfo(state.Failed, err.Error(), "")
 	}
 	c := &Coordinator{paths: paths, cfg: cfg, store: store, backups: backup.New(paths), tools: tools, log: logWriter, window: &windowController{}}
+	discoveryPath, err := openpencil.DefaultDiscoveryPath()
+	if err != nil {
+		return nil, fmt.Errorf("resolve OpenPencil discovery path: %w", err)
+	}
+	executable, err := os.Executable()
+	if err != nil {
+		return nil, fmt.Errorf("resolve desktop executable: %w", err)
+	}
+	c.openPencil = openpencil.New(openpencil.Options{
+		BinaryPath:    filepath.Join(filepath.Dir(executable), "resources", "openpencil", "openpencil-desktop.exe"),
+		DiscoveryPath: discoveryPath,
+		LaunchArgs:    []string{"--live-mcp=0"},
+		Log:           logWriter,
+	})
 	c.appUpdates = selfupdate.New(paths, store, buildinfo.Version, buildinfo.ReleaseAPIURL, nil)
 	catalogKey, err := base64.StdEncoding.DecodeString(buildinfo.MarketplaceCatalogPublicKey)
 	if err != nil || len(catalogKey) != ed25519.PublicKeySize {
@@ -91,6 +107,7 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	}
 	c.plugins, c.pluginBridge = plugins, bridge
 	bridge.SetDesktopController(c.window)
+	bridge.SetOpenPencilController(c.openPencil)
 	plugins.SetControl(bridge.URL(), bridge.Token())
 	plugins.SetLifecycle(plugin.Lifecycle{Stop: c.Stop, Start: c.Start})
 	return c, nil
@@ -343,6 +360,9 @@ func (c *Coordinator) Stop(ctx context.Context) error {
 }
 func (c *Coordinator) Close(ctx context.Context) error {
 	err := c.Stop(ctx)
+	if openPencilErr := c.openPencil.Close(ctx); err == nil {
+		err = openPencilErr
+	}
 	if bridgeErr := c.pluginBridge.Close(); err == nil {
 		err = bridgeErr
 	}
