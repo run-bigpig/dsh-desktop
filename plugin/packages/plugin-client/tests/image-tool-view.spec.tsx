@@ -24,7 +24,7 @@ describe('image tool view', () => {
       },
       sessionId: 'session-a',
       useProjection: () => undefined,
-      loadImage: vi.fn(),
+      loadImage: vi.fn().mockResolvedValue('data:image/png;base64,AA=='),
       controller: { openImage: vi.fn() },
       t: translate,
     } as unknown as ImageToolViewProps
@@ -36,7 +36,7 @@ describe('image tool view', () => {
     expect(view.container.querySelector('svg[class*="chevron"]')).toBeTruthy()
   })
 
-  it('renders settled image task metadata and dimensions without duplicating the generated image', () => {
+  it('renders settled image task metadata, dimensions, and the generated image', async () => {
     const block = {
       kind: 'tool-result', seq: 1, time: Date.now(), callId: 'call-a', callTime: Date.now() - 100,
       call: { name: 'image_generate', argsRaw: '{"prompt":"Draw a lighthouse"}' },
@@ -51,6 +51,8 @@ describe('image tool view', () => {
       block,
       sessionId: 'session-a',
       useProjection: () => undefined,
+      loadImage: vi.fn().mockResolvedValue('data:image/png;base64,AA=='),
+      controller: { openImage: vi.fn() },
       t: translate,
     } as unknown as ImageToolViewProps
     const view = render(<ImageToolView {...props} />)
@@ -63,14 +65,16 @@ describe('image tool view', () => {
     expect(view.queryByText('Revision')).toBeNull()
     expect(view.queryByText('Version')).toBeNull()
     expect(view.queryByRole('button', { name: /Use this version|Restore original/ })).toBeNull()
-    expect(view.queryByRole('img', { name: 'generated.png' })).toBeNull()
+    expect(await view.findByRole('img', { name: 'generated.png' })).toBeTruthy()
   })
 
-  it('keeps the edit card mounted when a running task settles with an image', () => {
+  it('keeps the edit card mounted when a running task settles with an image', async () => {
     const common = {
       toolName: 'image_edit',
       sessionId: 'session-a',
       useProjection: () => undefined,
+      loadImage: vi.fn().mockResolvedValue('data:image/jpeg;base64,AA=='),
+      controller: { openImage: vi.fn() },
       t: translate,
     }
     const view = render(<ImageToolView {...({
@@ -94,10 +98,10 @@ describe('image tool view', () => {
 
     expect(view.container.querySelector('[data-phase="ready"]')).toBeTruthy()
     expect(view.getByText('Edit image')).toBeTruthy()
-    expect(view.queryByRole('img', { name: 'edited.jpg' })).toBeNull()
+    expect(await view.findByRole('img', { name: 'edited.jpg' })).toBeTruthy()
   })
 
-  it('shows batch progress and successful image metadata in one card', () => {
+  it('shows batch progress and successful image metadata in one card', async () => {
     const running = {
       toolName: 'image_generate',
       block: {
@@ -105,7 +109,7 @@ describe('image tool view', () => {
       },
       sessionId: 'session-a',
       useProjection: () => undefined,
-      loadImage: vi.fn(),
+      loadImage: vi.fn().mockResolvedValue('data:image/png;base64,AA=='),
       controller: { openImage: vi.fn() },
       t: translate,
     } as unknown as ImageToolViewProps
@@ -127,8 +131,8 @@ describe('image tool view', () => {
     const view = render(<ImageToolView {...props} />)
 
     expect(view.getByText('Generated 2; 1 failed')).toBeTruthy()
-    expect(view.queryByRole('img', { name: 'kite.png' })).toBeNull()
-    expect(view.queryByRole('img', { name: 'sailboat.png' })).toBeNull()
+    expect(await view.findByRole('img', { name: 'kite.png' })).toBeTruthy()
+    expect(await view.findByRole('img', { name: 'sailboat.png' })).toBeTruthy()
     fireEvent.click(view.getByRole('button', { name: /Generate image/ }))
     expect(view.getByText('task-a, task-b')).toBeTruthy()
     expect(view.getByText('1024 × 1024 · 2')).toBeTruthy()

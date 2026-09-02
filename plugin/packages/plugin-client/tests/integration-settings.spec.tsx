@@ -33,6 +33,42 @@ describe('integration settings controls', () => {
     expect(screen.getByRole('heading', { name: mcpEn.add })).toBeTruthy()
   })
 
+  it('allows system MCP tuning without exposing disable or delete controls', async () => {
+    const updateSystem = vi.fn().mockResolvedValue(undefined)
+    const props = {
+      list: vi.fn().mockResolvedValue({
+        servers: [{
+          serverName: 'openpencil-mcp', origin: 'system', enabled: true, fiberPhase: 'active', toolCount: 91,
+          transport: 'streamable-http', url: 'http://127.0.0.1:31415/mcp', envKeys: [], headerKeys: ['Authorization'],
+          toolCallTimeoutMs: 120000, failOnStartupError: false,
+        }],
+      }),
+      upsert: vi.fn(),
+      updateSystem,
+      remove: vi.fn(),
+      thinkingData: {},
+      t: (key: keyof typeof mcpEn) => mcpEn[key],
+    } as unknown as McpSettingsTabProps
+    render(<McpSettingsTab {...props} />)
+
+    expect(await screen.findByText(mcpEn.systemTag)).toBeTruthy()
+    expect(screen.queryByRole('button', { name: mcpEn.remove })).toBeNull()
+    fireEvent.click(screen.getByRole('button', { name: mcpEn.edit }))
+
+    const enabled = screen.getByRole('checkbox', { name: mcpEn.enabled }) as HTMLInputElement
+    const name = screen.getByRole('textbox', { name: mcpEn.serverName }) as HTMLInputElement
+    expect(enabled.checked).toBe(true)
+    expect(enabled.disabled).toBe(true)
+    expect(name.disabled).toBe(true)
+    fireEvent.change(screen.getByRole('spinbutton', { name: mcpEn.timeout }), { target: { value: '180000' } })
+    fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
+    await waitFor(() => {
+      expect(updateSystem).toHaveBeenCalledWith({
+        serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
+      })
+    })
+  })
+
   it('keeps the Vision tab mounted while wrapped vision is toggled', async () => {
     const props = {
       snapshot: vi.fn().mockResolvedValue({

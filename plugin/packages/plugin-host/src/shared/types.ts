@@ -70,7 +70,7 @@ export interface OpenPencilSnapshot {
   readonly toolCount: number
 }
 
-export type McpServerOrigin = 'settings' | 'composition'
+export type McpServerOrigin = 'settings' | 'system' | 'composition'
 export type McpServerFiberPhase = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
 export type McpServerTransport = 'stdio' | 'streamable-http'
 
@@ -130,6 +130,12 @@ export interface McpHttpUpsertRequest {
 }
 
 export type McpServerUpsertRequest = McpStdioUpsertRequest | McpHttpUpsertRequest
+
+export interface McpSystemUpdateRequest {
+  readonly serverName: string
+  readonly toolCallTimeoutMs: number
+  readonly failOnStartupError: boolean
+}
 
 export interface McpServerRemoveRequest {
   readonly serverName: string

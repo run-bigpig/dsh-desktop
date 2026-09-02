@@ -1,10 +1,9 @@
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
-import { Context, Service, type Fiber, type FiberState } from '@deepseek-ai/cordis'
+import { Context, Service } from '@deepseek-ai/cordis'
 import z from '@deepseek-ai/schemastery'
 import { credentialRef } from '@deepseek-ai/dsh-credentials'
 import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
-import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
   ThinkingDataConnectionPhase,
@@ -41,31 +40,13 @@ declare module '@deepseek-ai/cordis' {
 }
 
 const TOKEN_REF = credentialRef(THINKINGDATA_CREDENTIAL_REF)
-const FIBER_STATE = {
-  PENDING: 0 as FiberState.PENDING,
-  LOADING: 1 as FiberState.LOADING,
-  ACTIVE: 2 as FiberState.ACTIVE,
-  FAILED: 3 as FiberState.FAILED,
-  DISPOSED: 4 as FiberState.DISPOSED,
-  UNLOADING: 5 as FiberState.UNLOADING,
-} as const
-const FIBER_PHASE: Record<FiberState, ThinkingDataConnectionPhase> = {
-  [FIBER_STATE.PENDING]: 'pending',
-  [FIBER_STATE.LOADING]: 'loading',
-  [FIBER_STATE.ACTIVE]: 'active',
-  [FIBER_STATE.FAILED]: 'failed',
-  [FIBER_STATE.DISPOSED]: 'disabled',
-  [FIBER_STATE.UNLOADING]: 'unloading',
-}
-
 export class ThinkingDataGateway extends TypertRemoteService {
-  static inject = ['tools', 'credentials', 'skills']
+  static inject = ['tools', 'credentials', 'skills', 'mcpSettings']
   static Config: z<ThinkingDataConfig> = z.object({ path: z.string().required() })
 
   private readonly filename: string
   private readonly learningPath: string
   private document: ThinkingDataDocument = emptyThinkingDataDocument()
-  private fiber: Fiber | undefined
   private disposeSkill: (() => void) | undefined
   private disposeLearningTool: (() => void) | undefined
   private chain: Promise<void> = Promise.resolve()
@@ -87,7 +68,7 @@ export class ThinkingDataGateway extends TypertRemoteService {
     return this.enqueue(async () => {
       const tokenConfigured = (await this.ctx.credentials.describe(TOKEN_REF)).configured
       return {
-        enabled: this.document.enabled,
+        enabled: true,
         url: this.document.url,
         effectiveUrl: effectiveThinkingDataUrl(this.document.url),
         tokenConfigured,
@@ -99,13 +80,13 @@ export class ThinkingDataGateway extends TypertRemoteService {
   @Remote('save')
   save(request: ThinkingDataSaveRequest): Promise<{ readonly ok: true }> {
     return this.enqueue(async () => {
-      if (typeof request.enabled !== 'boolean' || typeof request.url !== 'string') {
+      if (typeof request.url !== 'string') {
         throw new Error('thinkingdata: invalid settings request')
       }
       validateThinkingDataUrl(request.url)
       const token = request.token?.trim()
       if (token !== undefined && token.length > 0) await this.ctx.credentials.set(TOKEN_REF, token)
-      const next = { version: 1 as const, enabled: request.enabled, url: request.url.trim() }
+      const next = { version: 1 as const, enabled: true, url: request.url.trim() }
       await this.persist(next)
       this.document = next
       await this.syncConnection()
@@ -126,17 +107,27 @@ export class ThinkingDataGateway extends TypertRemoteService {
   }
 
   private phase(tokenConfigured: boolean): ThinkingDataConnectionPhase {
-    if (!this.document.enabled) return 'disabled'
     if (!tokenConfigured) return 'missing-token'
-    if (this.fiber === undefined) return 'pending'
-    const phase = FIBER_PHASE[this.fiber.state]
+    const phase = this.ctx.mcpSettings.systemPhase(THINKINGDATA_SERVER_NAME)
+    if (phase === null) return 'pending'
     return phase === 'active' && !this.hasTools() ? 'failed' : phase
   }
 
   private async syncConnection(): Promise<void> {
-    await this.dropRuntime()
-    if (!this.document.enabled) return
+    this.disposeLearningTool?.()
+    this.disposeLearningTool = undefined
+    this.disposeSkill?.()
+    this.disposeSkill = undefined
     const token = (await this.ctx.credentials.resolve(TOKEN_REF))?.value
+    await this.ctx.mcpSettings.setSystem({
+      transport: 'streamable-http',
+      serverName: THINKINGDATA_SERVER_NAME,
+      enabled: true,
+      url: effectiveThinkingDataUrl(this.document.url),
+      headers: token === undefined || token.length === 0 ? {} : { Authorization: `Bearer ${token}` },
+      toolCallTimeoutMs: THINKINGDATA_TOOL_TIMEOUT_MS,
+      failOnStartupError: false,
+    })
     if (token === undefined || token.length === 0) return
     await this.refreshSkill()
     this.disposeLearningTool = registerThinkingDataLearningTool(
@@ -144,30 +135,10 @@ export class ThinkingDataGateway extends TypertRemoteService {
       this.learningPath,
       async () => { await this.refreshSkill() },
     )
-    this.fiber = this.ctx.plugin({
-      name: mcpClient.name,
-      inject: mcpClient.inject,
-      Config: mcpClient.Config,
-      apply: mcpClient.apply,
-    }, {
-      transport: 'streamable-http',
-      serverName: THINKINGDATA_SERVER_NAME,
-      url: effectiveThinkingDataUrl(this.document.url),
-      headers: { Authorization: `Bearer ${token}` },
-      toolCallTimeoutMs: THINKINGDATA_TOOL_TIMEOUT_MS,
-      failOnStartupError: false,
-    })
-    void Promise.resolve(this.fiber).catch((error: unknown) => { this.ctx.logger.warn(error) })
-  }
-
-  private async dropFiber(): Promise<void> {
-    const fiber = this.fiber
-    this.fiber = undefined
-    if (fiber !== undefined && fiber.state !== FIBER_STATE.DISPOSED) await fiber.dispose()
   }
 
   private async dropRuntime(): Promise<void> {
-    await this.dropFiber()
+    await this.ctx.mcpSettings.removeSystem(THINKINGDATA_SERVER_NAME)
     this.disposeLearningTool?.()
     this.disposeLearningTool = undefined
     this.disposeSkill?.()

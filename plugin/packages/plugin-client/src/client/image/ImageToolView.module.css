@@ -219,6 +219,10 @@
   cursor: pointer;
 }
 
+.results {
+  padding: 2px 12px 12px 51px;
+}
+
 .card button:focus-visible, .body summary:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
 
 .body {
@@ -237,6 +241,7 @@
 @media (max-width: 640px) {
   .card header { flex-wrap: wrap; }
   .generating { grid-template-columns: 60px minmax(0, 1fr); padding-left: 10px; }
+  .results { padding-left: 10px; }
   .developingFrame { width: 60px; height: 52px; }
   .generatingCopy small { display: none; }
 }

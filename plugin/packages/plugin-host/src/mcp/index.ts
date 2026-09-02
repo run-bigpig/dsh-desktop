@@ -8,6 +8,7 @@ import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import {
+  applyMcpSystemOverride,
   countMcpTools,
   emptyMcpSettingsDocument,
   isReservedMcpServerName,
@@ -16,6 +17,7 @@ import {
   removeMcpServerRecord,
   serializeMcpSettingsDocument,
   toMcpClientConfig,
+  updateMcpSystemOverride,
   upsertMcpServerRecord,
   viewCompositionConfig,
   viewMcpServerRecord,
@@ -29,6 +31,7 @@ import type {
   McpServerView,
   McpSettingsMutationResult,
   McpSettingsSnapshot,
+  McpSystemUpdateRequest,
 } from '../shared/types.ts'
 
 export interface McpSettingsConfig {
@@ -66,6 +69,7 @@ export class McpSettingsGateway extends TypertRemoteService {
   private readonly filename: string
   private document: McpSettingsDocument = emptyMcpSettingsDocument()
   private readonly fibers = new Map<string, Fiber>()
+  private readonly systemRecords = new Map<string, McpServerRecord>()
   private chain: Promise<void> = Promise.resolve()
 
   constructor(ctx: Context, config: McpSettingsConfig) {
@@ -104,6 +108,19 @@ export class McpSettingsGateway extends TypertRemoteService {
     })
   }
 
+  @Remote('updateSystem')
+  updateSystem(request: McpSystemUpdateRequest): Promise<McpSettingsMutationResult> {
+    return this.enqueue(async () => {
+      if (!isReservedMcpServerName(request.serverName) || !this.systemRecords.has(request.serverName)) {
+        throw new Error(`mcp-settings: no system server named ${JSON.stringify(request.serverName)}`)
+      }
+      this.document = updateMcpSystemOverride(this.document, request)
+      await this.persist()
+      await this.syncSystem(request.serverName)
+      return { ok: true }
+    })
+  }
+
   @Remote('delete')
   delete(request: McpServerRemoveRequest): Promise<McpSettingsMutationResult> {
     return this.enqueue(async () => {
@@ -126,7 +143,13 @@ export class McpSettingsGateway extends TypertRemoteService {
       fiberPhase(this.fibers.get(record.serverName)),
       countMcpTools(toolNames, record.serverName),
     ))
-    return [...settings, ...this.compositionViews(toolNames)]
+    const systems = [...this.systemRecords.values()].map(record => viewMcpServerRecord(
+      applyMcpSystemOverride(record, this.document),
+      'system',
+      fiberPhase(this.fibers.get(record.serverName)),
+      countMcpTools(toolNames, record.serverName),
+    ))
+    return [...systems, ...settings, ...this.compositionViews(toolNames)]
   }
 
   private compositionViews(toolNames: readonly string[] = this.toolNames()): McpServerView[] {
@@ -134,7 +157,7 @@ export class McpSettingsGateway extends TypertRemoteService {
     for (const entry of this.loaderEntries()) {
       if (entry.options.name !== MCP_CLIENT_MODULE) continue
       const view = viewCompositionConfig(entry.options.config, !entry.disabled, fiberPhase(entry.fiber), toolNames)
-      if (view !== null) views.push(view)
+      if (view !== null && !this.systemRecords.has(view.serverName)) views.push(view)
     }
     return views
   }
@@ -161,6 +184,40 @@ export class McpSettingsGateway extends TypertRemoteService {
     for (const record of this.document.servers) {
       if (record.enabled && !isReservedMcpServerName(record.serverName) && !compositionNames.has(record.serverName)) this.mount(record)
     }
+  }
+
+  setSystem(record: McpServerRecord): Promise<void> {
+    return this.enqueue(async () => {
+      if (!isReservedMcpServerName(record.serverName)) {
+        throw new Error(`mcp-settings: ${JSON.stringify(record.serverName)} is not a system server`)
+      }
+      const next = { ...record, enabled: true }
+      const previous = this.systemRecords.get(record.serverName)
+      this.systemRecords.set(record.serverName, next)
+      if (previous === undefined || !sameRecord(
+        applyMcpSystemOverride(previous, this.document),
+        applyMcpSystemOverride(next, this.document),
+      )) {
+        await this.syncSystem(record.serverName)
+      }
+    })
+  }
+
+  removeSystem(serverName: string): Promise<void> {
+    return this.enqueue(async () => {
+      if (!this.systemRecords.delete(serverName)) return
+      await this.dropFiber(serverName)
+    })
+  }
+
+  systemPhase(serverName: string): McpServerFiberPhase {
+    return fiberPhase(this.fibers.get(serverName))
+  }
+
+  private async syncSystem(serverName: string): Promise<void> {
+    await this.dropFiber(serverName)
+    const record = this.systemRecords.get(serverName)
+    if (record !== undefined) this.mount(applyMcpSystemOverride(record, this.document))
   }
 
   private async syncRecord(record: McpServerRecord): Promise<void> {
@@ -223,6 +280,10 @@ function fiberPhase(fiber: Fiber | undefined): McpServerFiberPhase {
 
 function isEnoent(error: unknown): boolean {
   return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
+}
+
+function sameRecord(left: McpServerRecord, right: McpServerRecord): boolean {
+  return JSON.stringify(left) === JSON.stringify(right)
 }
 
 export default McpSettingsGateway

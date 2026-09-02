@@ -2,12 +2,20 @@ import { useMemo, useState, type ReactNode } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
+import { MessageImageTiles } from './MessageImageGallery.tsx'
+import type { WorkbenchController } from '../workbench/SessionWorkbench.tsx'
 import css from './ImageToolView.module.css'
+
+export interface ImageToolViewInjected {
+  readonly loadImage: (attachment: ImageAttachmentRef) => Promise<string>
+  readonly controller: WorkbenchController
+}
 
 export type ImageToolViewProps =
   ToolCallViewProps
   & PropsLocale<'desktop.workbench'>
+  & InjectFace<ImageToolViewInjected>
 
 interface ToolModel {
   readonly phase: 'running' | 'ready' | 'error'
@@ -18,10 +26,11 @@ interface ToolModel {
   readonly dimensions?: string
   readonly error?: string
   readonly args: string
+  readonly images: readonly ImageAttachmentRef[]
 }
 
 export function ImageToolView({
-  toolName, block, inspect, t,
+  toolName, block, inspect, sessionId, loadImage, controller, t,
 }: ImageToolViewProps): ReactNode {
   const [expanded, setExpanded] = useState(false)
   const model = useMemo(() => toolModel(toolName, block, t), [block, t, toolName])
@@ -59,6 +68,18 @@ export function ImageToolView({
           </div>
         </div>
       )}
+      {model.images.length > 0 && (
+        <div className={css.results}>
+          <MessageImageTiles
+            images={model.images.map(attachment => ({ attachment }))}
+            loadImage={loadImage}
+            align="start"
+            sessionId={String(sessionId)}
+            controller={controller}
+            t={t}
+          />
+        </div>
+      )}
       {expanded && (
         <div className={css.body}>
           {model.error !== undefined && <p className={css.error}>{model.error}</p>}
@@ -90,6 +111,7 @@ function toolModel(toolName: string, block: ImageToolViewProps['block'], t: Imag
     title,
     summary: runningSummaryOf(toolName, args, t),
     args: pretty(argsRaw),
+    images: [],
   }
   const text = block.content.flatMap(content => content.type === 'text' ? [content.text] : []).join('\n')
   const result = recordOf(parseJson(text))
@@ -100,6 +122,7 @@ function toolModel(toolName: string, block: ImageToolViewProps['block'], t: Imag
     summary: t('imageFailed'),
     error: text.trim() || block.error?.code || t('imageUnknownError'),
     args: pretty(argsRaw),
+    images: [],
   }
   const metadata = taskMetadata(result)
   const dimensions = imageDimensions(images)
@@ -112,6 +135,7 @@ function toolModel(toolName: string, block: ImageToolViewProps['block'], t: Imag
     ...(dimensions === undefined ? {} : { dimensions }),
     ...(failures.length === 0 ? {} : { error: failures.join('\n') }),
     args: pretty(argsRaw),
+    images: images.map(image => image.attachment),
   }
 }
 

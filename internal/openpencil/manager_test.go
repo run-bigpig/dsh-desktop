@@ -96,6 +96,18 @@ func TestStatusTreatsDisconnectedCompanionAsStopped(t *testing.T) {
 	}
 }
 
+func TestShowAttemptsManagedLaunchWhenCompanionIsStopped(t *testing.T) {
+	manager := New(Options{DiscoveryPath: filepath.Join(t.TempDir(), "mcp.json")})
+
+	_, err := manager.Show(context.Background())
+	if err == nil || !strings.Contains(err.Error(), "bundled OpenPencil Companion is unavailable") {
+		t.Fatalf("show error = %v", err)
+	}
+	if strings.Contains(err.Error(), "Companion is not running") {
+		t.Fatalf("show did not attempt a managed launch: %v", err)
+	}
+}
+
 func TestHealthRejectsOversizedResponse(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		w.WriteHeader(http.StatusOK)

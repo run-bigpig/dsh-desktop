@@ -10,7 +10,14 @@ import {
   serializeThinkingDataDocument,
   validateThinkingDataUrl,
 } from '../src/thinkingdata/document.ts'
-import { isReservedMcpServerName } from '../src/mcp/document.ts'
+import {
+  applyMcpSystemOverride,
+  emptyMcpSettingsDocument,
+  isReservedMcpServerName,
+  parseMcpSettingsDocument,
+  serializeMcpSettingsDocument,
+  updateMcpSystemOverride,
+} from '../src/mcp/document.ts'
 import {
   registerThinkingDataSkill,
   replaceThinkingDataSkill,
@@ -26,7 +33,7 @@ afterEach(async () => {
 describe('ThinkingData settings document', () => {
   it('uses the built-in URL while preserving an empty stored override', () => {
     const document = emptyThinkingDataDocument()
-    expect(document).toEqual({ version: 1, enabled: false, url: '' })
+    expect(document).toEqual({ version: 1, enabled: true, url: '' })
     expect(effectiveThinkingDataUrl(document.url)).toBe(DEFAULT_THINKINGDATA_URL)
     expect(parseThinkingDataDocument(serializeThinkingDataDocument(document))).toEqual(document)
   })
@@ -41,6 +48,29 @@ describe('ThinkingData settings document', () => {
     expect(isReservedMcpServerName('ta-mcp-server')).toBe(true)
     expect(isReservedMcpServerName('openpencil-mcp')).toBe(true)
     expect(isReservedMcpServerName('other-server')).toBe(false)
+  })
+
+  it('migrates MCP settings and persists only safe system connection overrides', () => {
+    expect(parseMcpSettingsDocument(JSON.stringify({
+      version: 1,
+      servers: [{
+        transport: 'streamable-http', serverName: 'openpencil-mcp', enabled: false,
+        url: 'http://127.0.0.1:9999/mcp', headers: { Authorization: 'Bearer stale' },
+        toolCallTimeoutMs: 1000, failOnStartupError: true,
+      }],
+    }))).toEqual({
+      version: 2, servers: [], systemOverrides: [],
+    })
+    const document = updateMcpSystemOverride(emptyMcpSettingsDocument(), {
+      serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
+    })
+    const record = applyMcpSystemOverride({
+      transport: 'streamable-http', serverName: 'openpencil-mcp', enabled: true,
+      url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer ephemeral' },
+      toolCallTimeoutMs: 120000, failOnStartupError: false,
+    }, document)
+    expect(record.toolCallTimeoutMs).toBe(180000)
+    expect(serializeMcpSettingsDocument(document)).not.toContain('ephemeral')
   })
 
   it('loads the packaged skill with its reference directory', async () => {

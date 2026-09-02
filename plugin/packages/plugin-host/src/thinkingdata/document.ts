@@ -10,7 +10,7 @@ export interface ThinkingDataDocument {
 }
 
 export function emptyThinkingDataDocument(): ThinkingDataDocument {
-  return { version: 1, enabled: false, url: '' }
+  return { version: 1, enabled: true, url: '' }
 }
 
 export function parseThinkingDataDocument(text: string): ThinkingDataDocument {
@@ -28,7 +28,7 @@ export function parseThinkingDataDocument(text: string): ThinkingDataDocument {
     throw new Error('thinkingdata: settings document contains unknown fields')
   }
   validateThinkingDataUrl(value.url)
-  return { version: 1, enabled: value.enabled, url: value.url.trim() }
+  return { version: 1, enabled: true, url: value.url.trim() }
 }
 
 export function serializeThinkingDataDocument(document: ThinkingDataDocument): string {

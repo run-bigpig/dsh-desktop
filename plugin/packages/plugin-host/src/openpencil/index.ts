@@ -1,5 +1,4 @@
-import { Context, Service, type Fiber, type FiberState } from '@deepseek-ai/cordis'
-import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
+import { Context, Service } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import { desktopRequest } from '../desktop/index.ts'
@@ -9,15 +8,6 @@ import { defineOpenPencilControlTools } from './control-tools.ts'
 import { registerOpenPencilSkill } from './skill.ts'
 
 const MCP_SERVER_NAME = 'openpencil-mcp'
-const FIBER_STATE = {
-  PENDING: 0 as FiberState.PENDING,
-  LOADING: 1 as FiberState.LOADING,
-  ACTIVE: 2 as FiberState.ACTIVE,
-  FAILED: 3 as FiberState.FAILED,
-  DISPOSED: 4 as FiberState.DISPOSED,
-  UNLOADING: 5 as FiberState.UNLOADING,
-} as const
-
 interface DesktopOpenPencilStatus {
   readonly bundled: boolean
   readonly running: boolean
@@ -29,9 +19,8 @@ interface DesktopOpenPencilStatus {
 }
 
 export class OpenPencilGateway extends TypertRemoteService {
-  static inject = ['tools', 'skills']
+  static inject = ['tools', 'skills', 'mcpSettings']
 
-  private fiber: Fiber | undefined
   private disposeSkill: (() => void) | undefined
   private chain: Promise<void> = Promise.resolve()
 
@@ -49,7 +38,7 @@ export class OpenPencilGateway extends TypertRemoteService {
     }
     try {
       const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
-      if (status.running) await this.mount(status)
+      await this.syncConnection(status)
     } catch (error) {
       this.ctx.logger.warn(error)
     }
@@ -60,8 +49,7 @@ export class OpenPencilGateway extends TypertRemoteService {
   snapshot(): Promise<OpenPencilSnapshot> {
     return this.enqueue(async () => {
       const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
-      if (!status.running && this.fiber !== undefined) await this.dropFiber()
-      if (status.running && this.fiber === undefined) await this.mount(status)
+      await this.syncConnection(status)
       return this.sanitized(status)
     })
   }
@@ -69,7 +57,7 @@ export class OpenPencilGateway extends TypertRemoteService {
   private showCanvas(): Promise<string> {
     return this.enqueue(async () => {
       const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/show', { method: 'POST' })
-      if (this.fiber === undefined) await this.mount(status)
+      await this.syncConnection(status)
       return 'OpenPencil canvas is visible. Its built-in MCP connection remains managed by StarWeave.'
     })
   }
@@ -81,25 +69,16 @@ export class OpenPencilGateway extends TypertRemoteService {
     })
   }
 
-  private async mount(status: DesktopOpenPencilStatus): Promise<void> {
-    if (this.fiber !== undefined) return
-    if (status.url === undefined || status.token === undefined) {
-      throw new Error('OpenPencil managed MCP discovery is incomplete')
-    }
-    this.fiber = this.ctx.plugin({
-      name: mcpClient.name,
-      inject: mcpClient.inject,
-      Config: mcpClient.Config,
-      apply: mcpClient.apply,
-    }, {
+  private async syncConnection(status: DesktopOpenPencilStatus): Promise<void> {
+    await this.ctx.mcpSettings.setSystem({
       transport: 'streamable-http',
       serverName: MCP_SERVER_NAME,
-      url: status.url,
-      headers: { Authorization: `Bearer ${status.token}` },
+      enabled: true,
+      url: status.url ?? 'http://127.0.0.1:1/mcp',
+      headers: status.token === undefined ? {} : { Authorization: `Bearer ${status.token}` },
       toolCallTimeoutMs: 120_000,
       failOnStartupError: false,
     })
-    void Promise.resolve(this.fiber).catch((error: unknown) => { this.ctx.logger.warn(error) })
   }
 
   private sanitized(status: DesktopOpenPencilStatus): OpenPencilSnapshot {
@@ -112,26 +91,20 @@ export class OpenPencilGateway extends TypertRemoteService {
       port: status.port ?? null,
       phase,
       mcpConnected: phase === 'active',
-      toolCount: this.fiber === undefined ? 0 : countMcpTools(toolNames, MCP_SERVER_NAME),
+      toolCount: countMcpTools(toolNames, MCP_SERVER_NAME),
     }
   }
 
   private phase(status: DesktopOpenPencilStatus): OpenPencilPhase {
     if (!status.running) return 'app-stopped'
-    if (this.fiber === undefined) return 'connecting'
-    if (this.fiber.state === FIBER_STATE.ACTIVE) return 'active'
-    if (this.fiber.state === FIBER_STATE.FAILED || this.fiber.state === FIBER_STATE.DISPOSED) return 'failed'
+    const phase = this.ctx.mcpSettings.systemPhase(MCP_SERVER_NAME)
+    if (phase === 'active') return 'active'
+    if (phase === 'failed') return 'failed'
     return 'connecting'
   }
 
-  private async dropFiber(): Promise<void> {
-    const fiber = this.fiber
-    this.fiber = undefined
-    if (fiber !== undefined && fiber.state !== FIBER_STATE.DISPOSED) await fiber.dispose()
-  }
-
   private async dropRuntime(): Promise<void> {
-    await this.dropFiber()
+    await this.ctx.mcpSettings.removeSystem(MCP_SERVER_NAME)
     this.disposeSkill?.()
     this.disposeSkill = undefined
   }

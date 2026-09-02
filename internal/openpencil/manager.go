@@ -169,6 +169,16 @@ func (m *Manager) Launch(ctx context.Context) (Status, error) {
 		_ = m.Stop(context.Background())
 		return Status{}, err
 	}
+	if err := m.sendWindowCommand(ctx, "--quit"); err != nil {
+		_ = m.Stop(context.Background())
+		return Status{}, fmt.Errorf("stop existing OpenPencil Companion: %w", err)
+	}
+	select {
+	case <-ctx.Done():
+		_ = m.Stop(context.Background())
+		return Status{}, ctx.Err()
+	case <-time.After(300 * time.Millisecond):
+	}
 
 	appProcess := &harnessruntime.ManagedProcess{}
 	appEnvironment := []string{
@@ -190,6 +200,13 @@ func (m *Manager) Launch(ctx context.Context) (Status, error) {
 }
 
 func (m *Manager) Show(ctx context.Context) (Status, error) {
+	status, err := m.Status(ctx)
+	if err != nil || !status.Running {
+		status, err = m.Launch(ctx)
+		if err != nil {
+			return status, fmt.Errorf("ensure OpenPencil Companion is running: %w", err)
+		}
+	}
 	return m.signalWindow(ctx, "--show")
 }
 

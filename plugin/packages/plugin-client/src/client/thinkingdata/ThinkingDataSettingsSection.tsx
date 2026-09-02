@@ -20,15 +20,18 @@ export type ThinkingDataSettingsProps =
   & PropsLocale<'settings.thinkingdata'>
   & InjectFace<ThinkingDataSettingsInjected>
 
+export type ThinkingDataSettingsContentProps =
+  PropsLocale<'settings.thinkingdata'>
+  & InjectFace<ThinkingDataSettingsInjected>
+
 type ViewState =
   | { status: 'loading' }
   | { status: 'error' }
   | { status: 'ready'; snapshot: ThinkingDataSnapshot }
 
-export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t }: ThinkingDataSettingsProps): ReactNode {
+export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t }: ThinkingDataSettingsContentProps): ReactNode {
   const id = useId()
   const [state, setState] = useState<ViewState>({ status: 'loading' })
-  const [enabled, setEnabled] = useState(false)
   const [url, setUrl] = useState('')
   const [token, setToken] = useState('')
   const [saving, setSaving] = useState(false)
@@ -39,7 +42,6 @@ export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t 
     setState({ status: 'loading' })
     void snapshot().then(value => {
       setState({ status: 'ready', snapshot: value })
-      setEnabled(value.enabled)
       setUrl(value.url)
       setToken('')
     }, () => { setState({ status: 'error' }) })
@@ -60,11 +62,10 @@ export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t 
     setSaving(true)
     setNotice(null)
     try {
-      await save({ enabled, url: url.trim(), ...(token.trim() ? { token: token.trim() } : {}) })
+      await save({ enabled: true, url: url.trim(), ...(token.trim() ? { token: token.trim() } : {}) })
       setNotice({ kind: 'success', text: t('saved') })
       const value = await snapshot()
       setState({ status: 'ready', snapshot: value })
-      setEnabled(value.enabled)
       setUrl(value.url)
       setToken('')
     } catch {
@@ -113,7 +114,7 @@ export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t 
     )
   }
 
-  const dirty = enabled !== state.snapshot.enabled || url.trim() !== state.snapshot.url || token.trim().length > 0
+  const dirty = url.trim() !== state.snapshot.url || token.trim().length > 0
   return (
     <section className={css.section} data-settings-section="thinkingdata" aria-busy={saving || testing}>
       <header className={css.header}>
@@ -126,20 +127,6 @@ export function ThinkingDataSettingsSection({ snapshot, save, testConnection, t 
         </span>
       </header>
       <form className={css.card} onSubmit={event => { void submit(event) }}>
-        <div className={css.switchRow}>
-          <span><strong>{t('enabled')}</strong><small>{t('enabledHint')}</small></span>
-          <button
-            type="button"
-            role="switch"
-            aria-checked={enabled}
-            aria-label={t('enabled')}
-            className={`${css.switch} ${enabled ? css.switchOn : ''}`}
-            onClick={() => { setEnabled(value => !value); setNotice(null) }}
-          >
-            <span className={css.switchThumb} />
-          </button>
-        </div>
-        <div className={css.divider} />
         <div className={css.field}>
           <label htmlFor={`${id}-url`}>{t('url')}</label>
           <input id={`${id}-url`} type="url" value={url} placeholder={state.snapshot.effectiveUrl} onChange={event => { setUrl(event.currentTarget.value); setNotice(null) }} />

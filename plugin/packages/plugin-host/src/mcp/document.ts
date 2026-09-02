@@ -38,13 +38,20 @@ export interface McpHttpRecord {
 
 export type McpServerRecord = McpStdioRecord | McpHttpRecord
 
+export interface McpSystemOverride {
+  readonly serverName: string
+  readonly toolCallTimeoutMs: number
+  readonly failOnStartupError: boolean
+}
+
 export interface McpSettingsDocument {
-  readonly version: 1
+  readonly version: 2
   readonly servers: readonly McpServerRecord[]
+  readonly systemOverrides: readonly McpSystemOverride[]
 }
 
 export function emptyMcpSettingsDocument(): McpSettingsDocument {
-  return { version: 1, servers: [] }
+  return { version: 2, servers: [], systemOverrides: [] }
 }
 
 export function parseMcpSettingsDocument(text: string): McpSettingsDocument {
@@ -55,12 +62,15 @@ export function parseMcpSettingsDocument(text: string): McpSettingsDocument {
     throw new Error('mcp-settings: document is not valid JSON', { cause })
   }
   if (!isRecord(parsed)) throw new Error('mcp-settings: document must be a JSON object')
-  assertKnownKeys(parsed, ['version', 'servers'], 'document')
-  if (parsed.version !== 1) {
+  const version = parsed.version
+  assertKnownKeys(parsed, version === 1 ? ['version', 'servers'] : ['version', 'servers', 'systemOverrides'], 'document')
+  if (version !== 1 && version !== 2) {
     throw new Error(`mcp-settings: unsupported document version ${String(parsed.version)}`)
   }
   if (!Array.isArray(parsed.servers)) throw new Error('mcp-settings: document.servers must be an array')
-  const servers = parsed.servers.map((entry, index) => parseRecord(entry, `servers[${index}]`))
+  const servers = parsed.servers
+    .map((entry, index) => parseRecord(entry, `servers[${index}]`))
+    .filter(server => !isReservedMcpServerName(server.serverName))
   const names = new Set<string>()
   for (const server of servers) {
     if (names.has(server.serverName)) {
@@ -68,7 +78,10 @@ export function parseMcpSettingsDocument(text: string): McpSettingsDocument {
     }
     names.add(server.serverName)
   }
-  return { version: 1, servers }
+  const systemOverrides = version === 2
+    ? parseSystemOverrides(parsed.systemOverrides)
+    : []
+  return { version: 2, servers, systemOverrides }
 }
 
 export function serializeMcpSettingsDocument(document: McpSettingsDocument): string {
@@ -94,7 +107,7 @@ export function upsertMcpServerRecord(
   }
   const next = mergeRecord(existing, request)
   return {
-    version: 1,
+    ...document,
     servers: existing === undefined
       ? [...document.servers, next]
       : document.servers.map(server => server.serverName === fromName ? next : server),
@@ -105,7 +118,39 @@ export function removeMcpServerRecord(
   document: McpSettingsDocument,
   serverName: string,
 ): McpSettingsDocument {
-  return { version: 1, servers: document.servers.filter(server => server.serverName !== serverName) }
+  return { ...document, servers: document.servers.filter(server => server.serverName !== serverName) }
+}
+
+export function updateMcpSystemOverride(
+  document: McpSettingsDocument,
+  override: McpSystemOverride,
+): McpSettingsDocument {
+  const serverName = parseServerName(override.serverName)
+  const next = {
+    serverName,
+    toolCallTimeoutMs: parsePositive(override.toolCallTimeoutMs, 'toolCallTimeoutMs'),
+    failOnStartupError: parseBoolean(override.failOnStartupError, 'failOnStartupError'),
+  }
+  const exists = document.systemOverrides.some(entry => entry.serverName === serverName)
+  return {
+    ...document,
+    systemOverrides: exists
+      ? document.systemOverrides.map(entry => entry.serverName === serverName ? next : entry)
+      : [...document.systemOverrides, next],
+  }
+}
+
+export function applyMcpSystemOverride(
+  record: McpServerRecord,
+  document: McpSettingsDocument,
+): McpServerRecord {
+  const override = document.systemOverrides.find(entry => entry.serverName === record.serverName)
+  return override === undefined ? record : {
+    ...record,
+    enabled: true,
+    toolCallTimeoutMs: override.toolCallTimeoutMs,
+    failOnStartupError: override.failOnStartupError,
+  }
 }
 
 export function toMcpClientConfig(record: McpServerRecord): McpClientConfig {
@@ -276,6 +321,25 @@ function parseRecord(value: unknown, label: string): McpServerRecord {
     }
   }
   throw new Error(`mcp-settings: ${label}.transport must be "stdio" or "streamable-http"`)
+}
+
+function parseSystemOverrides(value: unknown): McpSystemOverride[] {
+  if (value === undefined) return []
+  if (!Array.isArray(value)) throw new Error('mcp-settings: document.systemOverrides must be an array')
+  const result = value.map((entry, index) => {
+    const label = `systemOverrides[${String(index)}]`
+    if (!isRecord(entry)) throw new Error(`mcp-settings: ${label} must be an object`)
+    assertKnownKeys(entry, ['serverName', 'toolCallTimeoutMs', 'failOnStartupError'], label)
+    return {
+      serverName: parseServerName(entry.serverName, `${label}.serverName`),
+      toolCallTimeoutMs: parsePositive(entry.toolCallTimeoutMs, `${label}.toolCallTimeoutMs`),
+      failOnStartupError: parseBoolean(entry.failOnStartupError, `${label}.failOnStartupError`),
+    }
+  })
+  if (new Set(result.map(entry => entry.serverName)).size !== result.length) {
+    throw new Error('mcp-settings: duplicate system override serverName')
+  }
+  return result
 }
 
 function parseServerName(value: unknown, label = 'serverName'): string {

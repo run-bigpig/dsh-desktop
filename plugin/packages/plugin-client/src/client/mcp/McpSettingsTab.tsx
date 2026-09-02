@@ -2,17 +2,24 @@ import { useEffect, useId, useState, type FormEvent, type ReactNode } from 'reac
 import type { InjectFace, PropsLocale, PropsRuntime } from '@deepseek-ai/dsh-client-ui-slots'
 import type {
   McpServerFiberPhase,
+  McpSystemUpdateRequest,
   McpServerUpsertRequest,
   McpServerView,
   McpSettingsSnapshot,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import type { McpLocaleKey } from '../locales.ts'
+import {
+  ThinkingDataSettingsSection,
+  type ThinkingDataSettingsContentProps,
+} from '../thinkingdata/ThinkingDataSettingsSection.tsx'
 import css from '../shared/IntegrationSettings.module.css'
 
 export interface McpSettingsTabInjected {
   list: () => Promise<McpSettingsSnapshot>
   upsert: (request: McpServerUpsertRequest) => Promise<void>
+  updateSystem: (request: McpSystemUpdateRequest) => Promise<void>
   remove: (serverName: string) => Promise<void>
+  thinkingData: ThinkingDataSettingsContentProps
 }
 
 export type McpSettingsTabProps =
@@ -34,19 +41,22 @@ type Draft = {
   envText: string
   url: string
   headersText: string
+  toolCallTimeoutMs: string
+  failOnStartupError: boolean
 }
 
 type Editor = null | 'create' | { serverName: string }
 
 const EMPTY_DRAFT: Draft = {
   serverName: '', enabled: true, transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '',
+  toolCallTimeoutMs: '60000', failOnStartupError: false,
 }
 const SETTLING = new Set<McpServerFiberPhase>(['pending', 'loading', 'unloading'])
 const PHASE_KEYS = {
   pending: 'pending', loading: 'loadingPhase', active: 'active', failed: 'failed', unloading: 'unloading',
 } satisfies Record<Exclude<McpServerFiberPhase, null>, McpLocaleKey>
 
-export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps): ReactNode {
+export function McpSettingsTab({ list, upsert, updateSystem, remove, thinkingData, t }: McpSettingsTabProps): ReactNode {
   const formId = useId()
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
@@ -92,7 +102,11 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
     setSaving(true)
     setFormError(null)
     try {
-      await upsert(toRequest(draft, editing !== null && editing !== 'create' ? editing.serverName : undefined))
+      const current = editing !== null && editing !== 'create'
+        ? state.status === 'ready' ? state.snapshot.servers.find(server => server.serverName === editing.serverName) : undefined
+        : undefined
+      if (current?.origin === 'system') await updateSystem(toSystemRequest(draft))
+      else await upsert(toRequest(draft, editing !== null && editing !== 'create' ? editing.serverName : undefined))
       reload()
     } catch (error) {
       setFormError(error instanceof Error && error.message === 'invalid-kv' ? 'invalidKv' : 'saveFailed')
@@ -113,6 +127,11 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
       setRemoving(false)
     }
   }
+
+  const editingServer = editing !== null && editing !== 'create' && state.status === 'ready'
+    ? state.snapshot.servers.find(server => server.serverName === editing.serverName)
+    : undefined
+  const editingSystem = editingServer?.origin === 'system'
 
   return (
     <section className={css.section} aria-busy={state.status === 'loading' || saving || removing}>
@@ -138,6 +157,7 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
                 <div className={css.serverIdentity}>
                   <strong>{server.serverName}</strong>
                   <span>{server.transport === 'stdio' ? t('transportStdio') : t('transportHttp')}</span>
+                  {server.origin === 'system' ? <span>{t('systemTag')}</span> : null}
                 </div>
                 <p className={css.serverDescription}>
                   {server.origin === 'composition' ? t('compositionHint') : server.transport === 'stdio' ? server.command : server.url}
@@ -155,9 +175,9 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
                     <span aria-hidden="true" />
                     {server.enabled ? phaseLabel(server.fiberPhase, t) : t('disabledTag')}
                   </span>
-                  {server.origin === 'settings' ? (
+                  {server.origin !== 'composition' ? (
                     <div className={css.buttonGroup}>
-                      {pendingDelete === server.serverName ? (
+                      {server.origin === 'settings' && pendingDelete === server.serverName ? (
                         <>
                           <button className={css.dangerButton} type="button" disabled={removing} onClick={() => { void destroy(server.serverName) }}>
                             {removing ? t('removing') : t('confirmRemove')}
@@ -167,7 +187,7 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
                       ) : (
                         <>
                           <button className={css.button} type="button" onClick={() => { setEditing({ serverName: server.serverName }); setDraft(draftFrom(server)); setFormError(null) }}>{t('edit')}</button>
-                          <button className={css.dangerButton} type="button" onClick={() => { setPendingDelete(server.serverName); setFormError(null) }}>{t('remove')}</button>
+                          {server.origin === 'settings' ? <button className={css.dangerButton} type="button" onClick={() => { setPendingDelete(server.serverName); setFormError(null) }}>{t('remove')}</button> : null}
                         </>
                       )}
                     </div>
@@ -176,34 +196,43 @@ export function McpSettingsTab({ list, upsert, remove, t }: McpSettingsTabProps)
               </li>
             ))}
           </ul>
+          {editingSystem && editingServer?.serverName === 'ta-mcp-server' ? (
+            <ThinkingDataSettingsSection {...thinkingData} />
+          ) : null}
           {editing !== null ? (
             <form className={css.form} onSubmit={event => { void submit(event) }}>
               <h4>{editing === 'create' ? t('add') : t('edit')}</h4>
+              {editingSystem ? <p className={css.hint}>{t('systemHint')}</p> : null}
               <div className={css.formGrid}>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-name`}>{t('serverName')}</label>
-                  <input id={`${formId}-name`} required maxLength={32} pattern="[A-Za-z0-9_-]{1,32}" value={draft.serverName} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, serverName: value })) }} />
+                  <input id={`${formId}-name`} disabled={editingSystem} required maxLength={32} pattern="[A-Za-z0-9_-]{1,32}" value={draft.serverName} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, serverName: value })) }} />
                 </div>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-transport`}>{t('transport')}</label>
-                  <select id={`${formId}-transport`} value={draft.transport} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, transport: value === 'streamable-http' ? 'streamable-http' : 'stdio' })) }}>
+                  <select id={`${formId}-transport`} disabled={editingSystem} value={draft.transport} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, transport: value === 'streamable-http' ? 'streamable-http' : 'stdio' })) }}>
                     <option value="stdio">{t('transportStdio')}</option><option value="streamable-http">{t('transportHttp')}</option>
                   </select>
                 </div>
                 {draft.transport === 'stdio' ? (
                   <>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-command`}>{t('command')}</label><input id={`${formId}-command`} required value={draft.command} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, command: value })) }} /></div>
-                    <div className={css.field}><label htmlFor={`${formId}-args`}>{t('args')}</label><textarea id={`${formId}-args`} value={draft.argsText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, argsText: value })) }} /></div>
-                    <div className={css.field}><label htmlFor={`${formId}-env`}>{t('env')}</label><textarea id={`${formId}-env`} value={draft.envText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, envText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-command`}>{t('command')}</label><input id={`${formId}-command`} disabled={editingSystem} required value={draft.command} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, command: value })) }} /></div>
+                    <div className={css.field}><label htmlFor={`${formId}-args`}>{t('args')}</label><textarea id={`${formId}-args`} disabled={editingSystem} value={draft.argsText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, argsText: value })) }} /></div>
+                    <div className={css.field}><label htmlFor={`${formId}-env`}>{t('env')}</label><textarea id={`${formId}-env`} disabled={editingSystem} value={draft.envText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, envText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
                   </>
                 ) : (
                   <>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} disabled={editingSystem} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} disabled={editingSystem} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
                   </>
                 )}
+                <div className={css.field}>
+                  <label htmlFor={`${formId}-timeout`}>{t('timeout')}</label>
+                  <input id={`${formId}-timeout`} type="number" min="1" required value={draft.toolCallTimeoutMs} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, toolCallTimeoutMs: value })) }} />
+                </div>
               </div>
-              <label className={css.checkRow}><input type="checkbox" checked={draft.enabled} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, enabled: checked })) }} />{t('enabled')}</label>
+              <label className={css.checkRow}><input type="checkbox" disabled={editingSystem} checked={editingSystem || draft.enabled} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, enabled: checked })) }} />{t('enabled')}</label>
+              <label className={css.checkRow}><input type="checkbox" checked={draft.failOnStartupError} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, failOnStartupError: checked })) }} />{t('failOnStartup')}</label>
               {formError !== null ? <p className={css.notice} data-kind="error" role="alert">{t(formError)}</p> : null}
               <div className={css.buttonGroup}>
                 <button className={css.primaryButton} type="submit" disabled={saving}>{t('save')}</button>
@@ -231,6 +260,8 @@ function draftFrom(server: McpServerView): Draft {
     command: server.transport === 'stdio' ? server.command : '',
     argsText: server.transport === 'stdio' ? server.args.join('\n') : '',
     url: server.transport === 'streamable-http' ? server.url : '',
+    toolCallTimeoutMs: String(server.toolCallTimeoutMs),
+    failOnStartupError: server.failOnStartupError,
   }
 }
 
@@ -241,13 +272,23 @@ function toRequest(draft: Draft, previousName?: string): McpServerUpsertRequest 
     return {
       transport: 'stdio', serverName: draft.serverName.trim(), enabled: draft.enabled,
       command: draft.command.trim(), args: draft.argsText.split('\n').map(line => line.trimEnd()).filter(Boolean),
+      toolCallTimeoutMs: Number(draft.toolCallTimeoutMs), failOnStartupError: draft.failOnStartupError,
       ...rename, ...(env === undefined ? {} : { env }),
     }
   }
   const headers = parseKv(draft.headersText)
   return {
     transport: 'streamable-http', serverName: draft.serverName.trim(), enabled: draft.enabled,
-    url: draft.url.trim(), ...rename, ...(headers === undefined ? {} : { headers }),
+    url: draft.url.trim(), toolCallTimeoutMs: Number(draft.toolCallTimeoutMs),
+    failOnStartupError: draft.failOnStartupError, ...rename, ...(headers === undefined ? {} : { headers }),
+  }
+}
+
+function toSystemRequest(draft: Draft): McpSystemUpdateRequest {
+  return {
+    serverName: draft.serverName,
+    toolCallTimeoutMs: Number(draft.toolCallTimeoutMs),
+    failOnStartupError: draft.failOnStartupError,
   }
 }
 

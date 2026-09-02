@@ -21,6 +21,7 @@ import type {
   GitSnapshot,
   McpServerUpsertRequest,
   McpSettingsSnapshot,
+  McpSystemUpdateRequest,
   ImageModelSaveRequest,
   ImageModelSettingsSnapshot,
   MarketplaceOperation,
@@ -48,9 +49,6 @@ import {
   type DesktopWindowControlsInjected,
 } from './desktop-window/DesktopWindowControls.tsx'
 import { McpSettingsTab, type McpSettingsTabInjected } from './mcp/McpSettingsTab.tsx'
-import {
-  ThinkingDataSettingsSection, type ThinkingDataSettingsInjected,
-} from './thinkingdata/ThinkingDataSettingsSection.tsx'
 import { VisionSettingsTab, type VisionSettingsTabInjected } from './vision/VisionSettingsTab.tsx'
 import { ImageSettingsTab, type ImageSettingsTabInjected } from './image/ImageSettingsTab.tsx'
 import {
@@ -67,12 +65,13 @@ import {
   type DocumentMessageInjected,
 } from './documents/DocumentMessageView.tsx'
 import { ChartPresentationCard } from './chart-presentation/ChartPresentationCard.tsx'
-import { ImageToolView } from './image/ImageToolView.tsx'
+import { ImageToolView, type ImageToolViewInjected } from './image/ImageToolView.tsx'
 import {
-  ImageResultNode,
-  type ImageResultNodeInjected,
+  ImageResultTail,
+  type ImageResultTailInjected,
   imageResultDefinition,
-} from './image/ImageResultNode.tsx'
+  selectImageResultTail,
+} from './image/ImageResultTail.tsx'
 import {
   ImageStudioInputBridge,
   type ImageStudioInputBridgeInjected,
@@ -154,6 +153,7 @@ interface DesktopRemote {
 interface McpSettingsRemote {
   list: () => Promise<RemoteResult<McpSettingsSnapshot>>
   upsert: (request: McpServerUpsertRequest) => Promise<RemoteResult<{ ok: true }>>
+  updateSystem: (request: McpSystemUpdateRequest) => Promise<RemoteResult<{ ok: true }>>
   delete: (request: { serverName: string }) => Promise<RemoteResult<{ ok: true }>>
 }
 
@@ -321,13 +321,15 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     key: 'chart_present',
     locale: CHART_PRESENTATION_NS,
   }, ChartPresentationCard))
-  ctx.inject(['remote.mcpSettings', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
+  ctx.inject(['remote.mcpSettings', 'remote.thinkingData', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       mcpSettings: McpSettingsRemote
+      thinkingData: ThinkingDataRemote
       visionBridge: VisionBridgeRemote
       imageWorkbench: ImageWorkbenchRemote
     }
     const mcpT = inner.locale.bind(MCP_NS)
+    const thinkingDataT = inner.locale.bind(THINKINGDATA_NS)
     const visionT = inner.locale.bind(VISION_NS)
     const imageT = inner.locale.bind(IMAGE_NS)
     inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
@@ -335,7 +337,14 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (): McpSettingsTabInjected => ({
         list: async () => unwrap(await remotes.mcpSettings.list()),
         upsert: async request => { unwrap(await remotes.mcpSettings.upsert(request)) },
+        updateSystem: async request => { unwrap(await remotes.mcpSettings.updateSystem(request)) },
         remove: async serverName => { unwrap(await remotes.mcpSettings.delete({ serverName })) },
+        thinkingData: {
+          snapshot: async () => unwrap(await remotes.thinkingData.snapshot()),
+          save: async request => { unwrap(await remotes.thinkingData.save(request)) },
+          testConnection: async request => unwrap(await remotes.thinkingData.testConnection(request)),
+          t: thinkingDataT,
+        },
       }),
     }, McpSettingsTab))
     inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
@@ -354,20 +363,8 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }),
     }, ImageSettingsTab))
   })
-  ctx.inject(['remote.thinkingData'], (inner: ClientContext) => {
-    const remote = (inner.remote as ClientContext['remote'] & { thinkingData: ThinkingDataRemote }).thinkingData
-    const t = inner.locale.bind(THINKINGDATA_NS)
-    inner.slots.inject('settings.section', () => inner.slots.register({
-      name: 'settings.section', id: 'thinkingdata', order: 35, label: () => t('nav'), locale: THINKINGDATA_NS,
-      inject: (): ThinkingDataSettingsInjected => ({
-        snapshot: async () => unwrap(await remote.snapshot()),
-        save: async request => { unwrap(await remote.save(request)) },
-        testConnection: async request => unwrap(await remote.testConnection(request)),
-      }),
-    }, ThinkingDataSettingsSection))
-  })
   ctx.inject(['uiConversation'], (inner: ClientContext) => {
-    const imageResultActions: ImageResultNodeInjected = {
+    const imageResultActions: ImageResultTailInjected = {
       loadImage: (sessionId, attachment) => inner.uiConversation.imageUrl(
         sessionId as Parameters<ClientContext['uiConversation']['imageUrl']>[0],
         attachment,
@@ -375,17 +372,22 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       controller: workbenchController,
     }
     inner.uiConversation.events.register(imageResultDefinition)
-    inner.slots.inject('conversation.chat.node', () => inner.slots.register({
-      name: 'conversation.chat.node',
-      key: 'image-results',
+    inner.slots.inject('conversation.chat.turnTail', () => inner.slots.register({
+      name: 'conversation.chat.turnTail',
+      priority: 10,
+      select: selectImageResultTail,
       locale: WORKBENCH_NS,
-      inject: (): ImageResultNodeInjected => imageResultActions,
-    }, ImageResultNode))
+      inject: (): ImageResultTailInjected => imageResultActions,
+    }, ImageResultTail))
     for (const key of ['image_generate', 'image_edit', 'image_task_continue', 'image_task_get', 'image_versions']) {
       inner.slots.inject('tool.call.toolview', () => inner.slots.register({
         name: 'tool.call.toolview',
         key,
         locale: WORKBENCH_NS,
+        inject: (sessionId): ImageToolViewInjected => ({
+          loadImage: attachment => inner.uiConversation.imageUrl(sessionId, attachment),
+          controller: workbenchController,
+        }),
       }, ImageToolView))
     }
   })

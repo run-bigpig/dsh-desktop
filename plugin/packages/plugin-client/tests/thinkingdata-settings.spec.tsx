@@ -12,11 +12,11 @@ afterEach(cleanup)
 function props(overrides: Partial<ThinkingDataSettingsProps> = {}): ThinkingDataSettingsProps {
   return {
     snapshot: vi.fn().mockResolvedValue({
-      enabled: false,
+      enabled: true,
       url: '',
       effectiveUrl: 'http://10.225.40.100:13360/mcp',
       tokenConfigured: false,
-      phase: 'disabled',
+      phase: 'missing-token',
     }),
     save: vi.fn().mockResolvedValue(undefined),
     testConnection: vi.fn().mockResolvedValue({ ok: true, status: 'ready' }),
@@ -40,10 +40,7 @@ describe('ThinkingData settings section', () => {
     const testConnection = vi.fn().mockResolvedValue({ ok: true, status: 'ready' })
     render(<ThinkingDataSettingsSection {...props({ save, testConnection })} />)
     await screen.findByRole('textbox', { name: thinkingDataZh.url })
-    const enabled = screen.getByRole('switch', { name: /启用数数服务/ })
-    expect(enabled.getAttribute('aria-checked')).toBe('false')
-    fireEvent.click(enabled)
-    expect(enabled.getAttribute('aria-checked')).toBe('true')
+    expect(screen.queryByRole('switch', { name: /启用数数服务/ })).toBeNull()
     fireEvent.change(screen.getByLabelText(thinkingDataZh.token), { target: { value: 'secret-token' } })
     fireEvent.click(screen.getByRole('button', { name: thinkingDataZh.test }))
     await waitFor(() => expect(testConnection).toHaveBeenCalledWith({ url: '', token: 'secret-token' }))

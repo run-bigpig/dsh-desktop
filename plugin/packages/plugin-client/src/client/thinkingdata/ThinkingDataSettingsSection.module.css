@@ -8,7 +8,6 @@
 }
 
 .header,
-.switchRow,
 .actions,
 .failure {
   display: flex;
@@ -16,7 +15,6 @@
 }
 
 .header,
-.switchRow,
 .actions {
   justify-content: space-between;
 }
@@ -49,7 +47,6 @@
 
 .status,
 .field small,
-.switchRow small,
 .notice {
   margin: 0;
   color: var(--dsw-alias-label-tertiary);
@@ -91,46 +88,6 @@
   border-radius: 12px;
   padding: 14px 16px;
   background: var(--dsw-alias-bg-module-platform);
-}
-
-.switchRow { gap: 20px; }
-.switchRow > span { display: flex; flex-direction: column; gap: 2px; }
-.switchRow strong { font-size: 14px; line-height: 22px; font-weight: 500; }
-.divider { height: 1px; background: var(--dsw-alias-border-l2); }
-
-.switch {
-  box-sizing: border-box;
-  position: relative;
-  flex: 0 0 auto;
-  width: 36px;
-  height: 20px;
-  padding: 2px;
-  border: 0;
-  border-radius: 10px;
-  background: var(--dsw-alias-border-l3);
-  cursor: pointer;
-}
-
-.switchOn {
-  background: var(--dsw-alias-brand-primary);
-}
-
-.switch:focus-visible {
-  outline: 2px solid var(--dsw-alias-brand-primary);
-  outline-offset: 2px;
-}
-
-.switchThumb {
-  display: block;
-  width: 16px;
-  height: 16px;
-  border-radius: 50%;
-  background: var(--dsw-alias-label-primary-foreground);
-  transition: transform 120ms ease;
-}
-
-.switchOn .switchThumb {
-  transform: translateX(16px);
 }
 
 .field { display: flex; flex-direction: column; gap: 6px; }
