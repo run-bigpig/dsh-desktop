@@ -84,24 +84,6 @@ export const mcpEn = {
   saveFailed: 'Save failed.', removeFailed: 'Delete failed.',
 } satisfies Record<McpLocaleKey, string>
 
-export const openPencilZh = {
-  tab: 'OpenPencil', title: 'OpenPencil Companion', description: '启动随 StarWeave 附带的 OpenPencil，并将其本机 MCP 服务连接到 Harness。',
-  loading: '正在读取 OpenPencil 状态…', retry: '重试', refresh: '刷新', bundled: '已附带', missing: '程序不可用',
-  running: '运行中', stopped: '未运行', endpoint: '本机端点', tools: '个工具', phaseDisabled: 'MCP 未启用',
-  phaseAppStopped: '等待 OpenPencil 启动', phaseConnecting: 'MCP 连接中', phaseActive: 'MCP 已连接', phaseFailed: 'MCP 连接失败',
-  launch: '启动 OpenPencil', connect: '连接 MCP', disconnect: '断开 MCP', operationFailed: 'OpenPencil 操作失败。',
-} satisfies Record<string, string>
-
-export type OpenPencilLocaleKey = keyof typeof openPencilZh
-
-export const openPencilEn = {
-  tab: 'OpenPencil', title: 'OpenPencil Companion', description: 'Launch the OpenPencil bundled with StarWeave and connect its local MCP service to Harness.',
-  loading: 'Reading OpenPencil status…', retry: 'Retry', refresh: 'Refresh', bundled: 'Bundled', missing: 'Executable unavailable',
-  running: 'Running', stopped: 'Not running', endpoint: 'Local endpoint', tools: 'tools', phaseDisabled: 'MCP disabled',
-  phaseAppStopped: 'Waiting for OpenPencil', phaseConnecting: 'MCP connecting', phaseActive: 'MCP connected', phaseFailed: 'MCP connection failed',
-  launch: 'Launch OpenPencil', connect: 'Connect MCP', disconnect: 'Disconnect MCP', operationFailed: 'The OpenPencil operation failed.',
-} satisfies Record<OpenPencilLocaleKey, string>
-
 export const thinkingDataZh = {
   nav: '数数配置', title: '数数配置', tagline: '连接内部数数分析服务，为对话提供数据查询能力。',
   loading: '正在读取数数配置…', loadFailed: '暂时无法读取数数配置。', retry: '重试',

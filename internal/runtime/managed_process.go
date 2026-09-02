@@ -17,6 +17,10 @@ type ManagedProcess struct {
 }
 
 func (p *ManagedProcess) Start(executable string, args []string, dir string, log io.Writer) (int, error) {
+	return p.StartWithEnv(executable, args, dir, nil, log)
+}
+
+func (p *ManagedProcess) StartWithEnv(executable string, args []string, dir string, environment []string, log io.Writer) (int, error) {
 	p.mu.Lock()
 	defer p.mu.Unlock()
 	if p.cmd != nil {
@@ -24,7 +28,7 @@ func (p *ManagedProcess) Start(executable string, args []string, dir string, log
 	}
 	cmd := exec.Command(executable, args...)
 	cmd.Dir = dir
-	cmd.Env = os.Environ()
+	cmd.Env = append(os.Environ(), environment...)
 	if log != nil {
 		cmd.Stdout = log
 		cmd.Stderr = log

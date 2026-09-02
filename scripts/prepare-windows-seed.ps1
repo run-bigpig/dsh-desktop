@@ -66,7 +66,8 @@ function Test-VerifiedSeedLayout([string]$Root) {
     "resources/toolchain/pnpm/dist/pnpm.mjs",
     "resources/toolchain/pnpm/dist/pnpmrc",
     "resources/toolchain/pnpm/dist/worker.js",
-    "resources/openpencil/openpencil-desktop.exe",
+    "resources/openpencil/StarWeaveOpenPencilCompanion.exe",
+    "resources/openpencil/openpencil-mcp-http.mjs",
     "resources/openpencil/openpencil.lock.json",
     "resources/openpencil/LICENSE.txt",
     ("resources/seed/source/" + $seedLock.commit + "/" + $seedLock.cliEntry),
@@ -84,9 +85,11 @@ function Test-VerifiedSeedLayout([string]$Root) {
       $_.platform -eq "windows" -and $_.architecture -eq "x64"
     } | Select-Object -First 1
     if (-not $openPencilArtifact -or $stagedOpenPencilLock.commit -ne $openPencilLock.commit) { return $false }
-    $executableHash = Get-SHA256File (Join-Path $Root "resources/openpencil/openpencil-desktop.exe")
+    $executableHash = Get-SHA256File (Join-Path $Root "resources/openpencil/StarWeaveOpenPencilCompanion.exe")
+    $mcpBundleHash = Get-SHA256File (Join-Path $Root "resources/openpencil/openpencil-mcp-http.mjs")
     $licenseHash = Get-SHA256File (Join-Path $Root "resources/openpencil/LICENSE.txt")
     if ($executableHash -ne $openPencilArtifact.executableSha256 -or $manifest.openPencilExecutableSHA256 -ne $executableHash) { return $false }
+    if ($mcpBundleHash -ne $openPencilArtifact.mcpBundleSha256 -or $manifest.openPencilMCPBundleSHA256 -ne $mcpBundleHash) { return $false }
     if ($licenseHash -ne $openPencilLicenseSHA256 -or $manifest.openPencilLicenseSHA256 -ne $licenseHash) { return $false }
   } catch {
     return $false
@@ -194,17 +197,26 @@ $openPencilExtract = Join-Path $buildRoot "openpencil-extract"
 Remove-DirectoryTree $openPencilExtract
 Expand-Archive -Force $openPencilArchive $openPencilExtract
 $openPencilFiles = @(Get-ChildItem -LiteralPath $openPencilExtract -File -Recurse)
-if ($openPencilFiles.Count -ne 1 -or $openPencilFiles[0].Name -cne $openPencilArtifact.executable) {
-  throw "Locked OpenPencil archive must contain only $($openPencilArtifact.executable)"
+$expectedOpenPencilFiles = @($openPencilArtifact.executable, $openPencilArtifact.mcpBundle)
+$actualOpenPencilFiles = @($openPencilFiles | ForEach-Object { $_.Name } | Sort-Object)
+if ($openPencilFiles.Count -ne 2 -or (Compare-Object ($expectedOpenPencilFiles | Sort-Object) $actualOpenPencilFiles)) {
+  throw "Locked OpenPencil archive must contain only $($expectedOpenPencilFiles -join ', ')"
 }
 Remove-DirectoryTree $openPencilTarget
 New-Item -ItemType Directory -Force $openPencilTarget | Out-Null
-Copy-Item -Force $openPencilFiles[0].FullName (Join-Path $openPencilTarget "openpencil-desktop.exe")
+$openPencilExecutable = $openPencilFiles | Where-Object { $_.Name -ceq $openPencilArtifact.executable } | Select-Object -First 1
+$openPencilMCPBundle = $openPencilFiles | Where-Object { $_.Name -ceq $openPencilArtifact.mcpBundle } | Select-Object -First 1
+Copy-Item -Force $openPencilExecutable.FullName (Join-Path $openPencilTarget "StarWeaveOpenPencilCompanion.exe")
+Copy-Item -Force $openPencilMCPBundle.FullName (Join-Path $openPencilTarget "openpencil-mcp-http.mjs")
 Copy-Item -Force (Join-Path $repoRoot "release/openpencil.lock.json") (Join-Path $openPencilTarget "openpencil.lock.json")
 Copy-Item -Force $openPencilLicense (Join-Path $openPencilTarget "LICENSE.txt")
-$openPencilExecutableSHA256 = Get-SHA256File (Join-Path $openPencilTarget "openpencil-desktop.exe")
+$openPencilExecutableSHA256 = Get-SHA256File (Join-Path $openPencilTarget "StarWeaveOpenPencilCompanion.exe")
 if ($openPencilExecutableSHA256 -ne $openPencilArtifact.executableSha256) {
   throw "SHA-256 mismatch for extracted OpenPencil executable: expected $($openPencilArtifact.executableSha256), got $openPencilExecutableSHA256"
+}
+$openPencilMCPBundleSHA256 = Get-SHA256File (Join-Path $openPencilTarget "openpencil-mcp-http.mjs")
+if ($openPencilMCPBundleSHA256 -ne $openPencilArtifact.mcpBundleSha256) {
+  throw "SHA-256 mismatch for extracted OpenPencil MCP bundle: expected $($openPencilArtifact.mcpBundleSha256), got $openPencilMCPBundleSHA256"
 }
 
 $node = Join-Path $tools "node/node.exe"
@@ -566,6 +578,7 @@ Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
   openPencilCommit = $openPencilLock.commit
   openPencilArchiveSHA256 = $openPencilArtifact.sha256
   openPencilExecutableSHA256 = $openPencilExecutableSHA256
+  openPencilMCPBundleSHA256 = $openPencilMCPBundleSHA256
   openPencilLicenseSHA256 = $openPencilLicenseSHA256
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })

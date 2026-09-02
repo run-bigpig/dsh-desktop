@@ -1,87 +1,55 @@
 ---
 name: openpencil-design
-description: 使用 StarWeave 内置 OpenPencil Companion 的实时 MCP 工具创建、读取、修改并验证 .op 设计。
-whenToUse: 当用户要求用 OpenPencil 新建设计、修改当前画布、检查布局或导出设计时使用；普通代码或网页实现任务不要使用。
+description: 使用 StarWeave 内置 OpenPencil Companion 的实时 MCP 工具创建、读取、修改、验证并保存 .fig 或 .pen 设计。
+whenToUse: 当用户要求使用 OpenPencil 创建或修改设计、查看画布、检查布局、导出或保存设计文件时使用；普通代码实现任务不要使用。
 ---
 
 # OpenPencil 设计协作
 
-## 目标
+## 运行方式
 
-通过 StarWeave 内置且已连接的 OpenPencil MCP 操作当前实时画布。形成“理解当前状态 → 最小事务修改 → 结构与视觉验证 → 必要时保存”的闭环。
+OpenPencil Companion 和 MCP Server 由 StarWeave 在后台启动、连接并关闭，不属于通用 MCP 设置。不要添加第二个 MCP 配置，不要读取或输出 discovery 文件、认证 Token 或请求头。
 
-工具在 Harness 中使用 `mcp__openpencil-mcp__` 前缀。始终以当前会话实际公开的工具 Schema 和服务端错误为准，不猜测参数，也不尝试把 OpenPencil 添加到通用 MCP 设置。
+画布窗口默认隐藏，MCP 仍可在后台操作：
 
-## 适用范围
+- 需要用户查看或交互画布时调用 `openpencil_show`；
+- 用户要求收起画布时调用 `openpencil_hide`；
+- 隐藏窗口不会断开 MCP，也不会停止 Companion；
+- 不要使用终端启动或结束 OpenPencil 进程。
 
-- 新建或完善 OpenPencil UI、页面、组件、幻灯片和画布内容；
-- 修改用户当前选中的节点或明确指定的节点；
-- 检查布局、设计一致性、视觉结果或 lint 问题；
-- 用户明确要求时保存、导出或读取 `.op` 文档。
-
-如果 OpenPencil 工具当前不可用，说明需要先在 StarWeave 的 OpenPencil 设置中启动并连接 Companion。不要索取、显示或持久化 MCP Token，也不要启动第二个 MCP 配置。
+OpenPencil MCP 工具在 Harness 中使用 `mcp__openpencil-mcp__` 前缀。始终以当前会话实际公开的工具 Schema 为准。
 
 ## 最短工作流
 
-1. 调用 `mcp__openpencil-mcp__open_document`，省略 `filePath` 以连接当前实时画布。只有用户明确指定 `.op` 文件时才传路径。
-2. 根据任务读取最小上下文：
-   - 修改当前选择：`get_selection`；
-   - 理解顶层结构：`batch_get` 或 `snapshot_layout`；
-   - 精确读取已知节点：`batch_get`、`read_nodes` 或 `get_node`；
-   - 新增独立画板前需要避让现有内容：`get_canvas_bounds` 或 `find_empty_space`。
-3. 新建设计优先使用 `mcp__openpencil-mcp__batch_design`；大页面按 Header、Hero、内容区、Footer 等逻辑区段拆分，每次不超过工具 Schema 的操作上限。
-4. 修改既有设计时只更新相关子树。先获取真实 node id，再用 `batch_design.operations` 中的 `U/C/R/M/D` 或专用节点工具执行最小变更。
-5. 修改后至少做一次结构验证；视觉结果重要时再调用 `get_screenshot`。完整交付前调用 `lint_document`，只修复与本次需求相关且证据明确的问题。
-6. 只有用户明确要求写入某个文件时才调用 `save_document`。不得自行覆盖用户未指定的文件。
+1. 使用 `list_documents` 确认当前标签页。新建设计用 `new_document`，打开文件用 `open_file`；支持 `.fig` 和 `.pen`。
+2. 读取最小必要上下文：当前选择用 `get_selection`，页面结构用 `get_page_tree`，已知节点用 `get_node`，搜索节点用 `find_nodes` 或 `query_nodes`。
+3. 创建复杂界面优先使用 `render` 提交一段有明确父节点、尺寸和布局的 JSX；简单图形可使用 `create_shape`。
+4. 小范围修改使用 `update_node`、`set_text`、`set_fill`、`set_stroke`、`set_layout` 等专用工具。多个已知节点的简单属性修改可使用 `batch_update`。
+5. 修改后重新读取目标节点或调用 `describe`。布局风险较高时使用 `analyze_overlaps`、`analyze_spacing` 等分析工具；视觉确认可使用 `export_image`。
+6. 只有用户要求保存或已有文件路径需要持久化时调用 `save_file`。不要覆盖用户未指定的文件。
 
-## 新建设计
+## 创建规则
 
-先保留用户明确给出的平台、尺寸、语言、品牌和风格。缺失但不会实质改变结果的细节采用合理默认值；平台或画布尺寸会显著改变设计时，只问一个简短问题。
+- `render` 的 `jsx` 参数只包含 JSX 文本，不要添加 Markdown 代码围栏。
+- 顶层节点必须有明确尺寸；容器应明确布局方向、间距、padding 和对齐方式。
+- 自动布局容器的子节点避免同时依赖绝对坐标。
+- 重复卡片或列表项使用数据映射生成，避免大量近似调用。
+- `render` 返回的节点 id 才能用于后续修改，不要根据名称或文案猜 id。
+- 使用当前工具 Schema 中实际支持的 JSX 属性；失败后根据准确错误修改，不要盲目重复。
 
-需要详细设计知识时，按需调用 `get_design_prompt` 的相关 section，例如 `layout`、`style`、`elements` 或 `design-md`，不要无条件读取全部内容。
+## 修改规则
 
-创建重复卡片、表格行或列表时优先使用 `batch_design.script`：
+- 优先尊重当前选择；选择为空时再搜索节点。
+- 修改前读取目标节点以及必要的父级或同级上下文。
+- 保留未被请求改变的结构、组件关系、变量绑定、页面和文件路径。
+- 删除、整页替换、批量移动和覆盖保存属于高影响操作；范围不清楚时先确认。
+- `batch_update` 只支持其 Schema 列出的属性，并可能返回逐项错误；不要把它当作任意事务脚本。
 
-- 脚本是纯 JavaScript，不带 Markdown 代码围栏；
-- 仅使用全局 `I(parent, node)` 或当前 Schema 明确允许的 `K(...)`；
-- `I` 返回不透明 node id 字符串，只能作为后续插入的 parent，不得给返回值赋 `x`、`y` 等属性；
-- 用数据数组和循环生成重复结构，避免复制大量近似调用；
-- 脚本模式只负责插入。更新、移动、删除、复制或替换使用 `operations`；
-- 布局容器内的子节点不要设置 `x/y`，让 auto-layout 负责定位。
+## 验证与展示
 
-`batch_design` 是事务性的：任何一条操作失败时整批不生效。根据 `errors` 指出的准确行修正后重发完整批次；不要在失败后假设前半批已经写入。
+- 文案或单属性修改：重新读取目标节点。
+- 布局修改：读取目标子树，并检查重叠、间距或边界。
+- 新页面或复杂组件：结构检查后导出预览；需要用户确认时调用 `openpencil_show`。
+- 截图或导出结果用于视觉验证，不能替代结构读取。
 
-## 修改既有设计
-
-- 优先尊重用户当前选择；选择为空时再按名称、类型或层级定位。
-- 不根据可见文案猜 node id。使用 `get_selection`、`batch_get` 或 `read_nodes` 获取真实 id。
-- 更新前读取目标节点及必要的父级/同级上下文，避免破坏布局策略。
-- 保留未被请求改变的内容、组件关系、变量引用、主题、交互和页面结构。
-- 小改动使用 `U` 或专用 setter；只有节点类型或整体结构确需替换时使用 `R`。
-- 删除、整页替换、大范围变量替换和覆盖保存属于高影响操作；目标或范围不明确时先确认。
-- 失败后不要盲目重复同一调用。按当前工具 Schema 和服务端错误只修正失败字段。
-
-## 节点与样式基础
-
-- 文本内容字段是 `content`，不是 `text`。
-- 图标节点优先使用 `type:"icon_font"` 与 `iconFontName`。在 MCP 场景不要依赖需要额外解析的空 path 图标。
-- `fill` 使用数组；`stroke` 是带 `fill` 数组的对象。JSON 必须使用双引号、完整键值且无尾逗号。
-- 容器明确设置 `layout`、`gap`、`padding`、对齐方式和宽高策略。
-- 同一横向卡片组使用一致的宽度策略；避免在 `fit_content` 父级内使用会形成循环依赖的 `fill_container`。
-- 使用语义 role 表达意图，例如 `navbar`、`button`、`card`、`hero`、`footer`、`heading`、`body-text`。
-- 可复用颜色、间距和字体优先引用现有变量；不要在一次局部修改中顺手重建设计系统。
-
-更完整的工具选择、批处理和验证契约见 [references/mcp-workflows.md](references/mcp-workflows.md)。
-
-## 验证与收尾
-
-验证强度与改动风险匹配：
-
-- 文案或单属性修改：重新读取目标节点；
-- 布局修改：读取目标子树并检查 `snapshot_layout`；
-- 新页面、复杂组件或视觉调整：结构读取 + `get_screenshot`；
-- 完整设计交付：以上检查后再运行 `lint_document`。
-
-截图用于验证，不替代结构读取。若截图与结构结果冲突，先定位目标节点和布局数据，再做一次有界修正。不要进入无止境的“截图—重做”循环；达到用户需求且无明确阻断问题时停止。
-
-最终回复简要说明完成了什么、修改了哪个页面/区域、是否保存到文件，以及仍需用户决定的事项。不要暴露 MCP Token、内部认证头或无关调试数据。
+最终回复简要说明完成内容、影响的页面或节点、是否保存文件，以及画布当前是否已显示。更多工具选择见 [references/mcp-workflows.md](references/mcp-workflows.md)。

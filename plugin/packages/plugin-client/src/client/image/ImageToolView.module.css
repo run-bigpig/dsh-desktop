@@ -195,10 +195,6 @@
   line-height: 1.35;
 }
 
-.resultImages {
-  padding: 2px 12px 13px 48px;
-}
-
 @keyframes image-develop {
   0% { transform: translateY(0); opacity: 0; }
   12% { opacity: .9; }
@@ -241,7 +237,6 @@
 @media (max-width: 640px) {
   .card header { flex-wrap: wrap; }
   .generating { grid-template-columns: 60px minmax(0, 1fr); padding-left: 10px; }
-  .resultImages { padding-left: 10px; }
   .developingFrame { width: 60px; height: 52px; }
   .generatingCopy small { display: none; }
 }

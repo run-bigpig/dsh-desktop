@@ -25,7 +25,6 @@ import type {
   ImageModelSettingsSnapshot,
   MarketplaceOperation,
   MarketplaceSnapshot,
-  OpenPencilSnapshot,
   ThinkingDataSaveRequest,
   ThinkingDataSnapshot,
   ThinkingDataTestRequest,
@@ -49,7 +48,6 @@ import {
   type DesktopWindowControlsInjected,
 } from './desktop-window/DesktopWindowControls.tsx'
 import { McpSettingsTab, type McpSettingsTabInjected } from './mcp/McpSettingsTab.tsx'
-import { OpenPencilSettingsTab, type OpenPencilSettingsTabInjected } from './openpencil/OpenPencilSettingsTab.tsx'
 import {
   ThinkingDataSettingsSection, type ThinkingDataSettingsInjected,
 } from './thinkingdata/ThinkingDataSettingsSection.tsx'
@@ -69,7 +67,12 @@ import {
   type DocumentMessageInjected,
 } from './documents/DocumentMessageView.tsx'
 import { ChartPresentationCard } from './chart-presentation/ChartPresentationCard.tsx'
-import { ImageToolView, type ImageToolViewInjected } from './image/ImageToolView.tsx'
+import { ImageToolView } from './image/ImageToolView.tsx'
+import {
+  ImageResultNode,
+  type ImageResultNodeInjected,
+  imageResultDefinition,
+} from './image/ImageResultNode.tsx'
 import {
   ImageStudioInputBridge,
   type ImageStudioInputBridgeInjected,
@@ -93,11 +96,11 @@ import {
   SKIN_SETTINGS_NAMESPACE, SkinController, type SkinPreset, type SkinSettings,
 } from './skin/skin-controller.ts'
 import {
-  desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, openPencilEn, openPencilZh, skinEn, skinZh,
+  desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, skinEn, skinZh,
   thinkingDataEn, thinkingDataZh,
   chartPresentationEn, chartPresentationZh,
   visionEn, visionZh, workbenchEn, workbenchZh, zh,
-  type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey, type OpenPencilLocaleKey,
+  type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
   type ChartPresentationLocaleKey, type SkinLocaleKey, type ThinkingDataLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
@@ -106,7 +109,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'settings.marketplace': MarketplaceLocaleKey
     'settings.mcp': McpLocaleKey
-    'settings.openpencil': OpenPencilLocaleKey
     'settings.thinkingdata': ThinkingDataLocaleKey
     'settings.vision': VisionLocaleKey
     'settings.image': ImageLocaleKey
@@ -122,7 +124,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.marketplace'
 export const DESKTOP_NS = 'desktop.integration'
 export const MCP_NS = 'settings.mcp'
-export const OPENPENCIL_NS = 'settings.openpencil'
 export const THINKINGDATA_NS = 'settings.thinkingdata'
 export const VISION_NS = 'settings.vision'
 export const IMAGE_NS = 'settings.image'
@@ -154,13 +155,6 @@ interface McpSettingsRemote {
   list: () => Promise<RemoteResult<McpSettingsSnapshot>>
   upsert: (request: McpServerUpsertRequest) => Promise<RemoteResult<{ ok: true }>>
   delete: (request: { serverName: string }) => Promise<RemoteResult<{ ok: true }>>
-}
-
-interface OpenPencilRemote {
-  snapshot: () => Promise<RemoteResult<OpenPencilSnapshot>>
-  launch: () => Promise<RemoteResult<OpenPencilSnapshot>>
-  connect: () => Promise<RemoteResult<OpenPencilSnapshot>>
-  disconnect: () => Promise<RemoteResult<OpenPencilSnapshot>>
 }
 
 interface ThinkingDataRemote {
@@ -246,7 +240,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-marketplace: dictionaries')
   ctx.effect(() => ctx.locale.register(DESKTOP_NS, { zh: desktopZh, en: desktopEn }), 'desktop-integration: dictionaries')
   ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), 'desktop-mcp: dictionaries')
-  ctx.effect(() => ctx.locale.register(OPENPENCIL_NS, { zh: openPencilZh, en: openPencilEn }), 'desktop-openpencil: dictionaries')
   ctx.effect(() => ctx.locale.register(THINKINGDATA_NS, { zh: thinkingDataZh, en: thinkingDataEn }), 'thinkingdata: dictionaries')
   ctx.effect(() => ctx.locale.register(VISION_NS, { zh: visionZh, en: visionEn }), 'desktop-vision: dictionaries')
   ctx.effect(() => ctx.locale.register(IMAGE_NS, { zh: imageZh, en: imageEn }), 'desktop-image-workbench: dictionaries')
@@ -361,19 +354,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }),
     }, ImageSettingsTab))
   })
-  ctx.inject(['remote.openPencil'], (inner: ClientContext) => {
-    const remote = (inner.remote as ClientContext['remote'] & { openPencil: OpenPencilRemote }).openPencil
-    const t = inner.locale.bind(OPENPENCIL_NS)
-    inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
-      name: 'settings.plugins.tab', id: 'openpencil', order: 60, label: () => t('tab'), locale: OPENPENCIL_NS,
-      inject: (): OpenPencilSettingsTabInjected => ({
-        snapshot: async () => unwrap(await remote.snapshot()),
-        launch: async () => unwrap(await remote.launch()),
-        connect: async () => unwrap(await remote.connect()),
-        disconnect: async () => unwrap(await remote.disconnect()),
-      }),
-    }, OpenPencilSettingsTab))
-  })
   ctx.inject(['remote.thinkingData'], (inner: ClientContext) => {
     const remote = (inner.remote as ClientContext['remote'] & { thinkingData: ThinkingDataRemote }).thinkingData
     const t = inner.locale.bind(THINKINGDATA_NS)
@@ -387,19 +367,25 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     }, ThinkingDataSettingsSection))
   })
   ctx.inject(['uiConversation'], (inner: ClientContext) => {
-    const imageToolActions: ImageToolViewInjected = {
+    const imageResultActions: ImageResultNodeInjected = {
       loadImage: (sessionId, attachment) => inner.uiConversation.imageUrl(
         sessionId as Parameters<ClientContext['uiConversation']['imageUrl']>[0],
         attachment,
       ),
       controller: workbenchController,
     }
+    inner.uiConversation.events.register(imageResultDefinition)
+    inner.slots.inject('conversation.chat.node', () => inner.slots.register({
+      name: 'conversation.chat.node',
+      key: 'image-results',
+      locale: WORKBENCH_NS,
+      inject: (): ImageResultNodeInjected => imageResultActions,
+    }, ImageResultNode))
     for (const key of ['image_generate', 'image_edit', 'image_task_continue', 'image_task_get', 'image_versions']) {
       inner.slots.inject('tool.call.toolview', () => inner.slots.register({
         name: 'tool.call.toolview',
         key,
         locale: WORKBENCH_NS,
-        inject: (): ImageToolViewInjected => imageToolActions,
       }, ImageToolView))
     }
   })

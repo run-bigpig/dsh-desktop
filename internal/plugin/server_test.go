@@ -18,17 +18,20 @@ type fakeDesktopController struct {
 }
 
 type fakeOpenPencilController struct {
-	status   openpencil.Status
-	launches int
+	status openpencil.Status
+	shows  int
+	hides  int
 }
 
 func (f *fakeOpenPencilController) Status(context.Context) (openpencil.Status, error) {
 	return f.status, nil
 }
-func (f *fakeOpenPencilController) Launch(context.Context) (openpencil.Status, error) {
-	f.launches++
-	f.status.Running = true
-	f.status.Owned = true
+func (f *fakeOpenPencilController) Show(context.Context) (openpencil.Status, error) {
+	f.shows++
+	return f.status, nil
+}
+func (f *fakeOpenPencilController) Hide(context.Context) (openpencil.Status, error) {
+	f.hides++
 	return f.status, nil
 }
 
@@ -164,11 +167,19 @@ func TestBridgeExposesOpenPencilOnlyToAuthenticatedHost(t *testing.T) {
 		t.Fatalf("status response = %d %s", response.Code, response.Body.String())
 	}
 
-	request = httptest.NewRequest(http.MethodPost, "/v1/openpencil/launch", nil)
+	request = httptest.NewRequest(http.MethodPost, "/v1/openpencil/show", nil)
 	request.Header.Set("Authorization", "Bearer secret")
 	response = httptest.NewRecorder()
 	bridge.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || controller.launches != 1 || !strings.Contains(response.Body.String(), `"owned":true`) {
-		t.Fatalf("launch response = %d %s; calls = %d", response.Code, response.Body.String(), controller.launches)
+	if response.Code != http.StatusOK || controller.shows != 1 {
+		t.Fatalf("show response = %d %s; calls = %d", response.Code, response.Body.String(), controller.shows)
+	}
+
+	request = httptest.NewRequest(http.MethodPost, "/v1/openpencil/hide", nil)
+	request.Header.Set("Authorization", "Bearer secret")
+	response = httptest.NewRecorder()
+	bridge.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || controller.hides != 1 {
+		t.Fatalf("hide response = %d %s; calls = %d", response.Code, response.Body.String(), controller.hides)
 	}
 }

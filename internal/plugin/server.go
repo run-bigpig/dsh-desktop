@@ -57,7 +57,8 @@ type DesktopController interface {
 
 type OpenPencilController interface {
 	Status(context.Context) (openpencil.Status, error)
-	Launch(context.Context) (openpencil.Status, error)
+	Show(context.Context) (openpencil.Status, error)
+	Hide(context.Context) (openpencil.Status, error)
 }
 
 func StartBridge(manager *Manager) (*Bridge, error) {
@@ -144,13 +145,25 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, status)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/openpencil/launch":
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/openpencil/show":
 		controller := b.openPencilController()
 		if controller == nil {
 			writeError(w, http.StatusServiceUnavailable, "OpenPencil controller is unavailable")
 			return
 		}
-		status, err := controller.Launch(r.Context())
+		status, err := controller.Show(r.Context())
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, status)
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/openpencil/hide":
+		controller := b.openPencilController()
+		if controller == nil {
+			writeError(w, http.StatusServiceUnavailable, "OpenPencil controller is unavailable")
+			return
+		}
+		status, err := controller.Hide(r.Context())
 		if err != nil {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return

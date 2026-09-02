@@ -58,14 +58,13 @@ export interface DesktopWindowState {
   fullscreen: boolean
 }
 
-export type OpenPencilPhase = 'disabled' | 'app-stopped' | 'connecting' | 'active' | 'failed'
+export type OpenPencilPhase = 'app-stopped' | 'connecting' | 'active' | 'failed'
 
 export interface OpenPencilSnapshot {
   readonly bundled: boolean
   readonly running: boolean
   readonly owned: boolean
   readonly port: number | null
-  readonly enabled: boolean
   readonly phase: OpenPencilPhase
   readonly mcpConnected: boolean
   readonly toolCount: number

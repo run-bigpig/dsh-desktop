@@ -1,21 +1,13 @@
-import { useCallback, useMemo, useState, type ReactNode } from 'react'
+import { useMemo, useState, type ReactNode } from 'react'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import { IconChevronDownOutline14 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { ToolCallViewProps } from '@deepseek-ai/dsh-client-ui-tool/client'
-import type { InjectFace, PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
-import { MessageImageTiles } from './MessageImageGallery.tsx'
-import type { WorkbenchController } from '../workbench/SessionWorkbench.tsx'
+import type { PropsLocale } from '@deepseek-ai/dsh-client-ui-slots'
 import css from './ImageToolView.module.css'
-
-export interface ImageToolViewInjected {
-  readonly loadImage: (sessionId: string, attachment: ImageAttachmentRef) => Promise<string>
-  readonly controller: WorkbenchController
-}
 
 export type ImageToolViewProps =
   ToolCallViewProps
   & PropsLocale<'desktop.workbench'>
-  & InjectFace<ImageToolViewInjected>
 
 interface ToolModel {
   readonly phase: 'running' | 'ready' | 'error'
@@ -29,15 +21,10 @@ interface ToolModel {
 }
 
 export function ImageToolView({
-  toolName, block, inspect, sessionId, loadImage, controller, t,
+  toolName, block, inspect, t,
 }: ImageToolViewProps): ReactNode {
   const [expanded, setExpanded] = useState(false)
   const model = useMemo(() => toolModel(toolName, block, t), [block, t, toolName])
-  const images = useMemo(() => resultImages(block), [block])
-  const imageLoader = useCallback(
-    (attachment: ImageAttachmentRef) => loadImage(String(sessionId), attachment),
-    [loadImage, sessionId],
-  )
   const visualLoading = model.phase === 'running' && isImageRenderTool(toolName)
 
   return (
@@ -72,18 +59,6 @@ export function ImageToolView({
           </div>
         </div>
       )}
-      {model.phase === 'ready' && images.length > 0 && (
-        <div className={css.resultImages}>
-          <MessageImageTiles
-            images={images}
-            loadImage={imageLoader}
-            align="start"
-            sessionId={String(sessionId)}
-            controller={controller}
-            t={t}
-          />
-        </div>
-      )}
       {expanded && (
         <div className={css.body}>
           {model.error !== undefined && <p className={css.error}>{model.error}</p>}
@@ -100,11 +75,6 @@ export function ImageToolView({
       )}
     </section>
   )
-}
-
-function resultImages(block: ImageToolViewProps['block']): { attachment: ImageAttachmentRef }[] {
-  if (!('kind' in block)) return []
-  return block.content.flatMap(content => content.type === 'image' ? [{ attachment: content.attachment }] : [])
 }
 
 function isImageRenderTool(toolName: string): boolean {

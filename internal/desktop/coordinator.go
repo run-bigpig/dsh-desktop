@@ -74,19 +74,17 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 		store.SetRuntimeInfo(state.Failed, err.Error(), "")
 	}
 	c := &Coordinator{paths: paths, cfg: cfg, store: store, backups: backup.New(paths), tools: tools, log: logWriter, window: &windowController{}}
-	discoveryPath, err := openpencil.DefaultDiscoveryPath()
-	if err != nil {
-		return nil, fmt.Errorf("resolve OpenPencil discovery path: %w", err)
-	}
 	executable, err := os.Executable()
 	if err != nil {
 		return nil, fmt.Errorf("resolve desktop executable: %w", err)
 	}
 	c.openPencil = openpencil.New(openpencil.Options{
-		BinaryPath:    filepath.Join(filepath.Dir(executable), "resources", "openpencil", "openpencil-desktop.exe"),
-		DiscoveryPath: discoveryPath,
-		LaunchArgs:    []string{"--live-mcp=0"},
-		Log:           logWriter,
+		BinaryPath:       filepath.Join(filepath.Dir(executable), "resources", "openpencil", "StarWeaveOpenPencilCompanion.exe"),
+		NodePath:         tools.Node,
+		MCPPath:          filepath.Join(filepath.Dir(executable), "resources", "openpencil", "openpencil-mcp-http.mjs"),
+		DiscoveryPath:    filepath.Join(paths.Root, "openpencil", "mcp.json"),
+		WorkingDirectory: cfg.WorkingDirectory,
+		Log:              logWriter,
 	})
 	c.appUpdates = selfupdate.New(paths, store, buildinfo.Version, buildinfo.ReleaseAPIURL, nil)
 	catalogKey, err := base64.StdEncoding.DecodeString(buildinfo.MarketplaceCatalogPublicKey)
@@ -280,6 +278,9 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		return nil
 	}
 	c.mu.Unlock()
+	if _, err := c.openPencil.Launch(ctx); err != nil && c.log != nil {
+		_, _ = fmt.Fprintln(c.log, "start bundled OpenPencil Companion:", err)
+	}
 	activation, switchedRuntime, err := c.activateBundledRuntime()
 	if err != nil {
 		c.store.SetRuntimeInfo(state.Failed, err.Error(), "")

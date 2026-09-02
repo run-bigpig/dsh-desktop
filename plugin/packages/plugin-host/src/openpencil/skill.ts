@@ -5,8 +5,8 @@ import type { Context } from '@deepseek-ai/cordis'
 import type {} from '@deepseek-ai/dsh-skill'
 
 const SKILL_NAME = 'openpencil-design'
-const SKILL_DESCRIPTION = '使用 StarWeave 内置 OpenPencil Companion 的实时 MCP 工具创建、读取、修改并验证 .op 设计。'
-const SKILL_WHEN_TO_USE = '当用户要求用 OpenPencil 新建设计、修改当前画布、检查布局或导出设计时使用；普通代码或网页实现任务不要使用。'
+const SKILL_DESCRIPTION = '使用 StarWeave 内置 OpenPencil Companion 的实时 MCP 工具创建、读取、修改、验证并保存 .fig 或 .pen 设计。'
+const SKILL_WHEN_TO_USE = '当用户要求使用 OpenPencil 创建或修改设计、查看画布、检查布局、导出或保存设计文件时使用；普通代码实现任务不要使用。'
 const SKILL_DIRECTORIES = [
   fileURLToPath(new URL('../skills/openpencil-design/', import.meta.url)),
   fileURLToPath(new URL('../../skills/openpencil-design/', import.meta.url)),

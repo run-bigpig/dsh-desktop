@@ -1,17 +1,19 @@
 {
-  "schemaVersion": 1,
-  "repository": "https://github.com/ZSeven-W/openpencil.git",
-  "version": "0.8.4",
-  "commit": "c51d7ed41a96068a09127bbc096fee143fce0b22",
+  "schemaVersion": 2,
+  "repository": "https://github.com/run-bigpig/starweave-openpencil.git",
+  "version": "0.14.0-starweave.2",
+  "commit": "020b3d93baf76498bc782b4aaaff2cf8cbdecb38",
   "artifacts": [
     {
       "platform": "windows",
       "architecture": "x64",
-      "name": "openpencil-desktop-windows-x86_64.zip",
-      "url": "https://github.com/ZSeven-W/openpencil/releases/download/v0.8.4/openpencil-desktop-windows-x86_64.zip",
-      "sha256": "469730d56ea2e8678438818434402849cc431e578acbec193440fe867fa012de",
-      "executable": "openpencil-desktop.exe",
-      "executableSha256": "0a60a4a30c5f7f07ce145f30929e805c6fbfcb0e9a85b3b93ec90e7753ad9af0"
+      "name": "StarWeaveOpenPencilCompanion-windows-x64-0.14.0-starweave.2.zip",
+      "url": "https://github.com/run-bigpig/starweave-openpencil/releases/download/v0.14.0-starweave.2/StarWeaveOpenPencilCompanion-windows-x64-0.14.0-starweave.2.zip",
+      "sha256": "1e00913b4247e42eebe52dbc9d8f0fe1201a8cde34b12f67e9527d861e0aca1a",
+      "executable": "StarWeaveOpenPencilCompanion.exe",
+      "executableSha256": "af1694f8a7d23a97793ee03b80ad861c63d22fd8f24f2c98b10ab973cc0bee2d",
+      "mcpBundle": "openpencil-mcp-http.mjs",
+      "mcpBundleSha256": "0c8d9b7a1ea877f9695f5d3aa0e098ac2a36730febff3fcd2614f9a3752e7be7"
     }
   ]
 }

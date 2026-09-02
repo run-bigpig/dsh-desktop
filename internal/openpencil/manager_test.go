@@ -13,20 +13,13 @@ import (
 	"testing"
 )
 
-func TestStatusValidatesDiscoveryAndMCPIdentity(t *testing.T) {
-	const token = "local-secret"
+func TestStatusReadsOfficialDiscoveryAndHealth(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/mcp" || r.Header.Get("X-OpenPencil-Token") != token {
-			t.Fatalf("unexpected request path=%q token=%q", r.URL.Path, r.Header.Get("X-OpenPencil-Token"))
-		}
-		var request struct {
-			Method string `json:"method"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil || request.Method != "ping" {
-			t.Fatalf("ping request = %#v, %v", request, err)
+		if r.URL.Path != "/health" {
+			t.Fatalf("path = %q", r.URL.Path)
 		}
 		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":0,"result":{"_meta":{"server":"openpencil-mcp","mode":"live","token":"local-secret"}}}`))
+		_, _ = w.Write([]byte(`{"status":"ok","version":"0.14.0","authRequired":true}`))
 	}))
 	defer server.Close()
 
@@ -38,116 +31,111 @@ func TestStatusValidatesDiscoveryAndMCPIdentity(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	discoveryPath := filepath.Join(t.TempDir(), discoveryFilename)
-	raw, _ := json.Marshal(discovery{
-		Port: port, PID: 321, WriterPID: 321, Token: token,
-		Timestamp: 1_700_000_000_000, Transport: "json-rpc",
+	token := "local-secret"
+	discoveryPath := filepath.Join(t.TempDir(), "mcp.json")
+	writeDiscovery(t, discoveryPath, discovery{
+		PID: 321, HTTPPort: port, AuthRequired: true, AuthToken: &token,
+		Version: "0.14.0", StartedAt: "2026-09-02T00:00:00.000Z",
 	})
-	if err := os.WriteFile(discoveryPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	binaryPath := filepath.Join(t.TempDir(), "openpencil-desktop.exe")
-	if err := os.WriteFile(binaryPath, []byte("portable"), 0o700); err != nil {
-		t.Fatal(err)
-	}
+	binaryPath, nodePath, mcpPath := writeBundleFiles(t)
+	manager := New(Options{BinaryPath: binaryPath, NodePath: nodePath, MCPPath: mcpPath, DiscoveryPath: discoveryPath})
 
-	status, err := New(Options{BinaryPath: binaryPath, DiscoveryPath: discoveryPath}).Status(context.Background())
+	status, err := manager.Status(context.Background())
 	if err != nil {
 		t.Fatal(err)
 	}
-	if !status.Bundled || !status.Running || status.Owned || status.Port != port || status.Token != token {
+	if !status.Bundled || !status.Running || status.Owned || status.Port != port || status.Token != token || status.Version != "0.14.0" {
 		t.Fatalf("status = %#v", status)
+	}
+	if status.URL != server.URL+"/mcp" {
+		t.Fatalf("url = %q", status.URL)
 	}
 }
 
-func TestReadDiscoveryAcceptsOfficialTimestampAndRejectsUnknownFields(t *testing.T) {
-	discoveryPath := filepath.Join(t.TempDir(), discoveryFilename)
-	manager := New(Options{DiscoveryPath: discoveryPath})
+func TestReadDiscoveryAcceptsFutureFields(t *testing.T) {
+	discoveryPath := filepath.Join(t.TempDir(), "mcp.json")
 	if err := os.WriteFile(discoveryPath, []byte(`{
-		"port":3100,
 		"pid":4242,
-		"writerPid":4242,
-		"token":"tok-1",
-		"timestamp":1700000000000,
-		"transport":"json-rpc"
+		"socketPath":null,
+		"httpPort":3100,
+		"authRequired":true,
+		"authToken":"tok-1",
+		"version":"0.14.0",
+		"startedAt":"2026-09-02T00:00:00.000Z",
+		"futureField":true
 	}`), 0o600); err != nil {
 		t.Fatal(err)
 	}
-	value, err := manager.readDiscovery()
+	value, err := New(Options{DiscoveryPath: discoveryPath}).readDiscovery()
 	if err != nil {
 		t.Fatal(err)
 	}
-	if value.Timestamp != 1_700_000_000_000 {
-		t.Fatalf("timestamp = %d", value.Timestamp)
-	}
-
-	if err := os.WriteFile(discoveryPath, []byte(`{
-		"port":3100,
-		"pid":4242,
-		"writerPid":4242,
-		"token":"tok-1",
-		"timestamp":1700000000000,
-		"transport":"json-rpc",
-		"unexpected":true
-	}`), 0o600); err != nil {
-		t.Fatal(err)
-	}
-	if _, err := manager.readDiscovery(); err == nil || !strings.Contains(err.Error(), "unknown field") {
-		t.Fatalf("unknown-field error = %v", err)
+	if value.HTTPPort != 3100 || value.AuthToken == nil || *value.AuthToken != "tok-1" {
+		t.Fatalf("discovery = %#v", value)
 	}
 }
 
-func TestStatusTreatsStaleDiscoveryAsStopped(t *testing.T) {
-	discoveryPath := filepath.Join(t.TempDir(), discoveryFilename)
-	raw, _ := json.Marshal(discovery{Port: 1, PID: 321, WriterPID: 321, Token: "secret", Transport: "json-rpc"})
-	if err := os.WriteFile(discoveryPath, raw, 0o600); err != nil {
-		t.Fatal(err)
-	}
-	status, err := New(Options{BinaryPath: filepath.Join(t.TempDir(), "missing.exe"), DiscoveryPath: discoveryPath}).Status(context.Background())
-	if err != nil {
-		t.Fatal(err)
-	}
-	if status.Bundled || status.Running || status.Token != "" {
-		t.Fatalf("status = %#v", status)
-	}
-}
-
-func TestPingRejectsOversizedResponse(t *testing.T) {
+func TestStatusTreatsDisconnectedCompanionAsStopped(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		w.WriteHeader(http.StatusOK)
-		_, _ = w.Write(make([]byte, maxRPCResponse+1))
+		_, _ = w.Write([]byte(`{"status":"no_app","version":"0.14.0","authRequired":false}`))
 	}))
 	defer server.Close()
-
-	manager := New(Options{})
-	err := manager.ping(context.Background(), server.URL, "secret")
-	if err == nil || !strings.Contains(err.Error(), "exceeded") {
-		t.Fatalf("ping error = %v", err)
+	parsed, _ := url.Parse(server.URL)
+	port, _ := strconv.Atoi(parsed.Port())
+	discoveryPath := filepath.Join(t.TempDir(), "mcp.json")
+	writeDiscovery(t, discoveryPath, discovery{
+		PID: 321, HTTPPort: port, AuthRequired: false, Version: "0.14.0",
+		StartedAt: "2026-09-02T00:00:00.000Z",
+	})
+	status, err := New(Options{DiscoveryPath: discoveryPath}).Status(context.Background())
+	if err != nil {
+		t.Fatal(err)
+	}
+	if status.Running || status.Port != port {
+		t.Fatalf("status = %#v", status)
 	}
 }
 
-func TestShutdownCarriesDiscoveryTokenInRequestBody(t *testing.T) {
-	const token = "shutdown-secret"
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		var request struct {
-			Method string `json:"method"`
-			Params struct {
-				Token string `json:"token"`
-			} `json:"params"`
-		}
-		if err := json.NewDecoder(r.Body).Decode(&request); err != nil {
+func TestHealthRejectsOversizedResponse(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		w.WriteHeader(http.StatusOK)
+		_, _ = w.Write(make([]byte, maxHTTPResponse+1))
+	}))
+	defer server.Close()
+	parsed, _ := url.Parse(server.URL)
+	port, _ := strconv.Atoi(parsed.Port())
+	err := func() error {
+		_, err := New(Options{}).readHealth(context.Background(), port)
+		return err
+	}()
+	if err == nil || !strings.Contains(err.Error(), "exceeded") {
+		t.Fatalf("health error = %v", err)
+	}
+}
+
+func writeDiscovery(t *testing.T, path string, value discovery) {
+	t.Helper()
+	raw, err := json.Marshal(value)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if err := os.WriteFile(path, raw, 0o600); err != nil {
+		t.Fatal(err)
+	}
+}
+
+func writeBundleFiles(t *testing.T) (string, string, string) {
+	t.Helper()
+	directory := t.TempDir()
+	paths := []string{
+		filepath.Join(directory, "StarWeaveOpenPencilCompanion.exe"),
+		filepath.Join(directory, "node.exe"),
+		filepath.Join(directory, "openpencil-mcp-http.mjs"),
+	}
+	for _, path := range paths {
+		if err := os.WriteFile(path, []byte("test"), 0o700); err != nil {
 			t.Fatal(err)
 		}
-		if request.Method != "openpencil/shutdown" || request.Params.Token != token {
-			t.Fatalf("shutdown request = %#v", request)
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"jsonrpc":"2.0","id":1,"result":{"ok":true,"shuttingDown":true}}`))
-	}))
-	defer server.Close()
-
-	if err := New(Options{}).shutdown(context.Background(), server.URL, token); err != nil {
-		t.Fatal(err)
 	}
+	return paths[0], paths[1], paths[2]
 }

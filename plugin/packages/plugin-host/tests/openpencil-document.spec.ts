@@ -1,18 +1,11 @@
 import { describe, expect, it, vi } from 'vitest'
-import {
-  emptyOpenPencilDocument,
-  parseOpenPencilDocument,
-  serializeOpenPencilDocument,
-} from '../src/openpencil/document.ts'
+import { defineOpenPencilControlTools } from '../src/openpencil/control-tools.ts'
 import { registerOpenPencilSkill } from '../src/openpencil/skill.ts'
 
-describe('OpenPencil settings document', () => {
-  it('defaults to disabled and round-trips the enabled state', () => {
-    expect(emptyOpenPencilDocument()).toEqual({ version: 1, enabled: false })
-    expect(parseOpenPencilDocument(serializeOpenPencilDocument({ version: 1, enabled: true }))).toEqual({
-      version: 1,
-      enabled: true,
-    })
+describe('OpenPencil built-in integration', () => {
+  it('registers agent-only canvas visibility controls', () => {
+    const tools = defineOpenPencilControlTools({ show: vi.fn(), hide: vi.fn() })
+    expect(tools.map(tool => tool.name)).toEqual(['openpencil_show', 'openpencil_hide'])
   })
 
   it('loads the packaged OpenPencil skill with MCP workflow references', async () => {
@@ -23,13 +16,8 @@ describe('OpenPencil settings document', () => {
     expect(skill?.name).toBe('openpencil-design')
     expect(skill?.whenToUse).toContain('OpenPencil')
     expect(skill?.content).toContain('# OpenPencil 设计协作')
-    expect(skill?.content).toContain('mcp__openpencil-mcp__batch_design')
-    expect(skill?.content).toContain('事务性的')
+    expect(skill?.content).toContain('openpencil_show')
+    expect(skill?.content).toContain('.fig')
     expect(skill?.resourceBase.path).toMatch(/openpencil-design[/\\]$/)
-  })
-
-  it('rejects unknown fields and invalid versions', () => {
-    expect(() => parseOpenPencilDocument('{"version":1,"enabled":true,"token":"secret"}')).toThrow('unknown fields')
-    expect(() => parseOpenPencilDocument('{"version":2,"enabled":true}')).toThrow('invalid shape')
   })
 })

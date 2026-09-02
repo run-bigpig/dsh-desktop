@@ -1,7 +1,6 @@
 package openpencil
 
 import (
-	"bufio"
 	"bytes"
 	"context"
 	"encoding/json"
@@ -18,11 +17,7 @@ import (
 	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
 )
 
-const (
-	discoveryFilename = ".op-mcp-port"
-	serverName        = "openpencil-mcp"
-	maxRPCResponse    = 1 << 20
-)
+const maxHTTPResponse = 1 << 20
 
 type Status struct {
 	Bundled bool   `json:"bundled"`
@@ -31,38 +26,52 @@ type Status struct {
 	Port    int    `json:"port,omitempty"`
 	URL     string `json:"url,omitempty"`
 	Token   string `json:"token,omitempty"`
+	Version string `json:"version,omitempty"`
 }
 
 type Options struct {
-	BinaryPath      string
-	DiscoveryPath   string
-	LaunchArgs      []string
-	StartupTimeout  time.Duration
-	ShutdownTimeout time.Duration
-	Log             io.Writer
-	HTTPClient      *http.Client
+	BinaryPath       string
+	NodePath         string
+	MCPPath          string
+	DiscoveryPath    string
+	WorkingDirectory string
+	StartupTimeout   time.Duration
+	ShutdownTimeout  time.Duration
+	Log              io.Writer
+	HTTPClient       *http.Client
 }
 
 type Manager struct {
-	mu              sync.Mutex
-	binaryPath      string
-	discoveryPath   string
-	launchArgs      []string
-	startupTimeout  time.Duration
-	shutdownTimeout time.Duration
-	log             io.Writer
-	client          *http.Client
-	process         *harnessruntime.ManagedProcess
-	ownedPID        int
+	mu               sync.Mutex
+	binaryPath       string
+	nodePath         string
+	mcpPath          string
+	discoveryPath    string
+	workingDirectory string
+	startupTimeout   time.Duration
+	shutdownTimeout  time.Duration
+	log              io.Writer
+	client           *http.Client
+	mcpProcess       *harnessruntime.ManagedProcess
+	appProcess       *harnessruntime.ManagedProcess
+	mcpPID           int
+	launching        bool
 }
 
 type discovery struct {
-	Port      int    `json:"port"`
-	PID       int    `json:"pid"`
-	WriterPID int    `json:"writerPid"`
-	Token     string `json:"token"`
-	Timestamp uint64 `json:"timestamp"`
-	Transport string `json:"transport"`
+	PID          int     `json:"pid"`
+	SocketPath   *string `json:"socketPath"`
+	HTTPPort     int     `json:"httpPort"`
+	AuthRequired bool    `json:"authRequired"`
+	AuthToken    *string `json:"authToken"`
+	Version      string  `json:"version"`
+	StartedAt    string  `json:"startedAt"`
+}
+
+type health struct {
+	Status       string `json:"status"`
+	Version      string `json:"version"`
+	AuthRequired bool   `json:"authRequired"`
 }
 
 func New(options Options) *Manager {
@@ -79,28 +88,14 @@ func New(options Options) *Manager {
 		client = &http.Client{Timeout: 3 * time.Second}
 	}
 	return &Manager{
-		binaryPath: options.BinaryPath, discoveryPath: options.DiscoveryPath,
-		launchArgs: append([]string(nil), options.LaunchArgs...), startupTimeout: startupTimeout,
-		shutdownTimeout: shutdownTimeout, log: options.Log, client: client,
+		binaryPath: options.BinaryPath, nodePath: options.NodePath, mcpPath: options.MCPPath,
+		discoveryPath: options.DiscoveryPath, workingDirectory: options.WorkingDirectory,
+		startupTimeout: startupTimeout, shutdownTimeout: shutdownTimeout, log: options.Log, client: client,
 	}
-}
-
-func DefaultDiscoveryPath() (string, error) {
-	home, err := os.UserHomeDir()
-	if err != nil {
-		return "", err
-	}
-	return filepath.Join(home, ".openpencil", discoveryFilename), nil
 }
 
 func (m *Manager) Status(ctx context.Context) (Status, error) {
-	m.mu.Lock()
-	ownedPID := m.ownedPID
-	m.mu.Unlock()
-	bundled := false
-	if info, err := os.Stat(m.binaryPath); err == nil && !info.IsDir() {
-		bundled = true
-	}
+	bundled := m.bundleAvailable()
 	d, err := m.readDiscovery()
 	if err != nil {
 		if errors.Is(err, os.ErrNotExist) {
@@ -108,44 +103,153 @@ func (m *Manager) Status(ctx context.Context) (Status, error) {
 		}
 		return Status{Bundled: bundled}, err
 	}
-	url := fmt.Sprintf("http://127.0.0.1:%d/mcp", d.Port)
-	if err := m.ping(ctx, url, d.Token); err != nil {
+	h, err := m.readHealth(ctx, d.HTTPPort)
+	if err != nil {
 		return Status{Bundled: bundled}, nil
 	}
+	if h.Version != d.Version || h.AuthRequired != d.AuthRequired {
+		return Status{Bundled: bundled}, fmt.Errorf("OpenPencil discovery and health identity mismatch")
+	}
+	m.mu.Lock()
+	owned := m.mcpPID > 0 && d.PID == m.mcpPID
+	m.mu.Unlock()
+	token := ""
+	if d.AuthToken != nil {
+		token = *d.AuthToken
+	}
 	return Status{
-		Bundled: bundled, Running: true, Owned: ownedPID > 0 && (d.PID == ownedPID || d.WriterPID == ownedPID),
-		Port: d.Port, URL: url, Token: d.Token,
+		Bundled: bundled, Running: h.Status == "ok", Owned: owned, Port: d.HTTPPort,
+		URL: fmt.Sprintf("http://127.0.0.1:%d/mcp", d.HTTPPort), Token: token, Version: d.Version,
 	}, nil
 }
 
 func (m *Manager) Launch(ctx context.Context) (Status, error) {
 	status, err := m.Status(ctx)
-	if err != nil {
-		return status, err
-	}
-	if status.Running {
+	if err == nil && status.Running {
 		return status, nil
 	}
-	if !status.Bundled {
-		return status, fmt.Errorf("bundled OpenPencil executable is unavailable")
+	if !m.bundleAvailable() {
+		return Status{Bundled: false}, fmt.Errorf("bundled OpenPencil Companion is unavailable")
 	}
+	_ = m.Stop(context.Background())
+
 	m.mu.Lock()
-	if m.process != nil {
+	if m.launching {
 		m.mu.Unlock()
 		return Status{}, fmt.Errorf("OpenPencil launch is already in progress")
 	}
-	process := &harnessruntime.ManagedProcess{}
-	m.process = process
-	pid, startErr := process.Start(m.binaryPath, m.launchArgs, filepath.Dir(m.binaryPath), m.log)
-	if startErr != nil {
-		m.process = nil
-		m.mu.Unlock()
-		return Status{}, fmt.Errorf("start bundled OpenPencil: %w", startErr)
-	}
-	m.ownedPID = pid
-	done := process.Done()
+	m.launching = true
 	m.mu.Unlock()
+	defer func() {
+		m.mu.Lock()
+		m.launching = false
+		m.mu.Unlock()
+	}()
 
+	if err := os.MkdirAll(filepath.Dir(m.discoveryPath), 0o700); err != nil {
+		return Status{}, fmt.Errorf("prepare OpenPencil discovery directory: %w", err)
+	}
+	_ = os.Remove(m.discoveryPath)
+	mcpProcess := &harnessruntime.ManagedProcess{}
+	mcpEnvironment := []string{
+		"PORT=0",
+		"OPENPENCIL_MCP_TCP=1",
+		"OPENPENCIL_MCP_DISCOVERY_PATH=" + m.discoveryPath,
+		"OPENPENCIL_MCP_ROOT=" + m.workingDirectory,
+		"OPENPENCIL_MCP_CORS_ORIGIN=http://tauri.localhost",
+	}
+	mcpPID, err := mcpProcess.StartWithEnv(m.nodePath, []string{m.mcpPath}, filepath.Dir(m.mcpPath), mcpEnvironment, m.log)
+	if err != nil {
+		return Status{}, fmt.Errorf("start bundled OpenPencil MCP server: %w", err)
+	}
+	m.mu.Lock()
+	m.mcpProcess, m.mcpPID = mcpProcess, mcpPID
+	m.mu.Unlock()
+	if _, err := m.waitForHealth(ctx, mcpPID, false, mcpProcess.Done(), nil); err != nil {
+		_ = m.Stop(context.Background())
+		return Status{}, err
+	}
+
+	appProcess := &harnessruntime.ManagedProcess{}
+	appEnvironment := []string{
+		"STARWEAVE_OPENPENCIL_MCP_DISCOVERY_PATH=" + m.discoveryPath,
+		"OPENPENCIL_MCP_DISCOVERY_PATH=" + m.discoveryPath,
+	}
+	if _, err := appProcess.StartWithEnv(m.binaryPath, []string{"--hidden"}, filepath.Dir(m.binaryPath), appEnvironment, m.log); err != nil {
+		_ = m.Stop(context.Background())
+		return Status{}, fmt.Errorf("start bundled OpenPencil Companion: %w", err)
+	}
+	m.mu.Lock()
+	m.appProcess = appProcess
+	m.mu.Unlock()
+	if _, err := m.waitForHealth(ctx, mcpPID, true, mcpProcess.Done(), appProcess.Done()); err != nil {
+		_ = m.Stop(context.Background())
+		return Status{}, err
+	}
+	return m.Status(ctx)
+}
+
+func (m *Manager) Show(ctx context.Context) (Status, error) {
+	return m.signalWindow(ctx, "--show")
+}
+
+func (m *Manager) Hide(ctx context.Context) (Status, error) {
+	return m.signalWindow(ctx, "--hide")
+}
+
+func (m *Manager) Stop(ctx context.Context) error {
+	m.mu.Lock()
+	appProcess, mcpProcess := m.appProcess, m.mcpProcess
+	m.appProcess, m.mcpProcess, m.mcpPID = nil, nil, 0
+	m.mu.Unlock()
+	if appProcess != nil {
+		_ = m.sendWindowCommand(ctx, "--quit")
+	}
+	appErr := m.stopProcess(ctx, appProcess)
+	mcpErr := m.stopProcess(ctx, mcpProcess)
+	_ = os.Remove(m.discoveryPath)
+	if appErr != nil {
+		return appErr
+	}
+	return mcpErr
+}
+
+func (m *Manager) Close(ctx context.Context) error { return m.Stop(ctx) }
+
+func (m *Manager) signalWindow(ctx context.Context, command string) (Status, error) {
+	status, err := m.Status(ctx)
+	if err != nil {
+		return status, err
+	}
+	if !status.Running {
+		return status, fmt.Errorf("OpenPencil Companion is not running")
+	}
+	if err := m.sendWindowCommand(ctx, command); err != nil {
+		return status, fmt.Errorf("send OpenPencil window command: %w", err)
+	}
+	return status, nil
+}
+
+func (m *Manager) sendWindowCommand(ctx context.Context, command string) error {
+	process := &harnessruntime.ManagedProcess{}
+	if _, err := process.StartWithEnv(m.binaryPath, []string{command}, filepath.Dir(m.binaryPath), nil, m.log); err != nil {
+		return err
+	}
+	select {
+	case <-ctx.Done():
+		_ = process.Kill()
+		_ = process.Close()
+		return ctx.Err()
+	case <-time.After(5 * time.Second):
+		_ = process.Kill()
+		_ = process.Close()
+		return fmt.Errorf("OpenPencil window command timed out")
+	case <-process.Done():
+		return process.Close()
+	}
+}
+
+func (m *Manager) waitForHealth(ctx context.Context, expectedPID int, requireApp bool, mcpDone, appDone <-chan struct{}) (health, error) {
 	deadline := time.NewTimer(m.startupTimeout)
 	defer deadline.Stop()
 	ticker := time.NewTicker(150 * time.Millisecond)
@@ -153,68 +257,24 @@ func (m *Manager) Launch(ctx context.Context) (Status, error) {
 	for {
 		select {
 		case <-ctx.Done():
-			_ = m.stopOwned(context.Background())
-			return Status{}, ctx.Err()
+			return health{}, ctx.Err()
 		case <-deadline.C:
-			_ = m.stopOwned(context.Background())
-			return Status{}, fmt.Errorf("OpenPencil startup timed out after %s", m.startupTimeout)
-		case <-done:
-			_ = m.clearOwned(process)
-			return Status{}, fmt.Errorf("OpenPencil exited before its MCP endpoint became ready")
+			return health{}, fmt.Errorf("OpenPencil startup timed out after %s", m.startupTimeout)
+		case <-mcpDone:
+			return health{}, fmt.Errorf("OpenPencil MCP server exited during startup")
+		case <-appDone:
+			return health{}, fmt.Errorf("OpenPencil Companion exited during startup")
 		case <-ticker.C:
-			status, err = m.Status(ctx)
-			if err == nil && status.Running && status.Owned {
-				go func() {
-					<-done
-					_ = m.clearOwned(process)
-				}()
-				return status, nil
+			d, err := m.readDiscovery()
+			if err != nil || d.PID != expectedPID {
+				continue
+			}
+			h, err := m.readHealth(ctx, d.HTTPPort)
+			if err == nil && h.Version == d.Version && h.AuthRequired == d.AuthRequired && (!requireApp || h.Status == "ok") {
+				return h, nil
 			}
 		}
 	}
-}
-
-func (m *Manager) Close(ctx context.Context) error { return m.stopOwned(ctx) }
-
-func (m *Manager) stopOwned(ctx context.Context) error {
-	m.mu.Lock()
-	process := m.process
-	m.mu.Unlock()
-	if process == nil {
-		return nil
-	}
-	if status, err := m.Status(ctx); err == nil && status.Owned {
-		_ = m.shutdown(ctx, status.URL, status.Token)
-	}
-	done := process.Done()
-	if done == nil {
-		return m.clearOwned(process)
-	}
-	timer := time.NewTimer(m.shutdownTimeout)
-	defer timer.Stop()
-	select {
-	case <-ctx.Done():
-		_ = process.Kill()
-	case <-timer.C:
-		_ = process.Kill()
-	case <-done:
-	}
-	select {
-	case <-done:
-	case <-time.After(2 * time.Second):
-		_ = process.Kill()
-	}
-	return m.clearOwned(process)
-}
-
-func (m *Manager) clearOwned(process *harnessruntime.ManagedProcess) error {
-	m.mu.Lock()
-	if m.process == process {
-		m.process = nil
-		m.ownedPID = 0
-	}
-	m.mu.Unlock()
-	return process.Close()
 }
 
 func (m *Manager) readDiscovery() (discovery, error) {
@@ -222,92 +282,73 @@ func (m *Manager) readDiscovery() (discovery, error) {
 	if err != nil {
 		return discovery{}, err
 	}
-	decoder := json.NewDecoder(bytes.NewReader(raw))
-	decoder.DisallowUnknownFields()
+	if len(raw) > maxHTTPResponse {
+		return discovery{}, fmt.Errorf("OpenPencil discovery exceeds %d bytes", maxHTTPResponse)
+	}
 	var value discovery
-	if err := decoder.Decode(&value); err != nil {
+	if err := json.Unmarshal(raw, &value); err != nil {
 		return discovery{}, fmt.Errorf("read OpenPencil discovery: %w", err)
 	}
-	if value.Port < 1 || value.Port > 65535 || value.PID < 1 || value.WriterPID < 1 || strings.TrimSpace(value.Token) == "" || value.Transport != "json-rpc" {
+	if value.PID < 1 || value.HTTPPort < 1 || value.HTTPPort > 65535 || strings.TrimSpace(value.Version) == "" || strings.TrimSpace(value.StartedAt) == "" {
 		return discovery{}, fmt.Errorf("OpenPencil discovery is invalid")
+	}
+	if value.AuthRequired && (value.AuthToken == nil || strings.TrimSpace(*value.AuthToken) == "") {
+		return discovery{}, fmt.Errorf("OpenPencil discovery is missing its authentication token")
 	}
 	return value, nil
 }
 
-func (m *Manager) ping(ctx context.Context, url, token string) error {
-	var response struct {
-		Result struct {
-			Meta struct {
-				Server string `json:"server"`
-				Mode   string `json:"mode"`
-				Token  string `json:"token"`
-			} `json:"_meta"`
-		} `json:"result"`
-	}
-	if err := m.rpc(ctx, url, token, map[string]any{"jsonrpc": "2.0", "id": 0, "method": "ping", "params": nil}, &response); err != nil {
-		return err
-	}
-	if response.Result.Meta.Server != serverName || response.Result.Meta.Mode != "live" || response.Result.Meta.Token != token {
-		return fmt.Errorf("OpenPencil MCP identity mismatch")
-	}
-	return nil
-}
-
-func (m *Manager) shutdown(ctx context.Context, url, token string) error {
-	return m.rpc(ctx, url, token, map[string]any{
-		"jsonrpc": "2.0",
-		"id":      1,
-		"method":  "openpencil/shutdown",
-		"params":  map[string]string{"token": token},
-	}, nil)
-}
-
-func (m *Manager) rpc(ctx context.Context, url, token string, payload any, target any) error {
-	body, err := json.Marshal(payload)
+func (m *Manager) readHealth(ctx context.Context, port int) (health, error) {
+	request, err := http.NewRequestWithContext(ctx, http.MethodGet, fmt.Sprintf("http://127.0.0.1:%d/health", port), nil)
 	if err != nil {
-		return err
+		return health{}, err
 	}
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, url, bytes.NewReader(body))
-	if err != nil {
-		return err
-	}
-	request.Header.Set("Content-Type", "application/json")
-	request.Header.Set("Accept", "application/json, text/event-stream")
-	request.Header.Set("X-OpenPencil-Token", token)
 	response, err := m.client.Do(request)
 	if err != nil {
-		return err
+		return health{}, err
 	}
 	defer response.Body.Close()
-	if response.StatusCode < 200 || response.StatusCode >= 300 {
-		return fmt.Errorf("OpenPencil MCP returned HTTP %d", response.StatusCode)
+	if response.StatusCode != http.StatusOK {
+		return health{}, fmt.Errorf("OpenPencil MCP health returned HTTP %d", response.StatusCode)
 	}
-	if response.ContentLength > maxRPCResponse {
-		return fmt.Errorf("OpenPencil MCP response exceeded %d bytes", maxRPCResponse)
-	}
-	raw, err := io.ReadAll(io.LimitReader(response.Body, maxRPCResponse+1))
+	raw, err := io.ReadAll(io.LimitReader(response.Body, maxHTTPResponse+1))
 	if err != nil {
-		return fmt.Errorf("read OpenPencil MCP response: %w", err)
+		return health{}, err
 	}
-	if len(raw) > maxRPCResponse {
-		return fmt.Errorf("OpenPencil MCP response exceeded %d bytes", maxRPCResponse)
+	if len(raw) > maxHTTPResponse {
+		return health{}, fmt.Errorf("OpenPencil MCP health exceeded %d bytes", maxHTTPResponse)
 	}
-	if target == nil {
+	var value health
+	if err := json.NewDecoder(bytes.NewReader(raw)).Decode(&value); err != nil {
+		return health{}, err
+	}
+	if value.Status != "ok" && value.Status != "no_app" {
+		return health{}, fmt.Errorf("OpenPencil MCP health is invalid")
+	}
+	return value, nil
+}
+
+func (m *Manager) bundleAvailable() bool {
+	for _, path := range []string{m.binaryPath, m.nodePath, m.mcpPath} {
+		if info, err := os.Stat(path); err != nil || info.IsDir() {
+			return false
+		}
+	}
+	return true
+}
+
+func (m *Manager) stopProcess(ctx context.Context, process *harnessruntime.ManagedProcess) error {
+	if process == nil {
 		return nil
 	}
-	if strings.HasPrefix(response.Header.Get("Content-Type"), "text/event-stream") {
-		scanner := bufio.NewScanner(bytes.NewReader(raw))
-		scanner.Buffer(make([]byte, 64*1024), maxRPCResponse)
-		for scanner.Scan() {
-			line := scanner.Text()
-			if strings.HasPrefix(line, "data:") {
-				return json.Unmarshal(bytes.TrimSpace([]byte(strings.TrimPrefix(line, "data:"))), target)
-			}
+	done := process.Done()
+	_ = process.Kill()
+	if done != nil {
+		select {
+		case <-done:
+		case <-ctx.Done():
+		case <-time.After(m.shutdownTimeout):
 		}
-		return scanner.Err()
 	}
-	if err := json.Unmarshal(raw, target); err != nil {
-		return fmt.Errorf("decode OpenPencil MCP response: %w", err)
-	}
-	return nil
+	return process.Close()
 }

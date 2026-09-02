@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.7",
+  [string]$Version = "0.2.8",
   [string]$ReleaseAPI = "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
 )
 
@@ -41,10 +41,11 @@ if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.ve
 if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit -or $seedManifest.openPencilCommit -ne $openPencilLock.commit) {
   throw "Windows seed stage is stale; run task seed:windows"
 }
-$openPencilExe = Join-Path $stage "resources/openpencil/openpencil-desktop.exe"
+$openPencilExe = Join-Path $stage "resources/openpencil/StarWeaveOpenPencilCompanion.exe"
+$openPencilMCPBundle = Join-Path $stage "resources/openpencil/openpencil-mcp-http.mjs"
 $openPencilStagedLock = Join-Path $stage "resources/openpencil/openpencil.lock.json"
 $openPencilLicense = Join-Path $stage "resources/openpencil/LICENSE.txt"
-if (-not (Test-Path -LiteralPath $openPencilExe) -or -not (Test-Path -LiteralPath $openPencilStagedLock) -or -not (Test-Path -LiteralPath $openPencilLicense)) {
+if (-not (Test-Path -LiteralPath $openPencilExe) -or -not (Test-Path -LiteralPath $openPencilMCPBundle) -or -not (Test-Path -LiteralPath $openPencilStagedLock) -or -not (Test-Path -LiteralPath $openPencilLicense)) {
   throw "Windows stage is missing bundled OpenPencil; run task seed:windows"
 }
 $stagedOpenPencilLock = Get-Content $openPencilStagedLock -Raw | ConvertFrom-Json
@@ -57,6 +58,9 @@ if ($stagedOpenPencilLock.commit -ne $openPencilLock.commit -or $stagedOpenPenci
 }
 if ((Get-SHA256File $openPencilExe) -ne $openPencilArtifact.executableSha256 -or $seedManifest.openPencilExecutableSHA256 -ne $openPencilArtifact.executableSha256) {
   throw "Windows stage contains an unverified OpenPencil executable; run task seed:windows"
+}
+if ((Get-SHA256File $openPencilMCPBundle) -ne $openPencilArtifact.mcpBundleSha256 -or $seedManifest.openPencilMCPBundleSHA256 -ne $openPencilArtifact.mcpBundleSha256) {
+  throw "Windows stage contains an unverified OpenPencil MCP bundle; run task seed:windows"
 }
 $openPencilLicenseSHA256 = Get-SHA256File (Join-Path $repoRoot "release/openpencil-LICENSE.txt")
 if ((Get-SHA256File $openPencilLicense) -ne $openPencilLicenseSHA256 -or $seedManifest.openPencilLicenseSHA256 -ne $openPencilLicenseSHA256) {
@@ -122,6 +126,7 @@ $installerFingerprint = Get-SHA256Text ((@(
   "openPencilVersion=$($openPencilLock.version)",
   "openPencilCommit=$($openPencilLock.commit)",
   "openPencilExecutableSHA256=$($seedManifest.openPencilExecutableSHA256)",
+  "openPencilMCPBundleSHA256=$($seedManifest.openPencilMCPBundleSHA256)",
   "openPencilLicenseSHA256=$($seedManifest.openPencilLicenseSHA256)",
   "seedCommit=$($seedLock.commit)",
   "version=$Version",

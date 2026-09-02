@@ -1,20 +1,11 @@
-import { readFile } from 'node:fs/promises'
-import { resolve } from 'node:path'
 import { Context, Service, type Fiber, type FiberState } from '@deepseek-ai/cordis'
-import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
 import type {} from '@deepseek-ai/dsh-tools'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
-import z from '@deepseek-ai/schemastery'
 import { desktopRequest } from '../desktop/index.ts'
 import { countMcpTools } from '../mcp/document.ts'
 import type { OpenPencilPhase, OpenPencilSnapshot } from '../shared/types.ts'
-import {
-  emptyOpenPencilDocument,
-  parseOpenPencilDocument,
-  serializeOpenPencilDocument,
-  type OpenPencilDocument,
-} from './document.ts'
+import { defineOpenPencilControlTools } from './control-tools.ts'
 import { registerOpenPencilSkill } from './skill.ts'
 
 const MCP_SERVER_NAME = 'openpencil-mcp'
@@ -27,10 +18,6 @@ const FIBER_STATE = {
   UNLOADING: 5 as FiberState.UNLOADING,
 } as const
 
-export interface OpenPencilConfig {
-  readonly path: string
-}
-
 interface DesktopOpenPencilStatus {
   readonly bundled: boolean
   readonly running: boolean
@@ -38,32 +25,33 @@ interface DesktopOpenPencilStatus {
   readonly port?: number
   readonly url?: string
   readonly token?: string
+  readonly version?: string
 }
 
 export class OpenPencilGateway extends TypertRemoteService {
   static inject = ['tools', 'skills']
-  static Config: z<OpenPencilConfig> = z.object({ path: z.string().required() })
 
-  private readonly filename: string
-  private document: OpenPencilDocument = emptyOpenPencilDocument()
   private fiber: Fiber | undefined
   private disposeSkill: (() => void) | undefined
   private chain: Promise<void> = Promise.resolve()
 
-  constructor(ctx: Context, config: OpenPencilConfig) {
+  constructor(ctx: Context) {
     super(ctx, 'openPencil')
-    this.filename = resolve(config.path)
   }
 
   protected async [Service.init](): Promise<void> {
-    this.document = await this.readDocument()
-    if (this.document.enabled) {
-      try {
-        const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
-        if (status.running) await this.mount(status)
-      } catch (error) {
-        this.ctx.logger.warn(error)
-      }
+    this.disposeSkill = await registerOpenPencilSkill(this.ctx)
+    for (const tool of defineOpenPencilControlTools({
+      show: () => this.showCanvas(),
+      hide: () => this.hideCanvas(),
+    })) {
+      this.ctx.effect(() => this.ctx.tools.register(tool), `openpencil: ${tool.name} tool`)
+    }
+    try {
+      const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
+      if (status.running) await this.mount(status)
+    } catch (error) {
+      this.ctx.logger.warn(error)
     }
     this.ctx.effect(() => () => this.dropRuntime(), 'openpencil: dispose runtime')
   }
@@ -72,71 +60,45 @@ export class OpenPencilGateway extends TypertRemoteService {
   snapshot(): Promise<OpenPencilSnapshot> {
     return this.enqueue(async () => {
       const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
-      if (this.document.enabled && !status.running && (this.fiber !== undefined || this.disposeSkill !== undefined)) await this.dropRuntime()
-      if (this.document.enabled && status.running && this.fiber === undefined) await this.mount(status)
+      if (!status.running && this.fiber !== undefined) await this.dropFiber()
+      if (status.running && this.fiber === undefined) await this.mount(status)
       return this.sanitized(status)
     })
   }
 
-  @Remote('launch')
-  launch(): Promise<OpenPencilSnapshot> {
+  private showCanvas(): Promise<string> {
     return this.enqueue(async () => {
-      const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/launch', { method: 'POST' })
-      if (this.document.enabled) {
-        await this.dropRuntime()
-        await this.mount(status)
-      }
-      return this.sanitized(status)
+      const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/show', { method: 'POST' })
+      if (this.fiber === undefined) await this.mount(status)
+      return 'OpenPencil canvas is visible. Its built-in MCP connection remains managed by StarWeave.'
     })
   }
 
-  @Remote('connect')
-  connect(): Promise<OpenPencilSnapshot> {
+  private hideCanvas(): Promise<string> {
     return this.enqueue(async () => {
-      const status = await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/status')
-      if (!status.running || status.url === undefined || status.token === undefined) {
-        throw new Error('OpenPencil is not running')
-      }
-      await this.persist({ version: 1, enabled: true })
-      this.document = { version: 1, enabled: true }
-      await this.dropRuntime()
-      await this.mount(status)
-      return this.sanitized(status)
-    })
-  }
-
-  @Remote('disconnect')
-  disconnect(): Promise<OpenPencilSnapshot> {
-    return this.enqueue(async () => {
-      await this.persist({ version: 1, enabled: false })
-      this.document = { version: 1, enabled: false }
-      await this.dropRuntime()
-      return this.sanitized(await desktopRequest('/v1/openpencil/status'))
+      await desktopRequest<DesktopOpenPencilStatus>('/v1/openpencil/hide', { method: 'POST' })
+      return 'OpenPencil canvas is hidden. Its MCP connection remains active in the background.'
     })
   }
 
   private async mount(status: DesktopOpenPencilStatus): Promise<void> {
-    if (status.url === undefined || status.token === undefined) return
-    const disposeSkill = await registerOpenPencilSkill(this.ctx)
-    try {
-      this.fiber = this.ctx.plugin({
-        name: mcpClient.name,
-        inject: mcpClient.inject,
-        Config: mcpClient.Config,
-        apply: mcpClient.apply,
-      }, {
-        transport: 'streamable-http',
-        serverName: MCP_SERVER_NAME,
-        url: status.url,
-        headers: { 'X-OpenPencil-Token': status.token },
-        toolCallTimeoutMs: 120_000,
-        failOnStartupError: false,
-      })
-      this.disposeSkill = disposeSkill
-    } catch (error) {
-      disposeSkill()
-      throw error
+    if (this.fiber !== undefined) return
+    if (status.url === undefined || status.token === undefined) {
+      throw new Error('OpenPencil managed MCP discovery is incomplete')
     }
+    this.fiber = this.ctx.plugin({
+      name: mcpClient.name,
+      inject: mcpClient.inject,
+      Config: mcpClient.Config,
+      apply: mcpClient.apply,
+    }, {
+      transport: 'streamable-http',
+      serverName: MCP_SERVER_NAME,
+      url: status.url,
+      headers: { Authorization: `Bearer ${status.token}` },
+      toolCallTimeoutMs: 120_000,
+      failOnStartupError: false,
+    })
     void Promise.resolve(this.fiber).catch((error: unknown) => { this.ctx.logger.warn(error) })
   }
 
@@ -148,7 +110,6 @@ export class OpenPencilGateway extends TypertRemoteService {
       running: status.running,
       owned: status.owned,
       port: status.port ?? null,
-      enabled: this.document.enabled,
       phase,
       mcpConnected: phase === 'active',
       toolCount: this.fiber === undefined ? 0 : countMcpTools(toolNames, MCP_SERVER_NAME),
@@ -156,7 +117,6 @@ export class OpenPencilGateway extends TypertRemoteService {
   }
 
   private phase(status: DesktopOpenPencilStatus): OpenPencilPhase {
-    if (!this.document.enabled) return 'disabled'
     if (!status.running) return 'app-stopped'
     if (this.fiber === undefined) return 'connecting'
     if (this.fiber.state === FIBER_STATE.ACTIVE) return 'active'
@@ -176,28 +136,11 @@ export class OpenPencilGateway extends TypertRemoteService {
     this.disposeSkill = undefined
   }
 
-  private async readDocument(): Promise<OpenPencilDocument> {
-    try {
-      return parseOpenPencilDocument(await readFile(this.filename, 'utf8'))
-    } catch (error) {
-      if (isEnoent(error)) return emptyOpenPencilDocument()
-      throw error
-    }
-  }
-
-  private async persist(document: OpenPencilDocument): Promise<void> {
-    await writeFileAtomic(this.filename, serializeOpenPencilDocument(document), { mode: 0o600, dirMode: 0o700 })
-  }
-
   private enqueue<T>(work: () => Promise<T>): Promise<T> {
     const run = this.chain.then(work, work)
     this.chain = run.then(() => undefined, () => undefined)
     return run
   }
-}
-
-function isEnoent(error: unknown): boolean {
-  return typeof error === 'object' && error !== null && 'code' in error && error.code === 'ENOENT'
 }
 
 export default OpenPencilGateway

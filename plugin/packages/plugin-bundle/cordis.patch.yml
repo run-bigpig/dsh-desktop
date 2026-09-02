@@ -49,8 +49,6 @@
         path: !!js dshHomePath('mcp-servers.json')
     - id: desktop-integration-openpencil
       name: '@run-bigpig/dsh-desktop-plugin-host/openpencil'
-      config:
-        path: !!js dshHomePath('openpencil.json')
     - id: desktop-integration-thinkingdata
       name: '@run-bigpig/dsh-desktop-plugin-host/thinkingdata'
       config:
