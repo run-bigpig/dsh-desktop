@@ -67,6 +67,56 @@ describe('image model adapters', () => {
     })
   })
 
+  it('falls back to Gemini generateContent when Interactions is unavailable', async () => {
+    const request = vi.fn()
+      .mockResolvedValueOnce(new Response(JSON.stringify({ error: { message: 'Not Found' } }), { status: 404 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({
+        candidates: [{
+          finishReason: 'STOP',
+          content: { parts: [
+            { text: 'Here is the edited image.' },
+            { inlineData: { data: Buffer.from('generate-content-image').toString('base64'), mimeType: 'image/webp' } },
+          ] },
+        }],
+      }), { status: 200 }))
+    const adapter = new GeminiImageAdapter(request as typeof fetch)
+
+    const image = await adapter.edit(gemini('models/gemini-3.1-flash-image'), {
+      prompt: 'Move the subject right',
+      aspectRatio: '3:2',
+      resolution: '2K',
+      source: { data: Buffer.from('source-image'), mediaType: 'image/png' },
+    }, new AbortController().signal)
+
+    expect(request).toHaveBeenCalledTimes(2)
+    expect(Buffer.from(image.data).toString()).toBe('generate-content-image')
+    expect(image.mediaType).toBe('image/webp')
+    const [url, init] = request.mock.calls[1] as [URL, RequestInit]
+    expect(String(url)).toBe('https://generativelanguage.googleapis.com/v1beta/models/gemini-3.1-flash-image:generateContent')
+    expect(new Headers(init.headers).get('x-goog-api-key')).toBe('gemini-secret')
+    expect(JSON.parse(String(init.body))).toEqual({
+      contents: [{ role: 'user', parts: [
+        { inlineData: { mimeType: 'image/png', data: Buffer.from('source-image').toString('base64') } },
+        { text: 'Move the subject right' },
+      ] }],
+      generationConfig: {
+        responseModalities: ['TEXT', 'IMAGE'],
+        imageConfig: { aspectRatio: '3:2', imageSize: '2K' },
+      },
+    })
+  })
+
+  it('does not retry authentication failures through generateContent', async () => {
+    const request = vi.fn().mockResolvedValue(new Response(JSON.stringify({
+      error: { message: 'Invalid API key' },
+    }), { status: 401 }))
+
+    await expect(new GeminiImageAdapter(request as typeof fetch).generate(
+      gemini('gemini-3.1-flash-image'), { prompt: 'A tree' }, new AbortController().signal,
+    )).rejects.toThrow('Gemini Images request failed (401): Invalid API key')
+    expect(request).toHaveBeenCalledOnce()
+  })
+
   it('supports legacy Gemini output arrays and SDK convenience fields', async () => {
     const legacyRequest = vi.fn().mockResolvedValue(new Response(JSON.stringify({
       outputs: [{ type: 'image', data: Buffer.from('legacy-image').toString('base64'), mime_type: 'image/jpeg' }],

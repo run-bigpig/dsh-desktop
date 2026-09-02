@@ -165,25 +165,18 @@ export class GeminiImageAdapter implements ImageModelAdapter {
   }
 
   generate(descriptor: ImageModelDescriptor, request: ImageRequest, signal: AbortSignal): Promise<GeneratedImage> {
-    return this.call(descriptor, request, request.prompt, signal)
+    return this.call(descriptor, request, signal)
   }
 
   edit(descriptor: ImageModelDescriptor, request: ImageEditRequest, signal: AbortSignal): Promise<GeneratedImage> {
-    return this.call(descriptor, request, [
-      { type: 'text', text: request.prompt },
-      {
-        type: 'image',
-        mime_type: request.source.mediaType,
-        data: Buffer.from(request.source.data).toString('base64'),
-      },
-    ], signal)
+    return this.call(descriptor, request, signal, request.source)
   }
 
   private async call(
     descriptor: ImageModelDescriptor,
     request: ImageRequest,
-    input: unknown,
     signal: AbortSignal,
+    source?: ImageEditRequest['source'],
   ): Promise<GeneratedImage> {
     if (request.size !== undefined || request.quality !== undefined) {
       throw new Error('image-workbench: Gemini image models use aspect_ratio and resolution, not size or quality')
@@ -193,7 +186,7 @@ export class GeminiImageAdapter implements ImageModelAdapter {
       headers: requestHeaders(descriptor, { 'content-type': 'application/json' }, 'x-goog-api-key'),
       body: JSON.stringify({
         model: descriptor.model,
-        input,
+        input: geminiInteractionInput(request.prompt, source),
         response_format: {
           type: 'image',
           ...request.aspectRatio === undefined ? {} : { aspect_ratio: request.aspectRatio },
@@ -203,13 +196,76 @@ export class GeminiImageAdapter implements ImageModelAdapter {
       signal: boundedSignal(signal),
     })
     const payload = await responsePayload(response)
-    if (!response.ok) throw providerError('Gemini Images', response.status, payload)
-    const image = geminiOutputImage(payload)
-    return {
-      data: decodeBase64(image.data),
-      mediaType: imageMediaType(image.mimeType),
-      name: imageMediaType(image.mimeType) === 'image/jpeg' ? 'generated.jpg' : 'generated.png',
+    if (response.ok) return generatedGeminiImage(geminiOutputImage(payload))
+    if (!geminiInteractionsUnsupported(response.status)) {
+      throw providerError('Gemini Images', response.status, payload)
     }
+    return await this.callGenerateContent(descriptor, request, signal, source)
+  }
+
+  private async callGenerateContent(
+    descriptor: ImageModelDescriptor,
+    request: ImageRequest,
+    signal: AbortSignal,
+    source?: ImageEditRequest['source'],
+  ): Promise<GeneratedImage> {
+    const model = descriptor.model.startsWith('models/') ? descriptor.model.slice('models/'.length) : descriptor.model
+    const imageConfig = {
+      ...request.aspectRatio === undefined ? {} : { aspectRatio: request.aspectRatio },
+      ...request.resolution === undefined ? {} : { imageSize: request.resolution },
+    }
+    const response = await this.request(joinURL(descriptor.baseURL, `models/${encodeURIComponent(model)}:generateContent`), {
+      method: 'POST',
+      headers: requestHeaders(descriptor, { 'content-type': 'application/json' }, 'x-goog-api-key'),
+      body: JSON.stringify({
+        contents: [{ role: 'user', parts: geminiGenerateContentParts(request.prompt, source) }],
+        generationConfig: {
+          responseModalities: ['TEXT', 'IMAGE'],
+          ...Object.keys(imageConfig).length === 0 ? {} : { imageConfig },
+        },
+      }),
+      signal: boundedSignal(signal),
+    })
+    const payload = await responsePayload(response)
+    if (!response.ok) throw providerError('Gemini GenerateContent', response.status, payload)
+    return generatedGeminiImage(geminiGenerateContentImage(payload))
+  }
+}
+
+function geminiInteractionInput(prompt: string, source?: ImageEditRequest['source']): unknown {
+  if (source === undefined) return prompt
+  return [
+    { type: 'text', text: prompt },
+    {
+      type: 'image',
+      mime_type: source.mediaType,
+      data: Buffer.from(source.data).toString('base64'),
+    },
+  ]
+}
+
+function geminiGenerateContentParts(prompt: string, source?: ImageEditRequest['source']): unknown[] {
+  return [
+    ...source === undefined ? [] : [{
+      inlineData: {
+        mimeType: source.mediaType,
+        data: Buffer.from(source.data).toString('base64'),
+      },
+    }],
+    { text: prompt },
+  ]
+}
+
+function geminiInteractionsUnsupported(status: number): boolean {
+  return status === 404 || status === 405 || status === 501
+}
+
+function generatedGeminiImage(image: { data: string; mimeType?: string }): GeneratedImage {
+  const mediaType = imageMediaType(image.mimeType)
+  return {
+    data: decodeBase64(image.data),
+    mediaType,
+    name: mediaType === 'image/jpeg' ? 'generated.jpg' : 'generated.png',
   }
 }
 
@@ -289,6 +345,29 @@ function geminiOutputImage(payload: unknown): { data: string; mimeType?: string 
   if (image !== undefined) return image
 
   throw new Error(`image-workbench: Gemini returned no image data (${geminiResponseShape(record)})`)
+}
+
+function geminiGenerateContentImage(payload: unknown): { data: string; mimeType?: string } {
+  const record = asRecord(payload)
+  let image: { data: string; mimeType?: string } | undefined
+  for (const candidate of arrayOf(record?.candidates)) {
+    const content = asRecord(asRecord(candidate)?.content)
+    for (const part of arrayOf(content?.parts)) {
+      const partRecord = asRecord(part)
+      if (partRecord?.thought === true) continue
+      const inlineData = partRecord?.inlineData ?? partRecord?.inline_data
+      const candidateImage = geminiImageContent(inlineData)
+      if (candidateImage !== undefined) image = candidateImage
+    }
+  }
+  if (image !== undefined) return image
+  const finishReasons = distinctStrings(arrayOf(record?.candidates).map(candidate => asRecord(candidate)?.finishReason))
+  const promptFeedback = asRecord(record?.promptFeedback)
+  const detail = [
+    finishReasons.length === 0 ? undefined : `finishReasons=${finishReasons.join(',')}`,
+    typeof promptFeedback?.blockReason === 'string' ? `blockReason=${promptFeedback.blockReason}` : undefined,
+  ].filter((value): value is string => value !== undefined).join('; ')
+  throw new Error(`image-workbench: Gemini GenerateContent returned no image data (${detail || 'no image parts'})`)
 }
 
 function geminiTypedImageContent(value: unknown): { data: string; mimeType?: string } | undefined {
