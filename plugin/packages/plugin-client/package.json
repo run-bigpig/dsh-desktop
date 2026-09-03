@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-client",
   "description": "StarWeave integration UI and plugin marketplace",
-  "version": "0.1.79",
+  "version": "0.1.80",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -93,6 +93,7 @@
     "@types/react-dom": "~18.3.7",
     "@vueuse/core": "14.2.1",
     "canvaskit-wasm": "0.40.0",
+    "magic-string": "0.30.21",
     "reka-ui": "2.9.0",
     "react": "^18.2.0",
     "react-dom": "^18.2.0",

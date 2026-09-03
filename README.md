@@ -103,7 +103,7 @@ Harness 始终固定到完整 commit SHA。它随新的 StarWeave 桌面发行�
 | DeepSeek Harness | `dsh-v0.1.2-alpha.3` / `dd6322d604e00eec1ba5e0c8541159906a21094a` |
 | Node.js | `24.12.0` |
 | pnpm | `11.7.0` |
-| 内置桌面插件 | `0.1.79` |
+| 内置桌面插件 | `0.1.80` |
 | OpenPencil SDK / MCP | `0.14.0` |
 
 权威锁定信息位于 [release/seed.lock.json](release/seed.lock.json) 和 [release/toolchain.lock.json](release/toolchain.lock.json)。Harness 或工具链升级必须同步相关 seed 锁文件，并重新完成官方构建、插件构建和 Windows 运行验证。OpenPencil 版本由三个内置插件包的精确 npm 依赖锁定。

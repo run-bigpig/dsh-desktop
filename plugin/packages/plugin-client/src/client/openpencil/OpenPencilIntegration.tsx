@@ -127,12 +127,12 @@ export type OpenPencilLauncherProps =
 export function OpenPencilLauncher({ controller }: OpenPencilLauncherProps): ReactNode {
   const snapshot = useSyncExternalStore(controller.subscribe, controller.getSnapshot)
   return (
-    <Tooltip label={snapshot.visible ? '隐藏 OpenPencil' : '打开 OpenPencil'} side="bottom" delayMs={500}>
+    <Tooltip label={snapshot.visible ? '隐藏设计画布' : '打开设计画布'} side="bottom" delayMs={500}>
       <button
         className={css.launcher}
         data-active={snapshot.visible || undefined}
         type="button"
-        aria-label={snapshot.visible ? '隐藏 OpenPencil' : '打开 OpenPencil'}
+        aria-label={snapshot.visible ? '隐藏设计画布' : '打开设计画布'}
         aria-pressed={snapshot.visible}
         onClick={() => { void controller.setVisible(!snapshot.visible) }}
       >
@@ -190,10 +190,19 @@ export function OpenPencilOverlay({ controller, useSessions }: OpenPencilOverlay
   return (
     <section className={css.overlay} data-visible={snapshot.visible} aria-hidden={!snapshot.visible}>
       <div ref={mountRef} className={css.mount} />
-      {!hasSession ? <div className={css.loading}><p>请先打开一个 Harness 会话，再使用 OpenPencil。</p></div> : null}
+      {!mounted ? (
+        <button
+          className={css.fallbackClose}
+          type="button"
+          aria-label="关闭设计画布"
+          title="返回 StarWeave"
+          onClick={() => { void controller.setVisible(false) }}
+        >×</button>
+      ) : null}
+      {!hasSession ? <div className={css.loading}><p>请先打开一个 Harness 会话，再使用设计画布。</p></div> : null}
       {hasSession && error ? <div className={css.loading}><p className={css.error}>{error}</p></div> : null}
       {hasSession && error === null && !mounted ? (
-        <div className={css.loading}><span className={css.loadingMark} /><p>正在初始化 OpenPencil SDK…</p></div>
+        <div className={css.loading}><span className={css.loadingMark} /><p>正在初始化设计画布…</p></div>
       ) : null}
     </section>
   )

@@ -191,6 +191,9 @@ if (relativeClientRequires.size > 0) {
     `Desktop Plugin Client must be a single Harness module-table factory; found relative runtime imports: ${[...relativeClientRequires].join(', ')}`,
   )
 }
+if (/require\((["'])(?:node:)?url\1\)/u.test(stagedClientEntry)) {
+  throw new Error('Desktop Plugin Client contains a Node URL require generated from a browser import.meta.url')
+}
 const platformArtifactURL = pathToFileURL(resolve(harness, 'packages/client/web/lib/types/platform.js')).href
 const { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } = await import(platformArtifactURL)
 const stagedClientManifest = JSON.parse(await readFile(resolve(output, 'plugin-client/package.json'), 'utf8'))

@@ -50,7 +50,9 @@ describe('integration settings controls', () => {
     } as unknown as McpSettingsTabProps
     render(<McpSettingsTab {...props} />)
 
-    expect(await screen.findByText(mcpEn.systemTag)).toBeTruthy()
+    expect(await screen.findByText(mcpEn.designCanvasName)).toBeTruthy()
+    expect(screen.queryByText('openpencil-mcp')).toBeNull()
+    expect(screen.getByText(mcpEn.systemTag)).toBeTruthy()
     expect(screen.queryByRole('button', { name: mcpEn.remove })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: mcpEn.edit }))
 
@@ -59,6 +61,7 @@ describe('integration settings controls', () => {
     expect(enabled.checked).toBe(true)
     expect(enabled.disabled).toBe(true)
     expect(name.disabled).toBe(true)
+    expect(name.value).toBe(mcpEn.designCanvasName)
     fireEvent.change(screen.getByRole('spinbutton', { name: mcpEn.timeout }), { target: { value: '180000' } })
     fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
     await waitFor(() => {

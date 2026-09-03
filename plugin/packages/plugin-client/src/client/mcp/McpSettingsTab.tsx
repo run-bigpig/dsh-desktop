@@ -151,7 +151,7 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
             {state.snapshot.servers.map(server => (
               <li className={css.serverCard} key={`${server.origin}:${server.serverName}`}>
                 <div className={css.serverIdentity}>
-                  <strong>{server.serverName}</strong>
+                  <strong>{serverDisplayName(server.serverName, server.origin, t)}</strong>
                   <span>{server.transport === 'stdio' ? t('transportStdio') : t('transportHttp')}</span>
                   {server.origin === 'system' ? <span>{t('systemTag')}</span> : null}
                 </div>
@@ -199,7 +199,7 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
               <div className={css.formGrid}>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-name`}>{t('serverName')}</label>
-                  <input id={`${formId}-name`} disabled={editingSystem} required maxLength={32} pattern="[A-Za-z0-9_-]{1,32}" value={draft.serverName} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, serverName: value })) }} />
+                  <input id={`${formId}-name`} disabled={editingSystem} required maxLength={32} pattern="[A-Za-z0-9_-]{1,32}" value={editingSystem ? serverDisplayName(draft.serverName, 'system', t) : draft.serverName} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, serverName: value })) }} />
                 </div>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-transport`}>{t('transport')}</label>
@@ -242,6 +242,14 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
 
 function phaseLabel(phase: McpServerFiberPhase, t: McpSettingsTabProps['t']): string {
   return phase === null ? t('unobserved') : t(PHASE_KEYS[phase])
+}
+
+function serverDisplayName(
+  serverName: string,
+  origin: McpServerView['origin'],
+  t: McpSettingsTabProps['t'],
+): string {
+  return origin === 'system' && serverName === 'openpencil-mcp' ? t('designCanvasName') : serverName
 }
 
 function draftFrom(server: McpServerView): Draft {

@@ -157,14 +157,14 @@ func main() {
 	})
 	service = desktop.NewRecoveryService(coordinator, app)
 	app.RegisterService(application.NewService(service))
-	windowHeight, minWindowHeight := 840, 620
+	windowWidth, windowHeight, minWindowHeight := 1480, 840, 620
 	if runtime.GOOS == "windows" {
 		const desktopChromeHeight = 38
 		windowHeight += desktopChromeHeight
 		minWindowHeight += desktopChromeHeight
 	}
-	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
-	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "StarWeave", Width: 1280, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
+	mainWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "main", Title: "StarWeave", Width: windowWidth, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Hidden: true, Frameless: runtime.GOOS == "windows", BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/", Windows: application.WindowsWindow{NonClientRegionSupport: true}})
+	splashWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "splash", Title: "StarWeave", Width: windowWidth, Height: windowHeight, MinWidth: 760, MinHeight: minWindowHeight, InitialPosition: application.WindowCentered, Frameless: true, BackgroundColour: application.RGBA{Red: 13, Green: 16, Blue: 23, Alpha: 255}, URL: "/"})
 	updateWindow = app.Window.NewWithOptions(application.WebviewWindowOptions{Name: "update", Title: "StarWeave 更新", Width: 620, Height: 600, MinWidth: 620, MinHeight: 600, MaxWidth: 620, MaxHeight: 600, DisableResize: true, InitialPosition: application.WindowCentered, Hidden: true, BackgroundColour: application.RGBA{Red: 7, Green: 10, Blue: 22, Alpha: 255}, URL: "/?view=update"})
 	coordinator.SetWindow(mainWindow)
 	service.SetWindow(splashWindow)
