@@ -3,7 +3,8 @@ import { tmpdir } from 'node:os'
 import { basename, join } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
 import {
-  readWorkspaceDirectory, readWorkspaceFile, searchWorkspace, writeWorkspaceFile,
+  readWorkspaceBinaryFile, readWorkspaceDirectory, readWorkspaceFile, searchWorkspace,
+  writeWorkspaceBinaryFile, writeWorkspaceFile,
 } from '../src/workspace.ts'
 
 const temporaryDirectories: string[] = []
@@ -72,5 +73,27 @@ describe('workspace directory browser', () => {
     await expect(writeWorkspaceFile(root, {
       path: 'README.md', content: '# stale\n', baseMtime: first.mtime,
     }, signal)).rejects.toThrow('changed on disk')
+  })
+
+  it('reads and writes design binaries only inside the workspace', async () => {
+    const root = await workspace()
+    const signal = new AbortController().signal
+    const data = new Uint8Array([0x66, 0x69, 0x67])
+    await expect(writeWorkspaceBinaryFile(root, 'designs/home.fig', data, signal)).resolves.toEqual({
+      path: 'designs/home.fig',
+    })
+    const saved = await readWorkspaceBinaryFile(root, 'designs/home.fig', signal)
+    expect(saved.path).toBe('designs/home.fig')
+    expect([...saved.data]).toEqual([...data])
+    await expect(writeWorkspaceBinaryFile(root, '../outside.fig', data, signal)).rejects.toThrow('invalid segment')
+    await expect(writeWorkspaceBinaryFile(root, '.git/design.fig', data, signal)).rejects.toThrow('.git')
+  })
+
+  it('rejects design files larger than 64 MiB', async () => {
+    const root = await workspace()
+    const data = new Uint8Array(64 * 1024 * 1024 + 1)
+    await expect(writeWorkspaceBinaryFile(
+      root, 'oversized.fig', data, new AbortController().signal,
+    )).rejects.toThrow('64 MiB')
   })
 })

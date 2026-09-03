@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.75",
+  "version": "0.1.78",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -46,6 +46,8 @@
   "license": "MIT",
   "dependencies": {
     "@firecrawl/anydoc": "0.1.8",
+    "@open-pencil/core": "0.14.0",
+    "canvaskit-wasm": "0.40.0",
     "undici": "6.28.0",
     "ws": "8.21.0"
   },
@@ -71,6 +73,7 @@
     "zod": "^4.4.3"
   },
   "devDependencies": {
+    "@open-pencil/mcp": "0.14.0",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/cordis-plugin-loader": "workspace:^",
     "@deepseek-ai/dsh-attachment": "workspace:^",

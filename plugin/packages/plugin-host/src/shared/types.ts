@@ -68,6 +68,31 @@ export interface OpenPencilSnapshot {
   readonly phase: OpenPencilPhase
   readonly mcpConnected: boolean
   readonly toolCount: number
+  readonly visible: boolean
+  readonly revision: number
+}
+
+export interface OpenPencilClientConnection {
+  readonly port: number
+  readonly authToken: string
+  readonly version: string
+}
+
+export interface OpenPencilCollaborationHostSession {
+  readonly hostKey: string
+  readonly roomToken: string
+  readonly localSocketURL: string
+  readonly joinCodes: readonly string[]
+}
+
+export interface OpenPencilDesignFile {
+  readonly path: string
+  readonly dataBase64: string
+}
+
+export interface OpenPencilDesignWriteRequest {
+  readonly path: string
+  readonly dataBase64: string
 }
 
 export type McpServerOrigin = 'settings' | 'system' | 'composition'
@@ -133,6 +158,8 @@ export type McpServerUpsertRequest = McpStdioUpsertRequest | McpHttpUpsertReques
 
 export interface McpSystemUpdateRequest {
   readonly serverName: string
+  readonly url?: string
+  readonly headers?: Readonly<Record<string, string>>
   readonly toolCallTimeoutMs: number
   readonly failOnStartupError: boolean
 }

@@ -1,13 +1,10 @@
 package plugin
 
 import (
-	"context"
 	"net/http"
 	"net/http/httptest"
 	"strings"
 	"testing"
-
-	"github.com/run-bigpig/dsh-desktop/internal/openpencil"
 )
 
 type fakeDesktopController struct {
@@ -15,24 +12,6 @@ type fakeDesktopController struct {
 	minimized int
 	maximized int
 	closed    int
-}
-
-type fakeOpenPencilController struct {
-	status openpencil.Status
-	shows  int
-	hides  int
-}
-
-func (f *fakeOpenPencilController) Status(context.Context) (openpencil.Status, error) {
-	return f.status, nil
-}
-func (f *fakeOpenPencilController) Show(context.Context) (openpencil.Status, error) {
-	f.shows++
-	return f.status, nil
-}
-func (f *fakeOpenPencilController) Hide(context.Context) (openpencil.Status, error) {
-	f.hides++
-	return f.status, nil
 }
 
 func (f *fakeDesktopController) WindowState() (WindowState, error) { return f.state, nil }
@@ -148,38 +127,5 @@ func TestBridgeExposesOnlyAuthenticatedDesktopWindowActions(t *testing.T) {
 	bridge.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || controller.closed != 1 {
 		t.Fatalf("close response = %d %s; calls = %d", response.Code, response.Body.String(), controller.closed)
-	}
-}
-
-func TestBridgeExposesOpenPencilOnlyToAuthenticatedHost(t *testing.T) {
-	controller := &fakeOpenPencilController{status: openpencil.Status{
-		Bundled: true, Port: 3100, URL: "http://127.0.0.1:3100/mcp", Token: "host-only-token",
-	}}
-	bridge := &Bridge{
-		manager: &Manager{operations: map[string]*operationRecord{}}, token: "secret", desktop: &fakeDesktopController{}, openPencil: controller,
-	}
-
-	request := httptest.NewRequest(http.MethodGet, "/v1/openpencil/status", nil)
-	request.Header.Set("Authorization", "Bearer secret")
-	response := httptest.NewRecorder()
-	bridge.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || !strings.Contains(response.Body.String(), `"token":"host-only-token"`) {
-		t.Fatalf("status response = %d %s", response.Code, response.Body.String())
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "/v1/openpencil/show", nil)
-	request.Header.Set("Authorization", "Bearer secret")
-	response = httptest.NewRecorder()
-	bridge.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || controller.shows != 1 {
-		t.Fatalf("show response = %d %s; calls = %d", response.Code, response.Body.String(), controller.shows)
-	}
-
-	request = httptest.NewRequest(http.MethodPost, "/v1/openpencil/hide", nil)
-	request.Header.Set("Authorization", "Bearer secret")
-	response = httptest.NewRecorder()
-	bridge.ServeHTTP(response, request)
-	if response.Code != http.StatusOK || controller.hides != 1 {
-		t.Fatalf("hide response = %d %s; calls = %d", response.Code, response.Body.String(), controller.hides)
 	}
 }

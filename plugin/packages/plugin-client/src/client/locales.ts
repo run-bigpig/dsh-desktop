@@ -63,7 +63,7 @@ export const mcpZh = {
   enabled: '启用', transport: '传输方式', transportStdio: 'stdio', transportHttp: 'Streamable HTTP',
   command: '命令', args: '参数（每行一项）', env: '环境变量', url: 'URL', headers: '请求头',
   secretHint: '每行一条 KEY=value。编辑时留空会保留已有值，密钥不会回显。',
-  systemTag: '系统级', systemHint: '系统级 MCP 由 StarWeave 提供并强制启用；可调整连接参数，但不能改名、关闭或删除。',
+  systemTag: '系统级', systemHint: '系统级 MCP 由 StarWeave 提供并强制启用；可编辑字段与普通 MCP 使用相同表单，运行时托管字段保持只读，且不能改名、关闭或删除。',
   timeout: '工具调用超时（毫秒）', failOnStartup: '启动失败时阻止加载',
   compositionHint: '此服务器由 Harness 组合配置管理，请在对应 YAML 中修改。', disabledTag: '已停用',
   unobserved: '未运行', pending: '等待依赖', loadingPhase: '加载中', active: '运行中', failed: '挂载失败',
@@ -80,39 +80,13 @@ export const mcpEn = {
   enabled: 'Enabled', transport: 'Transport', transportStdio: 'stdio', transportHttp: 'Streamable HTTP',
   command: 'Command', args: 'Arguments (one per line)', env: 'Environment variables', url: 'URL', headers: 'Headers',
   secretHint: 'One KEY=value per line. Leave empty while editing to retain stored values; secrets are never shown.',
-  systemTag: 'System', systemHint: 'StarWeave provides and keeps this system MCP enabled. Connection options are editable, but it cannot be renamed, disabled, or deleted.',
+  systemTag: 'System', systemHint: 'StarWeave provides and keeps this system MCP enabled. Editable fields use the standard MCP form, runtime-managed fields stay read-only, and the server cannot be renamed, disabled, or deleted.',
   timeout: 'Tool call timeout (ms)', failOnStartup: 'Fail loading when startup fails',
   compositionHint: 'This server is managed by a Harness composition; edit the corresponding YAML.', disabledTag: 'Disabled',
   unobserved: 'Not running', pending: 'Waiting for dependencies', loadingPhase: 'Loading', active: 'Running',
   failed: 'Mount failed', unloading: 'Unloading', tools: 'tools', invalidKv: 'Each line must be KEY=value.',
   saveFailed: 'Save failed.', removeFailed: 'Delete failed.',
 } satisfies Record<McpLocaleKey, string>
-
-export const thinkingDataZh = {
-  nav: '数数配置', title: '数数配置', tagline: '连接内部数数分析服务，为对话提供数据查询能力。',
-  loading: '正在读取数数配置…', loadFailed: '暂时无法读取数数配置。', retry: '重试',
-  enabled: '启用数数服务', enabledHint: '启用后将在对话中提供数数分析能力。',
-  url: '服务地址', urlHint: '留空时使用内置默认地址。', token: 'Token', tokenPlaceholder: '输入 Token',
-  tokenConfigured: '已配置', tokenHint: 'Token 仅保存在本机凭据存储中。', tokenRetainHint: '留空将保留当前 Token。',
-  save: '保存', saving: '正在保存…', saved: '已保存。', saveFailed: '保存失败。', test: '测试连接', testing: '正在测试…',
-  ready: '连接成功，服务已就绪。', connected: '连接成功。', missingToken: '请先填写 Token。',
-  unauthorized: 'Token 无效或没有访问权限。', notReady: '连接成功，但服务尚未就绪。', unreachable: '无法连接服务，请检查地址和网络。',
-  phaseDisabled: '未启用', phaseMissingToken: '缺少 Token', phaseConnecting: '正在连接', phaseActive: '已连接', phaseFailed: '连接失败',
-} satisfies Record<string, string>
-
-export type ThinkingDataLocaleKey = keyof typeof thinkingDataZh
-
-export const thinkingDataEn = {
-  nav: 'ThinkingData', title: 'ThinkingData', tagline: 'Connect the internal analytics service for data queries in conversations.',
-  loading: 'Loading ThinkingData settings…', loadFailed: 'ThinkingData settings are temporarily unavailable.', retry: 'Retry',
-  enabled: 'Enable ThinkingData', enabledHint: 'Provides ThinkingData analysis capabilities in conversations.',
-  url: 'Service URL', urlHint: 'Leave empty to use the built-in default.', token: 'Token', tokenPlaceholder: 'Enter Token',
-  tokenConfigured: 'Configured', tokenHint: 'The Token is stored only in the local credential store.', tokenRetainHint: 'Leave empty to retain the current Token.',
-  save: 'Save', saving: 'Saving…', saved: 'Saved.', saveFailed: 'Save failed.', test: 'Test connection', testing: 'Testing…',
-  ready: 'Connected and ready.', connected: 'Connected.', missingToken: 'Enter a Token first.',
-  unauthorized: 'The Token is invalid or lacks access.', notReady: 'Connected, but the service is not ready.', unreachable: 'Unable to connect. Check the URL and network.',
-  phaseDisabled: 'Disabled', phaseMissingToken: 'Token required', phaseConnecting: 'Connecting', phaseActive: 'Connected', phaseFailed: 'Connection failed',
-} satisfies Record<ThinkingDataLocaleKey, string>
 
 export const visionZh = {
   tab: '视觉', loading: '正在读取视觉设置…', error: '暂时无法读取视觉设置。', retry: '重试',

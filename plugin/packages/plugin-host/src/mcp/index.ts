@@ -114,6 +114,9 @@ export class McpSettingsGateway extends TypertRemoteService {
       if (!isReservedMcpServerName(request.serverName) || !this.systemRecords.has(request.serverName)) {
         throw new Error(`mcp-settings: no system server named ${JSON.stringify(request.serverName)}`)
       }
+      if ((request.url !== undefined || request.headers !== undefined) && request.serverName !== 'ta-mcp-server') {
+        throw new Error(`mcp-settings: connection settings for ${JSON.stringify(request.serverName)} are runtime-managed`)
+      }
       this.document = updateMcpSystemOverride(this.document, request)
       await this.persist()
       await this.syncSystem(request.serverName)

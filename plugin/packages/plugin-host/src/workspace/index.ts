@@ -21,6 +21,7 @@ const SEARCH_SCAN_CAP = 20_000
 const SEARCH_DEPTH_CAP = 24
 const TEXT_CHARACTER_CAP = 80_000
 const BINARY_BYTE_CAP = 8 * 1024 * 1024
+const DESIGN_BINARY_BYTE_CAP = 64 * 1024 * 1024
 
 /** Human-only file browser and preview gateway for the active Session workspace. */
 export class WorkspaceGateway extends TypertRemoteService {
@@ -49,8 +50,43 @@ export class WorkspaceGateway extends TypertRemoteService {
   }
 }
 
-function workspaceRoot(agent: Agent): string {
+export function workspaceRoot(agent: Agent): string {
   return resolve(agent.session.header.cwd ?? process.cwd())
+}
+
+export async function readWorkspaceBinaryFile(
+  root: string,
+  path: string,
+  signal: AbortSignal,
+): Promise<{ readonly path: string; readonly data: Uint8Array }> {
+  signal.throwIfAborted()
+  const normalizedRoot = await canonicalWorkspaceRoot(root)
+  const normalizedPath = normalizeWorkspaceInputPath(normalizedRoot, path)
+  assertNotGitPath(normalizedPath)
+  const absolute = await resolveInsideWorkspace(normalizedRoot, normalizedPath, false)
+  const [data, info] = await Promise.all([readFile(absolute), stat(absolute)])
+  signal.throwIfAborted()
+  if (!info.isFile()) throw new Error('workspace path is not a file')
+  if (data.length > DESIGN_BINARY_BYTE_CAP) throw new Error('design file exceeds the 64 MiB limit')
+  return { path: normalizedPath, data }
+}
+
+export async function writeWorkspaceBinaryFile(
+  root: string,
+  path: string,
+  data: Uint8Array,
+  signal: AbortSignal,
+): Promise<{ readonly path: string }> {
+  signal.throwIfAborted()
+  if (data.byteLength > DESIGN_BINARY_BYTE_CAP) throw new Error('design file exceeds the 64 MiB limit')
+  const normalizedRoot = await canonicalWorkspaceRoot(root)
+  const normalizedPath = normalizeWorkspaceInputPath(normalizedRoot, path)
+  assertNotGitPath(normalizedPath)
+  const absolute = await resolveInsideWorkspace(normalizedRoot, normalizedPath, true)
+  await mkdir(dirname(absolute), { recursive: true })
+  await writeFile(absolute, data)
+  signal.throwIfAborted()
+  return { path: normalizedPath }
 }
 
 export async function readWorkspaceDirectory(
@@ -218,6 +254,15 @@ export function normalizeWorkspaceRelativePath(value: string, allowEmpty = false
     throw new Error('workspace path contains an invalid segment')
   }
   return normalized
+}
+
+function normalizeWorkspaceInputPath(root: string, value: string): string {
+  if (!isAbsolute(value)) return normalizeWorkspaceRelativePath(value)
+  const fromRoot = relative(root, resolve(value))
+  if (fromRoot === '' || fromRoot === '..' || fromRoot.startsWith(`..${sep}`) || isAbsolute(fromRoot)) {
+    throw new Error('workspace path escapes the active workspace')
+  }
+  return normalizeWorkspaceRelativePath(fromRoot)
 }
 
 async function canonicalWorkspaceRoot(root: string): Promise<string> {

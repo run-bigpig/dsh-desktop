@@ -61,7 +61,7 @@ describe('ThinkingData settings document', () => {
     }))).toEqual({
       version: 2, servers: [], systemOverrides: [],
     })
-    const document = updateMcpSystemOverride(emptyMcpSettingsDocument(), {
+    let document = updateMcpSystemOverride(emptyMcpSettingsDocument(), {
       serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
     })
     const record = applyMcpSystemOverride({
@@ -71,6 +71,24 @@ describe('ThinkingData settings document', () => {
     }, document)
     expect(record.toolCallTimeoutMs).toBe(180000)
     expect(serializeMcpSettingsDocument(document)).not.toContain('ephemeral')
+
+    document = updateMcpSystemOverride(document, {
+      serverName: 'ta-mcp-server',
+      url: 'https://analytics.example/mcp',
+      headers: { Authorization: 'Bearer configured-token' },
+      toolCallTimeoutMs: 120000,
+      failOnStartupError: false,
+    })
+    const thinkingData = applyMcpSystemOverride({
+      transport: 'streamable-http', serverName: 'ta-mcp-server', enabled: true,
+      url: DEFAULT_THINKINGDATA_URL, headers: {}, toolCallTimeoutMs: 60000, failOnStartupError: false,
+    }, document)
+    expect(thinkingData).toMatchObject({
+      url: 'https://analytics.example/mcp',
+      headers: { Authorization: 'Bearer configured-token' },
+      toolCallTimeoutMs: 120000,
+    })
+    expect(parseMcpSettingsDocument(serializeMcpSettingsDocument(document))).toEqual(document)
   })
 
   it('loads the packaged skill with its reference directory', async () => {

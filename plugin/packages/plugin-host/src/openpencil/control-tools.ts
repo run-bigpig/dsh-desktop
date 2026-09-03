@@ -13,7 +13,7 @@ export function defineOpenPencilControlTools(control: OpenPencilWindowControl) {
   return [
     defineTool({
       name: 'openpencil_show',
-      description: '显示 StarWeave 内置 OpenPencil 画布窗口。仅在需要用户查看或交互画布时调用。',
+      description: '在 StarWeave 内显示内置 OpenPencil 画布。仅在需要用户查看或交互画布时调用。',
       parameters: {},
       output,
       isConcurrencySafe: () => false,
@@ -21,7 +21,7 @@ export function defineOpenPencilControlTools(control: OpenPencilWindowControl) {
     }),
     defineTool({
       name: 'openpencil_hide',
-      description: '隐藏 OpenPencil 画布窗口，但保持后台 MCP 连接和 StarWeave 托管进程继续运行。',
+      description: '隐藏 StarWeave 内置 OpenPencil 画布，但保持 MCP 连接继续运行。',
       parameters: {},
       output,
       isConcurrencySafe: () => false,

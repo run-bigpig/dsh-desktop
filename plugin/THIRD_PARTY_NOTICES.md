@@ -27,3 +27,10 @@ The document conversion capability is adapted from
 `@firecrawl/anydoc` version `0.1.8` from the Firecrawl anydoc project. Both are
 distributed under the MIT License. The Firecrawl source reviewed for this
 integration was commit `7df4b2e4213c033cfb8e94abc57ab88bb1e9b48c`.
+
+The built-in design canvas and MCP runtime use OpenPencil SDK version `0.14.0`
+from `open-pencil/open-pencil`, distributed under the MIT License. Rendering
+uses CanvasKit WASM version `0.40.0` under the Skia BSD 3-Clause license, and
+the embedded editor island uses Vue version `3.5.29` under the MIT License.
+LAN collaboration uses Yjs version `13.6.30` and the existing `ws` runtime,
+both distributed under the MIT License.

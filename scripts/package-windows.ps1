@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.9",
+  [string]$Version = "0.2.10",
   [string]$ReleaseAPI = "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
 )
 
@@ -12,7 +12,6 @@ $buildLock = Enter-WindowsBuildLock $repoRoot
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $installer = Join-Path $repoRoot "build/windows/installer.nsi"
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
-$openPencilLock = Get-Content (Join-Path $repoRoot "release/openpencil.lock.json") -Raw | ConvertFrom-Json
 $desktopManifestPath = Join-Path $stage "desktop-build.json"
 $seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
 $desktopExe = Join-Path $stage "StarWeave.exe"
@@ -38,33 +37,11 @@ $seedFingerprint = Get-WindowsSeedFingerprint $repoRoot
 if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.version -ne $Version -or $desktopManifest.releaseAPI -ne $ReleaseAPI) {
   throw "Windows desktop stage is stale; run task build:windows"
 }
-if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit -or $seedManifest.openPencilCommit -ne $openPencilLock.commit) {
+if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit) {
   throw "Windows seed stage is stale; run task seed:windows"
 }
-$openPencilExe = Join-Path $stage "resources/openpencil/StarWeaveOpenPencilCompanion.exe"
-$openPencilMCPBundle = Join-Path $stage "resources/openpencil/openpencil-mcp-http.mjs"
-$openPencilStagedLock = Join-Path $stage "resources/openpencil/openpencil.lock.json"
-$openPencilLicense = Join-Path $stage "resources/openpencil/LICENSE.txt"
-if (-not (Test-Path -LiteralPath $openPencilExe) -or -not (Test-Path -LiteralPath $openPencilMCPBundle) -or -not (Test-Path -LiteralPath $openPencilStagedLock) -or -not (Test-Path -LiteralPath $openPencilLicense)) {
-  throw "Windows stage is missing bundled OpenPencil; run task seed:windows"
-}
-$stagedOpenPencilLock = Get-Content $openPencilStagedLock -Raw | ConvertFrom-Json
-$openPencilArtifact = $openPencilLock.artifacts | Where-Object {
-  $_.platform -eq "windows" -and $_.architecture -eq "x64"
-} | Select-Object -First 1
-if (-not $openPencilArtifact) { throw "OpenPencil lock has no Windows x64 artifact" }
-if ($stagedOpenPencilLock.commit -ne $openPencilLock.commit -or $stagedOpenPencilLock.version -ne $openPencilLock.version) {
-  throw "Windows stage contains a stale OpenPencil lock; run task seed:windows"
-}
-if ((Get-SHA256File $openPencilExe) -ne $openPencilArtifact.executableSha256 -or $seedManifest.openPencilExecutableSHA256 -ne $openPencilArtifact.executableSha256) {
-  throw "Windows stage contains an unverified OpenPencil executable; run task seed:windows"
-}
-if ((Get-SHA256File $openPencilMCPBundle) -ne $openPencilArtifact.mcpBundleSha256 -or $seedManifest.openPencilMCPBundleSHA256 -ne $openPencilArtifact.mcpBundleSha256) {
-  throw "Windows stage contains an unverified OpenPencil MCP bundle; run task seed:windows"
-}
-$openPencilLicenseSHA256 = Get-SHA256File (Join-Path $repoRoot "release/openpencil-LICENSE.txt")
-if ((Get-SHA256File $openPencilLicense) -ne $openPencilLicenseSHA256 -or $seedManifest.openPencilLicenseSHA256 -ne $openPencilLicenseSHA256) {
-  throw "Windows stage contains an unverified OpenPencil license; run task seed:windows"
+if (Test-Path -LiteralPath (Join-Path $stage "resources/openpencil")) {
+  throw "Windows stage still contains the removed OpenPencil Companion payload; run task seed:windows"
 }
 $desktopHash = Get-SHA256File $desktopExe
 if ($desktopManifest.executableSHA256 -ne $desktopHash) {
@@ -123,11 +100,6 @@ $installerFingerprint = Get-SHA256Text ((@(
   "desktopFingerprint=$desktopFingerprint",
   "desktopSHA256=$desktopHash",
   "seedFingerprint=$seedFingerprint",
-  "openPencilVersion=$($openPencilLock.version)",
-  "openPencilCommit=$($openPencilLock.commit)",
-  "openPencilExecutableSHA256=$($seedManifest.openPencilExecutableSHA256)",
-  "openPencilMCPBundleSHA256=$($seedManifest.openPencilMCPBundleSHA256)",
-  "openPencilLicenseSHA256=$($seedManifest.openPencilLicenseSHA256)",
   "seedCommit=$($seedLock.commit)",
   "version=$Version",
   "compiler=$compilerVersion"

@@ -128,7 +128,6 @@ export class ThinkingDataGateway extends TypertRemoteService {
       toolCallTimeoutMs: THINKINGDATA_TOOL_TIMEOUT_MS,
       failOnStartupError: false,
     })
-    if (token === undefined || token.length === 0) return
     await this.refreshSkill()
     this.disposeLearningTool = registerThinkingDataLearningTool(
       this.ctx,

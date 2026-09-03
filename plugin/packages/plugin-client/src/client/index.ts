@@ -26,10 +26,6 @@ import type {
   ImageModelSettingsSnapshot,
   MarketplaceOperation,
   MarketplaceSnapshot,
-  ThinkingDataSaveRequest,
-  ThinkingDataSnapshot,
-  ThinkingDataTestRequest,
-  ThinkingDataTestResult,
   VisionBridgeSnapshot,
   VisionSaveRequest,
   VisionTestRequest,
@@ -88,6 +84,14 @@ import {
   type WorkspaceReferenceDropDockInjected,
   workspaceFileReferenceOf,
 } from './workbench/SessionWorkbench.tsx'
+import {
+  OpenPencilController,
+  OpenPencilLauncher,
+  OpenPencilOverlay,
+  type OpenPencilLauncherInjected,
+  type OpenPencilOverlayInjected,
+  type OpenPencilRemote,
+} from './openpencil/OpenPencilIntegration.tsx'
 import { SkinBrandMark, SkinBrandName } from './skin/SkinBrand.tsx'
 import { SkinBackgroundPresenter } from './skin/skin-background.ts'
 import { SkinSettingsRow, type SkinSettingsRowInjected } from './skin/SkinSettingsRow.tsx'
@@ -96,11 +100,10 @@ import {
 } from './skin/skin-controller.ts'
 import {
   desktopEn, desktopZh, documentsEn, documentsZh, en, imageEn, imageZh, mcpEn, mcpZh, skinEn, skinZh,
-  thinkingDataEn, thinkingDataZh,
   chartPresentationEn, chartPresentationZh,
   visionEn, visionZh, workbenchEn, workbenchZh, zh,
   type DesktopLocaleKey, type DocumentsLocaleKey, type ImageLocaleKey, type MarketplaceLocaleKey, type McpLocaleKey,
-  type ChartPresentationLocaleKey, type SkinLocaleKey, type ThinkingDataLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
+  type ChartPresentationLocaleKey, type SkinLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
 
@@ -108,7 +111,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
     'settings.marketplace': MarketplaceLocaleKey
     'settings.mcp': McpLocaleKey
-    'settings.thinkingdata': ThinkingDataLocaleKey
     'settings.vision': VisionLocaleKey
     'settings.image': ImageLocaleKey
     'desktop.integration': DesktopLocaleKey
@@ -123,7 +125,6 @@ declare module '@deepseek-ai/dsh-client-ui-slots' {
 export const NS = 'settings.marketplace'
 export const DESKTOP_NS = 'desktop.integration'
 export const MCP_NS = 'settings.mcp'
-export const THINKINGDATA_NS = 'settings.thinkingdata'
 export const VISION_NS = 'settings.vision'
 export const IMAGE_NS = 'settings.image'
 export const DOCUMENTS_NS = 'documents.upload'
@@ -155,12 +156,6 @@ interface McpSettingsRemote {
   upsert: (request: McpServerUpsertRequest) => Promise<RemoteResult<{ ok: true }>>
   updateSystem: (request: McpSystemUpdateRequest) => Promise<RemoteResult<{ ok: true }>>
   delete: (request: { serverName: string }) => Promise<RemoteResult<{ ok: true }>>
-}
-
-interface ThinkingDataRemote {
-  snapshot: () => Promise<RemoteResult<ThinkingDataSnapshot>>
-  save: (request: ThinkingDataSaveRequest) => Promise<RemoteResult<{ ok: true }>>
-  testConnection: (request: ThinkingDataTestRequest) => Promise<RemoteResult<ThinkingDataTestResult>>
 }
 
 interface VisionBridgeRemote {
@@ -240,7 +235,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-marketplace: dictionaries')
   ctx.effect(() => ctx.locale.register(DESKTOP_NS, { zh: desktopZh, en: desktopEn }), 'desktop-integration: dictionaries')
   ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), 'desktop-mcp: dictionaries')
-  ctx.effect(() => ctx.locale.register(THINKINGDATA_NS, { zh: thinkingDataZh, en: thinkingDataEn }), 'thinkingdata: dictionaries')
   ctx.effect(() => ctx.locale.register(VISION_NS, { zh: visionZh, en: visionEn }), 'desktop-vision: dictionaries')
   ctx.effect(() => ctx.locale.register(IMAGE_NS, { zh: imageZh, en: imageEn }), 'desktop-image-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(DOCUMENTS_NS, { zh: documentsZh, en: documentsEn }), 'desktop-documents: dictionaries')
@@ -321,15 +315,13 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     key: 'chart_present',
     locale: CHART_PRESENTATION_NS,
   }, ChartPresentationCard))
-  ctx.inject(['remote.mcpSettings', 'remote.thinkingData', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
+  ctx.inject(['remote.mcpSettings', 'remote.visionBridge', 'remote.imageWorkbench'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       mcpSettings: McpSettingsRemote
-      thinkingData: ThinkingDataRemote
       visionBridge: VisionBridgeRemote
       imageWorkbench: ImageWorkbenchRemote
     }
     const mcpT = inner.locale.bind(MCP_NS)
-    const thinkingDataT = inner.locale.bind(THINKINGDATA_NS)
     const visionT = inner.locale.bind(VISION_NS)
     const imageT = inner.locale.bind(IMAGE_NS)
     inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
@@ -339,12 +331,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         upsert: async request => { unwrap(await remotes.mcpSettings.upsert(request)) },
         updateSystem: async request => { unwrap(await remotes.mcpSettings.updateSystem(request)) },
         remove: async serverName => { unwrap(await remotes.mcpSettings.delete({ serverName })) },
-        thinkingData: {
-          snapshot: async () => unwrap(await remotes.thinkingData.snapshot()),
-          save: async request => { unwrap(await remotes.thinkingData.save(request)) },
-          testConnection: async request => unwrap(await remotes.thinkingData.testConnection(request)),
-          t: thinkingDataT,
-        },
       }),
     }, McpSettingsTab))
     inner.slots.inject('settings.plugins.tab', () => inner.slots.register({
@@ -530,6 +516,23 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         },
       }),
     }, WorkspaceReferenceDropDock))
+  })
+  ctx.inject(['remote.openPencil'], (inner: ClientContext) => {
+    const openPencil = (inner.remote as ClientContext['remote'] & { openPencil: OpenPencilRemote }).openPencil
+    const controller = new OpenPencilController(openPencil)
+    inner.effect(() => () => { controller.dispose() }, 'openpencil: client controller')
+    inner.slots.inject('conversation.session.header.utilities', () => inner.slots.register({
+      name: 'conversation.session.header.utilities',
+      id: 'desktop-openpencil-launcher',
+      order: 15,
+      inject: (): OpenPencilLauncherInjected => ({ controller }),
+    }, OpenPencilLauncher))
+    inner.slots.inject('shell.overlay', () => inner.slots.register({
+      name: 'shell.overlay',
+      id: 'desktop-openpencil-editor',
+      order: 30,
+      inject: (): OpenPencilOverlayInjected => ({ controller }),
+    }, OpenPencilOverlay))
   })
   if (capabilities.apiVersion === 1 && capabilities.capabilities.includes('marketplace')) {
     const t = ctx.locale.bind(NS)

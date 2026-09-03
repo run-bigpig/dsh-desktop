@@ -180,8 +180,20 @@ await stagePackage(hostDir, resolve(output, 'plugin-host'), {
 }, versions)
 await stagePackage(resolve(overlay, 'plugin-client'), resolve(output, 'plugin-client'), {
   files: ['package.json', 'lib/index.js', 'lib/client.js', 'lib/client.js.map'],
-  trees: [{ path: 'lib/types', suffixes: ['.d.ts'] }],
+  trees: [
+    { path: 'lib', suffixes: ['.cjs', '.cjs.map'] },
+    { path: 'lib/types', suffixes: ['.d.ts'] },
+  ],
 }, versions)
+const stagedClientEntry = await readFile(resolve(output, 'plugin-client/lib/client.js'), 'utf8')
+const requiredClientChunks = new Set(
+  [...stagedClientEntry.matchAll(/require\("\.\/([^"/]+\.cjs)"\)/gu)].map(match => match[1]),
+)
+for (const chunk of requiredClientChunks) {
+  if (!await exists(resolve(output, 'plugin-client/lib', chunk))) {
+    throw new Error(`staged Desktop Plugin Client is missing runtime chunk ${chunk}`)
+  }
+}
 await stagePackage(resolve(overlay, 'plugin-bundle'), resolve(output, 'plugin-bundle'), {
   files: ['package.json', 'cordis.patch.yml', 'THIRD_PARTY_NOTICES.md'],
   trees: [{ path: 'LICENSES', suffixes: ['.txt'] }],

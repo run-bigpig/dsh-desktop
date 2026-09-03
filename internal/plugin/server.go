@@ -1,7 +1,6 @@
 package plugin
 
 import (
-	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
@@ -15,8 +14,6 @@ import (
 	"strings"
 	"sync"
 	"time"
-
-	"github.com/run-bigpig/dsh-desktop/internal/openpencil"
 )
 
 var (
@@ -26,14 +23,13 @@ var (
 )
 
 type Bridge struct {
-	manager    *Manager
-	server     *http.Server
-	listener   net.Listener
-	token      string
-	url        string
-	mu         sync.RWMutex
-	desktop    DesktopController
-	openPencil OpenPencilController
+	manager  *Manager
+	server   *http.Server
+	listener net.Listener
+	token    string
+	url      string
+	mu       sync.RWMutex
+	desktop  DesktopController
 }
 
 const DesktopBridgeAPIVersion = 1
@@ -53,12 +49,6 @@ type DesktopController interface {
 	MinimizeWindow() error
 	ToggleMaximizeWindow() (WindowState, error)
 	CloseWindow() error
-}
-
-type OpenPencilController interface {
-	Status(context.Context) (openpencil.Status, error)
-	Show(context.Context) (openpencil.Status, error)
-	Hide(context.Context) (openpencil.Status, error)
 }
 
 func StartBridge(manager *Manager) (*Bridge, error) {
@@ -87,22 +77,10 @@ func (b *Bridge) SetDesktopController(controller DesktopController) {
 	b.mu.Unlock()
 }
 
-func (b *Bridge) SetOpenPencilController(controller OpenPencilController) {
-	b.mu.Lock()
-	b.openPencil = controller
-	b.mu.Unlock()
-}
-
 func (b *Bridge) desktopController() DesktopController {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
 	return b.desktop
-}
-
-func (b *Bridge) openPencilController() OpenPencilController {
-	b.mu.RLock()
-	defer b.mu.RUnlock()
-	return b.openPencil
 }
 
 func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -129,46 +107,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		if runtime.GOOS == "windows" {
 			capabilities = append(capabilities, "window.controls")
 		}
-		if b.openPencilController() != nil {
-			capabilities = append(capabilities, "openpencil.companion")
-		}
 		writeJSON(w, http.StatusOK, DesktopCapabilities{APIVersion: DesktopBridgeAPIVersion, Capabilities: capabilities})
-	case r.Method == http.MethodGet && r.URL.Path == "/v1/openpencil/status":
-		controller := b.openPencilController()
-		if controller == nil {
-			writeError(w, http.StatusServiceUnavailable, "OpenPencil controller is unavailable")
-			return
-		}
-		status, err := controller.Status(r.Context())
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, status)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/openpencil/show":
-		controller := b.openPencilController()
-		if controller == nil {
-			writeError(w, http.StatusServiceUnavailable, "OpenPencil controller is unavailable")
-			return
-		}
-		status, err := controller.Show(r.Context())
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, status)
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/openpencil/hide":
-		controller := b.openPencilController()
-		if controller == nil {
-			writeError(w, http.StatusServiceUnavailable, "OpenPencil controller is unavailable")
-			return
-		}
-		status, err := controller.Hide(r.Context())
-		if err != nil {
-			writeError(w, http.StatusServiceUnavailable, err.Error())
-			return
-		}
-		writeJSON(w, http.StatusOK, status)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/window/state":
 		controller := b.desktopController()
 		if controller == nil {

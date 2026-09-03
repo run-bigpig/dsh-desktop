@@ -40,6 +40,8 @@ export type McpServerRecord = McpStdioRecord | McpHttpRecord
 
 export interface McpSystemOverride {
   readonly serverName: string
+  readonly url?: string
+  readonly headers?: Readonly<Record<string, string>>
   readonly toolCallTimeoutMs: number
   readonly failOnStartupError: boolean
 }
@@ -126,8 +128,13 @@ export function updateMcpSystemOverride(
   override: McpSystemOverride,
 ): McpSettingsDocument {
   const serverName = parseServerName(override.serverName)
+  const previous = document.systemOverrides.find(entry => entry.serverName === serverName)
+  const url = override.url === undefined ? previous?.url : requiredString(override.url, 'url')
+  const headers = override.headers === undefined ? previous?.headers : parseStringMap(override.headers, 'headers')
   const next = {
     serverName,
+    ...(url === undefined ? {} : { url }),
+    ...(headers === undefined ? {} : { headers }),
     toolCallTimeoutMs: parsePositive(override.toolCallTimeoutMs, 'toolCallTimeoutMs'),
     failOnStartupError: parseBoolean(override.failOnStartupError, 'failOnStartupError'),
   }
@@ -148,6 +155,8 @@ export function applyMcpSystemOverride(
   return override === undefined ? record : {
     ...record,
     enabled: true,
+    ...(record.transport === 'streamable-http' && override.url !== undefined ? { url: override.url } : {}),
+    ...(record.transport === 'streamable-http' && override.headers !== undefined ? { headers: override.headers } : {}),
     toolCallTimeoutMs: override.toolCallTimeoutMs,
     failOnStartupError: override.failOnStartupError,
   }
@@ -329,9 +338,11 @@ function parseSystemOverrides(value: unknown): McpSystemOverride[] {
   const result = value.map((entry, index) => {
     const label = `systemOverrides[${String(index)}]`
     if (!isRecord(entry)) throw new Error(`mcp-settings: ${label} must be an object`)
-    assertKnownKeys(entry, ['serverName', 'toolCallTimeoutMs', 'failOnStartupError'], label)
+    assertKnownKeys(entry, ['serverName', 'url', 'headers', 'toolCallTimeoutMs', 'failOnStartupError'], label)
     return {
       serverName: parseServerName(entry.serverName, `${label}.serverName`),
+      ...(entry.url === undefined ? {} : { url: requiredString(entry.url, `${label}.url`) }),
+      ...(entry.headers === undefined ? {} : { headers: parseStringMap(entry.headers, `${label}.headers`) }),
       toolCallTimeoutMs: parsePositive(entry.toolCallTimeoutMs, `${label}.toolCallTimeoutMs`),
       failOnStartupError: parseBoolean(entry.failOnStartupError, `${label}.failOnStartupError`),
     }

@@ -8,10 +8,6 @@ import type {
   McpSettingsSnapshot,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import type { McpLocaleKey } from '../locales.ts'
-import {
-  ThinkingDataSettingsSection,
-  type ThinkingDataSettingsContentProps,
-} from '../thinkingdata/ThinkingDataSettingsSection.tsx'
 import css from '../shared/IntegrationSettings.module.css'
 
 export interface McpSettingsTabInjected {
@@ -19,7 +15,6 @@ export interface McpSettingsTabInjected {
   upsert: (request: McpServerUpsertRequest) => Promise<void>
   updateSystem: (request: McpSystemUpdateRequest) => Promise<void>
   remove: (serverName: string) => Promise<void>
-  thinkingData: ThinkingDataSettingsContentProps
 }
 
 export type McpSettingsTabProps =
@@ -56,7 +51,7 @@ const PHASE_KEYS = {
   pending: 'pending', loading: 'loadingPhase', active: 'active', failed: 'failed', unloading: 'unloading',
 } satisfies Record<Exclude<McpServerFiberPhase, null>, McpLocaleKey>
 
-export function McpSettingsTab({ list, upsert, updateSystem, remove, thinkingData, t }: McpSettingsTabProps): ReactNode {
+export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSettingsTabProps): ReactNode {
   const formId = useId()
   const [request, setRequest] = useState(0)
   const [state, setState] = useState<ViewState>({ status: 'loading' })
@@ -132,6 +127,7 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, thinkingDat
     ? state.snapshot.servers.find(server => server.serverName === editing.serverName)
     : undefined
   const editingSystem = editingServer?.origin === 'system'
+  const editingSystemConnection = editingSystem && editingServer.serverName === 'ta-mcp-server'
 
   return (
     <section className={css.section} aria-busy={state.status === 'loading' || saving || removing}>
@@ -196,9 +192,6 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, thinkingDat
               </li>
             ))}
           </ul>
-          {editingSystem && editingServer?.serverName === 'ta-mcp-server' ? (
-            <ThinkingDataSettingsSection {...thinkingData} />
-          ) : null}
           {editing !== null ? (
             <form className={css.form} onSubmit={event => { void submit(event) }}>
               <h4>{editing === 'create' ? t('add') : t('edit')}</h4>
@@ -222,8 +215,8 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, thinkingDat
                   </>
                 ) : (
                   <>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} disabled={editingSystem} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} disabled={editingSystem} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} disabled={editingSystem && !editingSystemConnection} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} disabled={editingSystem && !editingSystemConnection} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
                   </>
                 )}
                 <div className={css.field}>
@@ -285,8 +278,11 @@ function toRequest(draft: Draft, previousName?: string): McpServerUpsertRequest 
 }
 
 function toSystemRequest(draft: Draft): McpSystemUpdateRequest {
+  const headers = draft.serverName === 'ta-mcp-server' ? parseKv(draft.headersText) : undefined
   return {
     serverName: draft.serverName,
+    ...(draft.serverName === 'ta-mcp-server' ? { url: draft.url.trim() } : {}),
+    ...(headers === undefined ? {} : { headers }),
     toolCallTimeoutMs: Number(draft.toolCallTimeoutMs),
     failOnStartupError: draft.failOnStartupError,
   }

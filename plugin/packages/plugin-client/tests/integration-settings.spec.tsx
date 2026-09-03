@@ -46,7 +46,6 @@ describe('integration settings controls', () => {
       upsert: vi.fn(),
       updateSystem,
       remove: vi.fn(),
-      thinkingData: {},
       t: (key: keyof typeof mcpEn) => mcpEn[key],
     } as unknown as McpSettingsTabProps
     render(<McpSettingsTab {...props} />)
@@ -65,6 +64,41 @@ describe('integration settings controls', () => {
     await waitFor(() => {
       expect(updateSystem).toHaveBeenCalledWith({
         serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
+      })
+    })
+  })
+
+  it('edits ThinkingData through the standard MCP HTTP fields', async () => {
+    const updateSystem = vi.fn().mockResolvedValue(undefined)
+    const props = {
+      list: vi.fn().mockResolvedValue({
+        servers: [{
+          serverName: 'ta-mcp-server', origin: 'system', enabled: true, fiberPhase: 'failed', toolCount: 0,
+          transport: 'streamable-http', url: 'http://10.225.40.100:13360/mcp', envKeys: [], headerKeys: [],
+          toolCallTimeoutMs: 120000, failOnStartupError: false,
+        }],
+      }),
+      upsert: vi.fn(), updateSystem, remove: vi.fn(),
+      t: (key: keyof typeof mcpEn) => mcpEn[key],
+    } as unknown as McpSettingsTabProps
+    render(<McpSettingsTab {...props} />)
+
+    await screen.findByText('ta-mcp-server')
+    fireEvent.click(screen.getByRole('button', { name: mcpEn.edit }))
+    const url = screen.getByRole('textbox', { name: mcpEn.url }) as HTMLInputElement
+    const headers = screen.getByRole('textbox', { name: mcpEn.headers }) as HTMLTextAreaElement
+    expect(url.disabled).toBe(false)
+    expect(headers.disabled).toBe(false)
+    fireEvent.change(url, { target: { value: 'https://analytics.example/mcp' } })
+    fireEvent.change(headers, { target: { value: 'Authorization=Bearer configured-token' } })
+    fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
+    await waitFor(() => {
+      expect(updateSystem).toHaveBeenCalledWith({
+        serverName: 'ta-mcp-server',
+        url: 'https://analytics.example/mcp',
+        headers: { Authorization: 'Bearer configured-token' },
+        toolCallTimeoutMs: 120000,
+        failOnStartupError: false,
       })
     })
   })
