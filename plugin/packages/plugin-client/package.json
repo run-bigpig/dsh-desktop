@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-client",
   "description": "StarWeave integration UI and plugin marketplace",
-  "version": "0.1.78",
+  "version": "0.1.79",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -33,7 +33,7 @@
       "platform": "web"
     }
   },
-  "files": ["lib/index.js", "lib/client.js", "lib/client.js.map", "lib/*.cjs", "lib/*.cjs.map", "lib/types/**/*.d.ts"],
+  "files": ["lib/index.js", "lib/client.js", "lib/client.js.map", "lib/types/**/*.d.ts"],
   "license": "MIT",
   "peerDependencies": {
     "@deepseek-ai/cordis": "workspace:^",

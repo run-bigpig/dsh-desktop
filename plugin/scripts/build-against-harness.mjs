@@ -180,19 +180,39 @@ await stagePackage(hostDir, resolve(output, 'plugin-host'), {
 }, versions)
 await stagePackage(resolve(overlay, 'plugin-client'), resolve(output, 'plugin-client'), {
   files: ['package.json', 'lib/index.js', 'lib/client.js', 'lib/client.js.map'],
-  trees: [
-    { path: 'lib', suffixes: ['.cjs', '.cjs.map'] },
-    { path: 'lib/types', suffixes: ['.d.ts'] },
-  ],
+  trees: [{ path: 'lib/types', suffixes: ['.d.ts'] }],
 }, versions)
 const stagedClientEntry = await readFile(resolve(output, 'plugin-client/lib/client.js'), 'utf8')
-const requiredClientChunks = new Set(
-  [...stagedClientEntry.matchAll(/require\("\.\/([^"/]+\.cjs)"\)/gu)].map(match => match[1]),
+const relativeClientRequires = new Set(
+  [...stagedClientEntry.matchAll(/require\((["'])\.\/([^"']+)\1\)/gu)].map(match => match[2]),
 )
-for (const chunk of requiredClientChunks) {
-  if (!await exists(resolve(output, 'plugin-client/lib', chunk))) {
-    throw new Error(`staged Desktop Plugin Client is missing runtime chunk ${chunk}`)
-  }
+if (relativeClientRequires.size > 0) {
+  throw new Error(
+    `Desktop Plugin Client must be a single Harness module-table factory; found relative runtime imports: ${[...relativeClientRequires].join(', ')}`,
+  )
+}
+const platformArtifactURL = pathToFileURL(resolve(harness, 'packages/client/web/lib/types/platform.js')).href
+const { PLATFORM_MODULES, PRELOADED_CLIENT_EXTERNALS } = await import(platformArtifactURL)
+const stagedClientManifest = JSON.parse(await readFile(resolve(output, 'plugin-client/package.json'), 'utf8'))
+const allowedClientRequires = new Set([
+  ...PLATFORM_MODULES,
+  ...PRELOADED_CLIENT_EXTERNALS,
+  ...(stagedClientManifest.dsh?.client?.external ?? []),
+])
+const runtimeRegionEnd = stagedClientEntry.indexOf('\n\t\t//#endregion')
+const firstModuleRegion = stagedClientEntry.indexOf('\n\t\t//#region ', runtimeRegionEnd + 1)
+if (runtimeRegionEnd < 0 || firstModuleRegion < 0) {
+  throw new Error('unexpected Desktop Plugin Client closure bundle shape')
+}
+const clientImportPreamble = stagedClientEntry.slice(runtimeRegionEnd, firstModuleRegion)
+const topLevelClientRequires = new Set(
+  [...clientImportPreamble.matchAll(/require\((["'])([^"']+)\1\)/gu)].map(match => match[2]),
+)
+const unavailableClientRequires = [...topLevelClientRequires].filter(specifier => !allowedClientRequires.has(specifier))
+if (unavailableClientRequires.length > 0) {
+  throw new Error(
+    `Desktop Plugin Client has top-level imports unavailable from the Harness module table: ${unavailableClientRequires.join(', ')}`,
+  )
 }
 await stagePackage(resolve(overlay, 'plugin-bundle'), resolve(output, 'plugin-bundle'), {
   files: ['package.json', 'cordis.patch.yml', 'THIRD_PARTY_NOTICES.md'],
