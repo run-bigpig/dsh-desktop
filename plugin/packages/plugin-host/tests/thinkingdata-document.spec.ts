@@ -17,6 +17,7 @@ import {
   parseMcpSettingsDocument,
   serializeMcpSettingsDocument,
   updateMcpSystemOverride,
+  upsertMcpServerRecord,
 } from '../src/mcp/document.ts'
 import {
   registerThinkingDataSkill,
@@ -46,33 +47,27 @@ describe('ThinkingData settings document', () => {
 
   it('reserves the internal server name from generic MCP settings', () => {
     expect(isReservedMcpServerName('ta-mcp-server')).toBe(true)
-    expect(isReservedMcpServerName('openpencil-mcp')).toBe(true)
+    expect(isReservedMcpServerName('openpencil-mcp')).toBe(false)
     expect(isReservedMcpServerName('other-server')).toBe(false)
   })
 
-  it('migrates MCP settings and persists only safe system connection overrides', () => {
+  it('removes retired MCP records while preserving safe system connection overrides', () => {
     expect(parseMcpSettingsDocument(JSON.stringify({
-      version: 1,
+      version: 2,
       servers: [{
         transport: 'streamable-http', serverName: 'openpencil-mcp', enabled: false,
         url: 'http://127.0.0.1:9999/mcp', headers: { Authorization: 'Bearer stale' },
         toolCallTimeoutMs: 1000, failOnStartupError: true,
       }],
+      systemOverrides: [{
+        serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
+      }, {
+        serverName: 'openpencil-mcp', toolCallTimeoutMs: 60000, failOnStartupError: true,
+      }],
     }))).toEqual({
       version: 2, servers: [], systemOverrides: [],
     })
-    let document = updateMcpSystemOverride(emptyMcpSettingsDocument(), {
-      serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
-    })
-    const record = applyMcpSystemOverride({
-      transport: 'streamable-http', serverName: 'openpencil-mcp', enabled: true,
-      url: 'http://127.0.0.1:1234/mcp', headers: { Authorization: 'Bearer ephemeral' },
-      toolCallTimeoutMs: 120000, failOnStartupError: false,
-    }, document)
-    expect(record.toolCallTimeoutMs).toBe(180000)
-    expect(serializeMcpSettingsDocument(document)).not.toContain('ephemeral')
-
-    document = updateMcpSystemOverride(document, {
+    const document = updateMcpSystemOverride(emptyMcpSettingsDocument(), {
       serverName: 'ta-mcp-server',
       url: 'https://analytics.example/mcp',
       headers: { Authorization: 'Bearer configured-token' },
@@ -89,6 +84,10 @@ describe('ThinkingData settings document', () => {
       toolCallTimeoutMs: 120000,
     })
     expect(parseMcpSettingsDocument(serializeMcpSettingsDocument(document))).toEqual(document)
+    expect(() => upsertMcpServerRecord(emptyMcpSettingsDocument(), {
+      transport: 'streamable-http', serverName: 'openpencil-mcp', enabled: true,
+      url: 'http://127.0.0.1:9999/mcp', toolCallTimeoutMs: 60000, failOnStartupError: false,
+    })).toThrow(/removed integration/)
   })
 
   it('loads the packaged skill with its reference directory', async () => {

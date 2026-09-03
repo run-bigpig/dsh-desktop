@@ -38,8 +38,8 @@ describe('integration settings controls', () => {
     const props = {
       list: vi.fn().mockResolvedValue({
         servers: [{
-          serverName: 'openpencil-mcp', origin: 'system', enabled: true, fiberPhase: 'active', toolCount: 91,
-          transport: 'streamable-http', url: 'http://127.0.0.1:31415/mcp', envKeys: [], headerKeys: ['Authorization'],
+          serverName: 'ta-mcp-server', origin: 'system', enabled: true, fiberPhase: 'active', toolCount: 12,
+          transport: 'streamable-http', url: 'http://10.225.40.100:13360/mcp', envKeys: [], headerKeys: [],
           toolCallTimeoutMs: 120000, failOnStartupError: false,
         }],
       }),
@@ -50,8 +50,7 @@ describe('integration settings controls', () => {
     } as unknown as McpSettingsTabProps
     render(<McpSettingsTab {...props} />)
 
-    expect(await screen.findByText(mcpEn.designCanvasName)).toBeTruthy()
-    expect(screen.queryByText('openpencil-mcp')).toBeNull()
+    expect(await screen.findByText('ta-mcp-server')).toBeTruthy()
     expect(screen.getByText(mcpEn.systemTag)).toBeTruthy()
     expect(screen.queryByRole('button', { name: mcpEn.remove })).toBeNull()
     fireEvent.click(screen.getByRole('button', { name: mcpEn.edit }))
@@ -61,12 +60,15 @@ describe('integration settings controls', () => {
     expect(enabled.checked).toBe(true)
     expect(enabled.disabled).toBe(true)
     expect(name.disabled).toBe(true)
-    expect(name.value).toBe(mcpEn.designCanvasName)
+    expect(name.value).toBe('ta-mcp-server')
     fireEvent.change(screen.getByRole('spinbutton', { name: mcpEn.timeout }), { target: { value: '180000' } })
     fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
     await waitFor(() => {
       expect(updateSystem).toHaveBeenCalledWith({
-        serverName: 'openpencil-mcp', toolCallTimeoutMs: 180000, failOnStartupError: false,
+        serverName: 'ta-mcp-server',
+        url: 'http://10.225.40.100:13360/mcp',
+        toolCallTimeoutMs: 180000,
+        failOnStartupError: false,
       })
     })
   })

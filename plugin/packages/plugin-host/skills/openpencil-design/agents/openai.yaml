@@ -1,9 +1,0 @@
-interface:
-  display_name: "OpenPencil 设计协作"
-  short_description: "使用内置 SDK 画布和 MCP 创建、修改并验证设计"
-  default_prompt: "使用 $openpencil-design 在当前 OpenPencil 画布完成这项设计任务，并进行结构与视觉验证。"
-dependencies:
-  tools:
-    - type: "mcp"
-      value: "openpencil-mcp"
-      description: "StarWeave 内置 OpenPencil 设计工具"

@@ -81,6 +81,30 @@ function Invoke-PnpmLogged {
   Add-Content -LiteralPath $logPath -Value ("$Phase exit: $script:pnpmExitCode")
 }
 
+function Remove-PluginDependencySeed {
+  param([Parameter(Mandatory = $true)][string]$Path)
+
+  if (-not (Test-Path -LiteralPath $Path)) { return }
+  Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed cleanup start: " + $Path)
+  $previousErrorPreference = $ErrorActionPreference
+  $ErrorActionPreference = "Continue"
+  & $node -e "require('fs').rmSync(process.argv[1], { recursive: true, force: true, maxRetries: 8, retryDelay: 250 })" $Path 2>&1 | Tee-Object -FilePath $logPath -Append
+  $cleanupExitCode = $LASTEXITCODE
+  $ErrorActionPreference = $previousErrorPreference
+  if ($cleanupExitCode -ne 0 -or (Test-Path -LiteralPath $Path)) {
+    Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed cleanup deferred: " + $Path)
+    Write-Warning "Temporary built-in plugin dependency files could not be removed; a later install will retry cleanup."
+    return
+  }
+  Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed cleanup complete: " + $Path)
+}
+
+function Remove-StalePluginDependencySeeds {
+  Get-ChildItem -LiteralPath $installerHome -Directory -ErrorAction SilentlyContinue |
+    Where-Object { $_.Name -eq "plugin-dependency-seed" -or $_.Name.StartsWith("plugin-dependency-seed-") } |
+    ForEach-Object { Remove-PluginDependencySeed $_.FullName }
+}
+
 Add-Content -LiteralPath $logPath -Value ("dependency install start: " + [DateTime]::UtcNow.ToString("O"))
 $runtimeParent = Split-Path -Parent $runtime
 New-Item -ItemType Directory -Force $runtimeParent | Out-Null
@@ -145,38 +169,42 @@ foreach ($directory in "plugin-host","plugin-client","plugin-bundle") {
 }
 
 if ($pluginDependencies.Count -gt 0) {
-  $dependencySeed = Join-Path $installerHome "plugin-dependency-seed"
-  if (Test-Path $dependencySeed) { Remove-Item -LiteralPath $dependencySeed -Recurse -Force }
-  New-Item -ItemType Directory -Force $dependencySeed | Out-Null
-  [ordered]@{
-    name = "starweave-plugin-dependency-seed"
-    version = "0.0.0"
-    private = $true
-    dependencies = $pluginDependencies
-  } | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $dependencySeed "package.json")
+  Remove-StalePluginDependencySeeds
+  $dependencySeed = Join-Path $installerHome ("plugin-dependency-seed-" + [Guid]::NewGuid().ToString("N"))
+  $seedExitCode = 1
+  try {
+    New-Item -ItemType Directory -Force $dependencySeed | Out-Null
+    [ordered]@{
+      name = "starweave-plugin-dependency-seed"
+      version = "0.0.0"
+      private = $true
+      dependencies = $pluginDependencies
+    } | ConvertTo-Json -Depth 8 | Set-Content -Encoding UTF8 (Join-Path $dependencySeed "package.json")
 
-  Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed start: " + [DateTime]::UtcNow.ToString("O"))
-  $seedArguments = @(
-    "--store-dir", $store,
-    "--dir", $dependencySeed,
-    "--ignore-scripts",
-    "--lockfile=false",
-    "--prefer-offline",
-    "install"
-  )
-  Invoke-PnpmLogged "Built-in plugin dependency install" $registry $seedArguments
-  $seedExitCode = $script:pnpmExitCode
-  if ($seedExitCode -ne 0 -and $registry -eq $mirrorRegistry) {
-    Write-Output "The npmmirror registry failed for built-in plugin dependencies; retrying with the official npm registry..."
-    Add-Content -LiteralPath $logPath -Value "built-in plugin dependency fallback: mirror -> official"
-    $dependencyNodeModules = Join-Path $dependencySeed "node_modules"
-    if (Test-Path $dependencyNodeModules) {
-      & $node -e "require('fs').rmSync(process.argv[1], { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })" $dependencyNodeModules
-    }
-    Invoke-PnpmLogged "Built-in plugin dependency install" $officialRegistry $seedArguments
+    Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed start: " + [DateTime]::UtcNow.ToString("O"))
+    $seedArguments = @(
+      "--store-dir", $store,
+      "--dir", $dependencySeed,
+      "--ignore-scripts",
+      "--lockfile=false",
+      "--prefer-offline",
+      "install"
+    )
+    Invoke-PnpmLogged "Built-in plugin dependency install" $registry $seedArguments
     $seedExitCode = $script:pnpmExitCode
+    if ($seedExitCode -ne 0 -and $registry -eq $mirrorRegistry) {
+      Write-Output "The npmmirror registry failed for built-in plugin dependencies; retrying with the official npm registry..."
+      Add-Content -LiteralPath $logPath -Value "built-in plugin dependency fallback: mirror -> official"
+      $dependencyNodeModules = Join-Path $dependencySeed "node_modules"
+      if (Test-Path $dependencyNodeModules) {
+        & $node -e "require('fs').rmSync(process.argv[1], { recursive: true, force: true, maxRetries: 3, retryDelay: 100 })" $dependencyNodeModules
+      }
+      Invoke-PnpmLogged "Built-in plugin dependency install" $officialRegistry $seedArguments
+      $seedExitCode = $script:pnpmExitCode
+    }
+  } finally {
+    Remove-PluginDependencySeed $dependencySeed
   }
-  Remove-Item -LiteralPath $dependencySeed -Recurse -Force -ErrorAction SilentlyContinue
   Add-Content -LiteralPath $logPath -Value ("built-in plugin dependency seed exit: " + $seedExitCode)
   if ($seedExitCode -ne 0) { exit $seedExitCode }
 }

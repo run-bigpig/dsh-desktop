@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin",
   "description": "Profile Bundle mounting the trusted StarWeave integration",
-  "version": "0.1.80",
+  "version": "0.1.83",
   "type": "module",
   "license": "MIT",
   "files": ["cordis.patch.yml", "THIRD_PARTY_NOTICES.md", "LICENSES/**/*.txt"],

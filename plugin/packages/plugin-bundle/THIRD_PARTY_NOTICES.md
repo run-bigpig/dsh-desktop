@@ -73,15 +73,3 @@ included in `LICENSES/dsh-web-tools-MIT.txt`.
 The host package depends on `undici` version `6.28.0` and `ws` version `8.21.0`.
 Both are distributed under the MIT License; their license texts are included
 in `LICENSES/undici-MIT.txt` and `LICENSES/ws-MIT.txt`.
-
-The built-in design canvas and MCP runtime use OpenPencil SDK version `0.14.0`
-from `open-pencil/open-pencil`, distributed under the MIT License. Rendering
-uses CanvasKit WASM version `0.40.0` under the Skia BSD 3-Clause license, and
-the embedded editor island uses Vue version `3.5.29` under the MIT License.
-The applicable texts are included in `LICENSES/openpencil-MIT.txt`,
-`LICENSES/canvaskit-BSD-3-Clause.txt`, and `LICENSES/vue-MIT.txt`.
-
-OpenPencil LAN collaboration uses Yjs version `13.6.30` and its lib0 runtime,
-both distributed under the MIT License. Their license texts are included in
-`LICENSES/yjs-MIT.txt` and `LICENSES/lib0-MIT.txt`. The LAN relay uses the
-existing `ws` dependency covered above.

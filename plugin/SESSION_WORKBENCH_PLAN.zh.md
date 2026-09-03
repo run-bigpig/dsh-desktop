@@ -49,8 +49,8 @@
 
 推荐扩展点：
 
-- `sidebar.footer.action`：工作台入口。
-- `shell.overlay`：右侧抽屉工作台。
+- `conversation.session.header.utilities`：工作台入口。
+- `details`：右侧工作台，使用 Harness 原生列布局压缩聊天区。
 - `conversation.input.dock`：拖动工作区文件时显示会话级 Drop Dock。
 - `conversation.message.images`：保留官方图片体验并增加编辑入口。
 - `tool.call.toolview`：图片工具结果展示。

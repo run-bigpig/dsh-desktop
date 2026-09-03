@@ -9,7 +9,8 @@ import type {
 } from '../shared/types.ts'
 
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
-export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server', 'openpencil-mcp'])
+export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server'])
+const REMOVED_MCP_SERVER_NAMES = new Set(['openpencil-mcp'])
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
 const DEFAULT_TOOL_CALL_TIMEOUT_MS = 60_000
@@ -72,7 +73,7 @@ export function parseMcpSettingsDocument(text: string): McpSettingsDocument {
   if (!Array.isArray(parsed.servers)) throw new Error('mcp-settings: document.servers must be an array')
   const servers = parsed.servers
     .map((entry, index) => parseRecord(entry, `servers[${index}]`))
-    .filter(server => !isReservedMcpServerName(server.serverName))
+    .filter(server => !isReservedMcpServerName(server.serverName) && !isRemovedMcpServerName(server.serverName))
   const names = new Set<string>()
   for (const server of servers) {
     if (names.has(server.serverName)) {
@@ -95,6 +96,9 @@ export function upsertMcpServerRecord(
   request: McpServerUpsertRequest,
 ): McpSettingsDocument {
   const nextName = parseServerName(request.serverName)
+  if (isRemovedMcpServerName(nextName)) {
+    throw new Error(`mcp-settings: serverName ${JSON.stringify(nextName)} belongs to a removed integration`)
+  }
   const fromName = request.fromServerName === undefined
     ? nextName
     : parseServerName(request.fromServerName, 'fromServerName')
@@ -229,6 +233,10 @@ export function isReservedMcpServerName(serverName: string): boolean {
   return RESERVED_MCP_SERVER_NAMES.has(serverName)
 }
 
+function isRemovedMcpServerName(serverName: string): boolean {
+  return REMOVED_MCP_SERVER_NAMES.has(serverName)
+}
+
 export function viewCompositionConfig(
   config: unknown,
   enabled: boolean,
@@ -347,10 +355,11 @@ function parseSystemOverrides(value: unknown): McpSystemOverride[] {
       failOnStartupError: parseBoolean(entry.failOnStartupError, `${label}.failOnStartupError`),
     }
   })
-  if (new Set(result.map(entry => entry.serverName)).size !== result.length) {
+  const retained = result.filter(entry => !isRemovedMcpServerName(entry.serverName))
+  if (new Set(retained.map(entry => entry.serverName)).size !== retained.length) {
     throw new Error('mcp-settings: duplicate system override serverName')
   }
-  return result
+  return retained
 }
 
 function parseServerName(value: unknown, label = 'serverName'): string {

@@ -248,7 +248,13 @@ export class McpSettingsGateway extends TypertRemoteService {
 
   private async readDocument(): Promise<McpSettingsDocument> {
     try {
-      return parseMcpSettingsDocument(await readFile(this.filename, 'utf8'))
+      const text = await readFile(this.filename, 'utf8')
+      const document = parseMcpSettingsDocument(text)
+      const normalized = serializeMcpSettingsDocument(document)
+      if (text.includes('"openpencil-mcp"') && normalized !== text) {
+        await writeFileAtomic(this.filename, normalized, { mode: 0o600, dirMode: 0o700 })
+      }
+      return document
     } catch (error) {
       if (isEnoent(error)) return emptyMcpSettingsDocument()
       throw error

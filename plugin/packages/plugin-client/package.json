@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-client",
   "description": "StarWeave integration UI and plugin marketplace",
-  "version": "0.1.80",
+  "version": "0.1.83",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -63,9 +63,6 @@
   },
   "devDependencies": {
     "@ant-design/plots": "2.6.5",
-    "@open-pencil/core": "0.14.0",
-    "@open-pencil/scene-graph": "0.14.0",
-    "@open-pencil/vue": "0.14.0",
     "@rc-component/image": "1.10.0",
     "@deepseek-ai/cordis": "workspace:^",
     "@deepseek-ai/dsh-api-gateway": "workspace:^",
@@ -91,14 +88,7 @@
     "@run-bigpig/dsh-desktop-plugin-host": "workspace:^",
     "@types/react": "~18.3.1",
     "@types/react-dom": "~18.3.7",
-    "@vueuse/core": "14.2.1",
-    "canvaskit-wasm": "0.40.0",
-    "magic-string": "0.30.21",
-    "reka-ui": "2.9.0",
     "react": "^18.2.0",
-    "react-dom": "^18.2.0",
-    "vue": "3.5.29",
-    "yjs": "13.6.30",
-    "yoga-layout": "npm:@open-pencil/yoga-layout@3.3.0-grid.3"
+    "react-dom": "^18.2.0"
   }
 }

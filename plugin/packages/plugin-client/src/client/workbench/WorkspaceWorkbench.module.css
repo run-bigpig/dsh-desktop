@@ -36,4 +36,4 @@
 .workbench[data-collapsed='true'] .collapseButton { left: 5px; }
 .collapseButton:hover { color: var(--dsw-alias-state-business-primary); }
 .treeRow:focus-visible, .searchResult:focus-visible, .explorerToolbar button:focus-visible, .inlineError:focus-visible { outline: 2px solid var(--dsw-alias-state-business-primary); outline-offset: -2px; }
-@media (max-width: 760px) { .workbench[data-preview='true'] { grid-template-columns: minmax(190px, 38%) minmax(0, 1fr); } .resizeHandle { left: 38%; } }
+@container (max-width: 620px) { .workbench[data-preview='true'] { --workbench-compact-explorer-width: max(150px, 38cqi); grid-template-columns: var(--workbench-compact-explorer-width) minmax(0, 1fr); } .workbench[data-preview='true'][data-collapsed='true'] { grid-template-columns: 0 minmax(0, 1fr); } .resizeHandle { display: none; } .collapseButton { left: calc(var(--workbench-compact-explorer-width) - 11px); } }

@@ -145,6 +145,27 @@ func TestWindowsUpdateModeShowsInstallerProgressOnly(t *testing.T) {
 	}
 }
 
+func TestWindowsRuntimeInstallerCleansPluginDependencySeedsWithEmbeddedNode(t *testing.T) {
+	data, err := os.ReadFile("build/windows/install-runtime.ps1")
+	if err != nil {
+		t.Fatal(err)
+	}
+	text := string(data)
+	for _, expected := range []string{
+		`function Remove-StalePluginDependencySeeds`,
+		`("plugin-dependency-seed-" + [Guid]::NewGuid().ToString("N"))`,
+		`require('fs').rmSync(process.argv[1], { recursive: true, force: true`,
+		`a later install will retry cleanup`,
+	} {
+		if !strings.Contains(text, expected) {
+			t.Fatalf("Windows runtime installer is missing long-path-safe plugin dependency cleanup marker %q", expected)
+		}
+	}
+	if strings.Contains(text, `Remove-Item -LiteralPath $dependencySeed -Recurse`) {
+		t.Fatal("Windows runtime installer must not recursively remove the plugin dependency seed with PowerShell")
+	}
+}
+
 func TestTrayMenuUsesConciseLabelsInOrder(t *testing.T) {
 	data, err := os.ReadFile("cmd/dsh-desktop/main.go")
 	if err != nil {

@@ -23,7 +23,7 @@ StarWeave 不 fork、复制或修改 Harness 作为本项目的应用源码，�
 - **可恢复的版本切换**：桌面发行版携带固定 Harness 版本；切换前备份 `harness-home`，新版本启动失败时自动恢复上一版本。
 - **事务式插件管理**：插件安装、更新和卸载先在隔离 profile 中完成，验证成功后再激活；启动失败会恢复原 profile。
 - **手动桌面更新**：仅在用户主动检查时读取 GitHub Release，下载完整 NSIS 安装包，校验 SHA-256 后执行覆盖安装。
-- **内置桌面集成**：通过 Harness 正式插件扩展点提供插件市场、会话工作台、文件与 Git 操作、MCP、文档与视觉能力、图像工作台、图表展示、ThinkingData 配置、界面外观和支持仅内网协作的 OpenPencil SDK 画布。
+- **内置桌面集成**：通过 Harness 正式插件扩展点提供插件市场、右侧会话工作台、文件与 Git 操作、MCP、文档与视觉能力、图像工作台、图表展示、ThinkingData 配置和界面外观。
 
 ## 安装
 
@@ -103,10 +103,9 @@ Harness 始终固定到完整 commit SHA。它随新的 StarWeave 桌面发行�
 | DeepSeek Harness | `dsh-v0.1.2-alpha.3` / `dd6322d604e00eec1ba5e0c8541159906a21094a` |
 | Node.js | `24.12.0` |
 | pnpm | `11.7.0` |
-| 内置桌面插件 | `0.1.80` |
-| OpenPencil SDK / MCP | `0.14.0` |
+| 内置桌面插件 | `0.1.83` |
 
-权威锁定信息位于 [release/seed.lock.json](release/seed.lock.json) 和 [release/toolchain.lock.json](release/toolchain.lock.json)。Harness 或工具链升级必须同步相关 seed 锁文件，并重新完成官方构建、插件构建和 Windows 运行验证。OpenPencil 版本由三个内置插件包的精确 npm 依赖锁定。
+权威锁定信息位于 [release/seed.lock.json](release/seed.lock.json) 和 [release/toolchain.lock.json](release/toolchain.lock.json)。Harness 或工具链升级必须同步相关 seed 锁文件，并重新完成官方构建、插件构建和 Windows 运行验证。
 
 ## 数据与卸载
 
@@ -207,6 +206,5 @@ GitHub Actions 的 [Windows Package](.github/workflows/windows-package.yml) 工�
 ## 相关项目与说明
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：StarWeave 加载的官方 Harness 项目。
-- [OpenPencil](https://github.com/open-pencil/open-pencil)：内置画布、文件格式和 MCP Runtime 使用的官方 SDK。
 - [内置桌面插件说明](plugin/README.md)：host、client 和 bundle 三个包的构建关系。
 - [第三方许可声明](plugin/THIRD_PARTY_NOTICES.md)：内置插件分发涉及的第三方许可信息。

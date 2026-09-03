@@ -58,43 +58,6 @@ export interface DesktopWindowState {
   fullscreen: boolean
 }
 
-export type OpenPencilPhase = 'app-stopped' | 'connecting' | 'active' | 'failed'
-
-export interface OpenPencilSnapshot {
-  readonly bundled: boolean
-  readonly running: boolean
-  readonly owned: boolean
-  readonly port: number | null
-  readonly phase: OpenPencilPhase
-  readonly mcpConnected: boolean
-  readonly toolCount: number
-  readonly visible: boolean
-  readonly revision: number
-}
-
-export interface OpenPencilClientConnection {
-  readonly port: number
-  readonly authToken: string
-  readonly version: string
-}
-
-export interface OpenPencilCollaborationHostSession {
-  readonly hostKey: string
-  readonly roomToken: string
-  readonly localSocketURL: string
-  readonly joinCodes: readonly string[]
-}
-
-export interface OpenPencilDesignFile {
-  readonly path: string
-  readonly dataBase64: string
-}
-
-export interface OpenPencilDesignWriteRequest {
-  readonly path: string
-  readonly dataBase64: string
-}
-
 export type McpServerOrigin = 'settings' | 'system' | 'composition'
 export type McpServerFiberPhase = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
 export type McpServerTransport = 'stdio' | 'streamable-http'

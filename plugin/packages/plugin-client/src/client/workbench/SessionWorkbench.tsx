@@ -1,6 +1,4 @@
-import {
-  useEffect, useMemo, useState, useSyncExternalStore, type CSSProperties, type ReactNode,
-} from 'react'
+import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   IconCloseOutline16,
   IconFolderClose16,
@@ -133,6 +131,7 @@ export function WorkbenchLauncher({ controller, t }: WorkbenchLauncherProps): Re
 
 export interface WorkbenchDrawerInjected {
   readonly controller: WorkbenchController
+  readonly openDetails: () => void
   readonly listDirectory: (
     sessionId: string,
     directory: string,
@@ -150,7 +149,7 @@ export interface WorkbenchDrawerInjected {
 }
 
 export type WorkbenchDrawerProps =
-  PropsRuntime<'shell.overlay'>
+  PropsRuntime<'details'>
   & PropsLocale<'desktop.workbench'>
   & InjectFace<WorkbenchDrawerInjected>
 
@@ -163,7 +162,7 @@ type GitLoadState =
 
 export function WorkbenchDrawer({
   useSessions, controller, listDirectory, searchWorkspace, readWorkspaceFile, writeWorkspaceFile,
-  gitActions, submitImageEdit, t,
+  gitActions, submitImageEdit, openDetails, t,
 }: WorkbenchDrawerProps): ReactNode {
   const open = useSyncExternalStore(controller.subscribeOpen, controller.getOpen)
   const imageIntent = useSyncExternalStore(controller.subscribeImage, controller.getImage)
@@ -172,8 +171,6 @@ export function WorkbenchDrawer({
   const sessionId = current === undefined ? undefined : String(current)
   const [tab, setTab] = useState<WorkbenchTab>('files')
   const [git, setGit] = useState<GitLoadState>({ phase: 'idle' })
-  const [previewVisible, setPreviewVisible] = useState(false)
-  const [wideWidth, setWideWidth] = useState(() => readWorkbenchWidth(sessionId))
   const currentGitActions = useMemo(
     () => sessionId === undefined ? undefined : gitActions(sessionId),
     [gitActions, sessionId],
@@ -181,8 +178,11 @@ export function WorkbenchDrawer({
 
   useEffect(() => {
     setTab(imageIntent?.sessionId === sessionId ? 'image' : 'files')
-    setWideWidth(readWorkbenchWidth(sessionId))
   }, [imageIntent, sessionId])
+
+  useEffect(() => {
+    if (open) openDetails()
+  }, [open, openDetails, sessionId])
 
   useEffect(() => {
     if (!open || currentGitActions === undefined) {
@@ -211,13 +211,7 @@ export function WorkbenchDrawer({
   if (!open) return null
 
   return (
-    <aside
-      className={css.drawer}
-      data-wide={previewVisible || tab === 'image' || undefined}
-      style={{ '--workbench-wide-width': `${wideWidth}px` } as CSSProperties}
-      aria-label={t('title')}
-    >
-      {(previewVisible || tab === 'image') && <DrawerResizeHandle sessionId={sessionId} width={wideWidth} onWidth={setWideWidth} />}
+    <aside className={css.drawer} aria-label={t('title')}>
       <header className={css.header}>
         <div className={css.headingGroup}>
           <h2>{t('title')}</h2>
@@ -280,7 +274,7 @@ export function WorkbenchDrawer({
               gitSnapshot={git.phase === 'ready' ? git.snapshot : null}
               {...(currentGitActions === undefined ? {} : { gitActions: currentGitActions })}
               onGitSnapshot={snapshot => { setGit({ phase: 'ready', snapshot }) }}
-              onPreviewVisibility={setPreviewVisible}
+              onPreviewVisibility={ignorePreviewVisibility}
               t={t}
             />
             ) : null}
@@ -301,37 +295,7 @@ export function WorkbenchDrawer({
   )
 }
 
-function DrawerResizeHandle({ sessionId, width, onWidth }: {
-  readonly sessionId: string | undefined
-  readonly width: number
-  readonly onWidth: (width: number) => void
-}): ReactNode {
-  const update = (next: number): void => {
-    const max = typeof window === 'undefined' ? 1200 : Math.max(560, window.innerWidth - 360)
-    const value = Math.min(1200, max, Math.max(560, next))
-    onWidth(value)
-    writeWorkbenchWidth(sessionId, value)
-  }
-  return <div className={css.drawerResize} role="separator" aria-orientation="vertical" onDoubleClick={() => { update(740) }} onPointerDown={event => {
-    const start = event.clientX
-    const initial = width
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const move = (moveEvent: PointerEvent): void => { update(initial + start - moveEvent.clientX) }
-    const up = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }} />
-}
-
-function readWorkbenchWidth(sessionId: string | undefined): number {
-  if (sessionId === undefined) return 740
-  try { return Math.min(1200, Math.max(560, Number(localStorage.getItem(`dsh-workbench-width:${sessionId}`)) || 740)) } catch { return 740 }
-}
-
-function writeWorkbenchWidth(sessionId: string | undefined, width: number): void {
-  if (sessionId === undefined) return
-  try { localStorage.setItem(`dsh-workbench-width:${sessionId}`, String(Math.round(width))) } catch { /* best effort */ }
-}
+const ignorePreviewVisibility = (): void => undefined
 
 function EmptyState({ title, description, action }: {
   title: string

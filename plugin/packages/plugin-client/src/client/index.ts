@@ -84,14 +84,6 @@ import {
   type WorkspaceReferenceDropDockInjected,
   workspaceFileReferenceOf,
 } from './workbench/SessionWorkbench.tsx'
-import {
-  OpenPencilController,
-  OpenPencilLauncher,
-  OpenPencilOverlay,
-  type OpenPencilLauncherInjected,
-  type OpenPencilOverlayInjected,
-  type OpenPencilRemote,
-} from './openpencil/OpenPencilIntegration.tsx'
 import { SkinBrandMark, SkinBrandName } from './skin/SkinBrand.tsx'
 import { SkinBackgroundPresenter } from './skin/skin-background.ts'
 import { SkinSettingsRow, type SkinSettingsRowInjected } from './skin/SkinSettingsRow.tsx'
@@ -131,7 +123,7 @@ export const DOCUMENTS_NS = 'documents.upload'
 export const WORKBENCH_NS = 'desktop.workbench'
 export const CHART_PRESENTATION_NS = 'desktop.chartPresentation'
 export const SKIN_NS = 'settings.desktopSkin'
-export const inject = ['slots', 'locale', 'remote', 'inputTriggers', 'sessions', 'settingsScope', 'theme']
+export const inject = ['slots', 'locale', 'remote', 'inputTriggers', 'sessions', 'settingsScope', 'theme', 'layout']
 
 interface DesktopRemote {
   capabilities: () => Promise<RemoteResult<DesktopCapabilities>>
@@ -441,7 +433,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (): DocumentMessageInjected => ({ documentT }),
     }, DocumentSteeringMessageView))
   })
-  ctx.inject(['remote.desktopWorkspace', 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'sessions'], (inner: ClientContext) => {
+  ctx.inject(['remote.desktopWorkspace', 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'sessions', 'layout'], (inner: ClientContext) => {
     const remotes = inner.remote as ClientContext['remote'] & {
       desktopWorkspace: DesktopWorkspaceRemote
       desktopGit: DesktopGitRemote
@@ -459,34 +451,58 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       locale: WORKBENCH_NS,
       inject: (): WorkbenchLauncherInjected => ({ controller: workbenchController }),
     }, WorkbenchLauncher))
-    inner.slots.inject('shell.overlay', () => inner.slots.register({
-      name: 'shell.overlay',
-      id: 'desktop-session-workbench',
-      order: 20,
-      locale: WORKBENCH_NS,
-      inject: (): WorkbenchDrawerInjected => ({
-        controller: workbenchController,
-        listDirectory: async (sessionId, directory, signal) =>
-          unwrap(await workspace.listDirectory(sessionId, directory, signal)),
-        searchWorkspace: async (sessionId, query, signal) =>
-          unwrap(await workspace.search(sessionId, query, signal)),
-        readWorkspaceFile: async (sessionId, path, signal) =>
-          unwrap(await workspace.readFile(sessionId, path, signal)),
-        writeWorkspaceFile: async (sessionId, request, signal) =>
-          unwrap(await workspace.writeFile(sessionId, request, signal)),
-        gitActions: sessionId => ({
-          snapshot: async signal => unwrap(await git.snapshot(sessionId, signal)),
-          diff: async (path, staged, signal) => unwrap(await git.diff(sessionId, { path, staged }, signal)),
-          stage: async (path, signal) => unwrap(await git.stage(sessionId, { path }, signal)),
-          unstage: async (path, signal) => unwrap(await git.unstage(sessionId, { path }, signal)),
-          stageMany: async (paths, signal) => unwrap(await git.stageMany(sessionId, { paths }, signal)),
-          unstageMany: async (paths, signal) => unwrap(await git.unstageMany(sessionId, { paths }, signal)),
-          discard: async (paths, signal) => unwrap(await git.discard(sessionId, { paths }, signal)),
-          commit: async (message, signal) => unwrap(await git.commit(sessionId, { message }, signal)),
-        }),
-        submitImageEdit: (sessionId, instruction, file) => imageInserters.get(sessionId)?.(instruction, file) ?? false,
-      }),
-    }, WorkbenchDrawer))
+    inner.slots.inject('details', () => {
+      let disposePanel: (() => void) | undefined
+      const openDetails = (): void => { inner.layout.openDetails() }
+      const syncPanel = (): void => {
+        if (workbenchController.getOpen() && disposePanel === undefined) {
+          disposePanel = inner.slots.register({
+            name: 'details',
+            priority: -100,
+            locale: WORKBENCH_NS,
+            inject: (): WorkbenchDrawerInjected => ({
+              controller: workbenchController,
+              openDetails,
+              listDirectory: async (sessionId, directory, signal) =>
+                unwrap(await workspace.listDirectory(sessionId, directory, signal)),
+              searchWorkspace: async (sessionId, query, signal) =>
+                unwrap(await workspace.search(sessionId, query, signal)),
+              readWorkspaceFile: async (sessionId, path, signal) =>
+                unwrap(await workspace.readFile(sessionId, path, signal)),
+              writeWorkspaceFile: async (sessionId, request, signal) =>
+                unwrap(await workspace.writeFile(sessionId, request, signal)),
+              gitActions: sessionId => ({
+                snapshot: async signal => unwrap(await git.snapshot(sessionId, signal)),
+                diff: async (path, staged, signal) => unwrap(await git.diff(sessionId, { path, staged }, signal)),
+                stage: async (path, signal) => unwrap(await git.stage(sessionId, { path }, signal)),
+                unstage: async (path, signal) => unwrap(await git.unstage(sessionId, { path }, signal)),
+                stageMany: async (paths, signal) => unwrap(await git.stageMany(sessionId, { paths }, signal)),
+                unstageMany: async (paths, signal) => unwrap(await git.unstageMany(sessionId, { paths }, signal)),
+                discard: async (paths, signal) => unwrap(await git.discard(sessionId, { paths }, signal)),
+                commit: async (message, signal) => unwrap(await git.commit(sessionId, { message }, signal)),
+              }),
+              submitImageEdit: (sessionId, instruction, file) => imageInserters.get(sessionId)?.(instruction, file) ?? false,
+            }),
+          }, WorkbenchDrawer)
+          openDetails()
+          return
+        }
+        if (!workbenchController.getOpen() && disposePanel !== undefined) {
+          disposePanel()
+          disposePanel = undefined
+          inner.layout.closeDetails()
+        }
+      }
+      const unsubscribe = workbenchController.subscribeOpen(syncPanel)
+      syncPanel()
+      return () => {
+        unsubscribe()
+        if (disposePanel !== undefined) {
+          disposePanel()
+          inner.layout.closeDetails()
+        }
+      }
+    })
     inner.slots.inject('conversation.input.dock', () => inner.slots.register({
       name: 'conversation.input.dock',
       id: 'desktop-image-studio-input-bridge',
@@ -516,23 +532,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
         },
       }),
     }, WorkspaceReferenceDropDock))
-  })
-  ctx.inject(['remote.openPencil'], (inner: ClientContext) => {
-    const openPencil = (inner.remote as ClientContext['remote'] & { openPencil: OpenPencilRemote }).openPencil
-    const controller = new OpenPencilController(openPencil)
-    inner.effect(() => () => { controller.dispose() }, 'openpencil: client controller')
-    inner.slots.inject('conversation.session.header.utilities', () => inner.slots.register({
-      name: 'conversation.session.header.utilities',
-      id: 'desktop-openpencil-launcher',
-      order: 15,
-      inject: (): OpenPencilLauncherInjected => ({ controller }),
-    }, OpenPencilLauncher))
-    inner.slots.inject('shell.overlay', () => inner.slots.register({
-      name: 'shell.overlay',
-      id: 'desktop-openpencil-editor',
-      order: 30,
-      inject: (): OpenPencilOverlayInjected => ({ controller }),
-    }, OpenPencilOverlay))
   })
   if (capabilities.apiVersion === 1 && capabilities.capabilities.includes('marketplace')) {
     const t = ctx.locale.bind(NS)
