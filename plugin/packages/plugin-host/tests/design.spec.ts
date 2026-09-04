@@ -1,10 +1,12 @@
 import { once } from 'node:events'
 
 import { afterEach, describe, expect, it, vi } from 'vitest'
+import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebSocket } from 'ws'
 
 import { createBrowserSessions } from '../src/design/browser-sessions.ts'
 import { startDesignServer, type DesignServer } from '../src/design/server.ts'
+import { registerDesignTools } from '../src/design/tools.ts'
 
 const activeServers: DesignServer[] = []
 
@@ -44,7 +46,44 @@ describe('StarWeave Design browser sessions', () => {
       result: { selection: [] }
     })
     await expect(pending).resolves.toMatchObject({ ok: true, result: { selection: [] } })
+
+    await sessions.ensureOpen(session.id, true)
+    expect(opened).toHaveLength(2)
     sessions.close()
+  })
+})
+
+describe('StarWeave Design MCP tools', () => {
+  it('registers save_file and forwards it to the browser bridge', async () => {
+    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
+    const server = {
+      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
+        callbacks.set(name, callback)
+      }
+    } as unknown as McpServer
+    const sendRPC = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'document-1' } })
+
+    registerDesignTools(server, sendRPC, vi.fn())
+
+    const save = callbacks.get('save_file')
+    expect(save).toBeDefined()
+    const result = await save?.({
+      design_session_id: '123e4567-e89b-42d3-a456-426614174000',
+      document_id: 'document-1'
+    })
+    expect(sendRPC).toHaveBeenCalledWith(
+      '123e4567-e89b-42d3-a456-426614174000',
+      'save_file',
+      { document_id: 'document-1', page_id: undefined }
+    )
+    expect(result).toEqual({
+      content: [
+        {
+          type: 'text',
+          text: JSON.stringify({ saved: true, target: { documentId: 'document-1' } }, null, 2)
+        }
+      ]
+    })
   })
 })
 

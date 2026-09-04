@@ -35,7 +35,7 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
     target.searchParams.set('session', session.id)
     target.searchParams.set('token', session.token)
     if (lanAddresses[0]) target.searchParams.set('lan', `http://${lanAddresses[0]}:${port}`)
-    await desktopRequest('/v1/browser/open', { method: 'POST', body: JSON.stringify({ url: target.href }) })
+    await desktopRequest('/v1/design/open', { method: 'POST', body: JSON.stringify({ url: target.href }) })
   }
   const browsers = createBrowserSessions(openBrowser)
   const mcpSessions = createDesignMCPSessions((server: McpServer) => {
@@ -43,7 +43,7 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
       server,
       browsers.sendRPC,
       async requestedId => {
-        const session = await browsers.ensureOpen(requestedId)
+        const session = await browsers.ensureOpen(requestedId, true)
         return { id: session.id, connected: session.socket?.readyState === session.socket?.OPEN }
       }
     )

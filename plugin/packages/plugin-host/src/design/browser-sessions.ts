@@ -63,10 +63,10 @@ export function createBrowserSessions(openBrowser: (session: DesignSession) => P
     return getOrCreate()
   }
 
-  async function ensureOpen(requestedId?: string): Promise<DesignSession> {
+  async function ensureOpen(requestedId?: string, reveal = false): Promise<DesignSession> {
     const session = resolveSession(requestedId)
     currentSessionId = session.id
-    if (!isOpen(session.socket) && Date.now() - session.openedAt > 3000) {
+    if (reveal || (!isOpen(session.socket) && Date.now() - session.openedAt > 3000)) {
       session.openedAt = Date.now()
       await openBrowser(session)
     }
@@ -77,7 +77,7 @@ export function createBrowserSessions(openBrowser: (session: DesignSession) => P
     const session = await ensureOpen(requestedId)
     if (!isOpen(session.socket)) await waitForBrowser(session)
     const socket = session.socket
-    if (!isOpen(socket)) throw new Error('StarWeave Design browser did not connect')
+    if (!isOpen(socket)) throw new Error('StarWeave Design canvas did not connect')
     return await new Promise((resolve, reject) => {
       const id = randomUUID()
       const timer = setTimeout(() => {
@@ -153,7 +153,7 @@ async function waitForBrowser(session: DesignSession): Promise<void> {
   await new Promise<void>((resolve, reject) => {
     const timer = setTimeout(() => {
       session.waiters.delete(waiter)
-      reject(new Error('Timed out waiting for the StarWeave Design browser window'))
+      reject(new Error('Timed out waiting for the StarWeave Design canvas window'))
     }, BROWSER_WAIT_MS)
     const waiter: PendingWaiter = { resolve, reject, timer }
     session.waiters.add(waiter)

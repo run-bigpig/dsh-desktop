@@ -13,7 +13,7 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, openWor
   server.registerTool(
     'open_design_workspace',
     {
-      description: 'Open or reuse the authenticated StarWeave Design browser workspace.',
+      description: 'Open or reuse the authenticated StarWeave Design desktop canvas window.',
       inputSchema: z.object({ design_session_id: sessionSchema })
     },
     async ({ design_session_id }) => ok(await openWorkspace(design_session_id))
@@ -28,6 +28,28 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, openWor
     async ({ design_session_id }) => rpcResult(await sendRPC(design_session_id, 'list_documents', {}))
   )
 
+  server.registerTool(
+    'save_file',
+    {
+      description: 'Save the current StarWeave Design document. Uses its existing browser file handle when available; otherwise opens the save flow in the canvas window.',
+      inputSchema: z.object({
+        design_session_id: sessionSchema,
+        document_id: z.string().optional().describe('Optional StarWeave Design document/tab ID to save'),
+        page_id: z.string().optional().describe('Optional page ID used to resolve the target document')
+      }),
+      annotations: {
+        readOnlyHint: false,
+        destructiveHint: true
+      }
+    },
+    async ({ design_session_id, document_id, page_id }) => {
+      const value = await sendRPC(design_session_id, 'save_file', { document_id, page_id })
+      const envelope = isRecord(value) ? value : {}
+      if (envelope.ok === false) return fail(new Error(String(envelope.error ?? 'Unable to save design file')))
+      return ok({ saved: true, ...(envelope.target ? { target: envelope.target } : {}) })
+    }
+  )
+
   for (const definition of ALL_TOOLS) {
     const changesDocument = (definition as typeof definition & { changesDocument?: boolean }).changesDocument
     const mutates = changesDocument ?? definition.mutates ?? false
@@ -36,7 +58,7 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, openWor
     server.registerTool(
       definition.name,
       {
-        description: `${definition.description} The browser workspace opens automatically when needed.`,
+        description: `${definition.description} The StarWeave Design canvas window opens automatically when needed.`,
         inputSchema: z.object(shape),
         annotations: {
           readOnlyHint: !mutates,

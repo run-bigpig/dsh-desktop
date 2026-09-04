@@ -51,7 +51,7 @@ type DesktopController interface {
 	MinimizeWindow() error
 	ToggleMaximizeWindow() (WindowState, error)
 	CloseWindow() error
-	OpenBrowserURL(string) error
+	OpenDesignWindow(string) error
 }
 
 var (
@@ -111,7 +111,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
 			return
 		}
-		capabilities := []string{"marketplace", "browser.open"}
+		capabilities := []string{"marketplace", "design.open"}
 		if runtime.GOOS == "windows" {
 			capabilities = append(capabilities, "window.controls")
 		}
@@ -162,7 +162,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
-	case r.Method == http.MethodPost && r.URL.Path == "/v1/browser/open":
+	case r.Method == http.MethodPost && (r.URL.Path == "/v1/design/open" || r.URL.Path == "/v1/browser/open"):
 		controller := b.desktopController()
 		if controller == nil {
 			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
@@ -178,7 +178,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusBadRequest, "invalid StarWeave Design URL")
 			return
 		}
-		if err := controller.OpenBrowserURL(request.URL); err != nil {
+		if err := controller.OpenDesignWindow(request.URL); err != nil {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}

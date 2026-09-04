@@ -100,6 +100,10 @@ func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledTool
 
 func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
 
+func (c *Coordinator) SetDesignWindow(window *application.WebviewWindow) {
+	c.window.SetDesignWindow(window)
+}
+
 func installBundledToolchain(paths appconfig.Paths) error {
 	legacyGit := filepath.Join(paths.Toolchain, "git")
 	if _, err := os.Stat(legacyGit); err == nil {
