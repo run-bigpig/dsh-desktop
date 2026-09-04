@@ -21,6 +21,28 @@ function translate(key: keyof typeof workbenchEn, params?: Readonly<Record<strin
 }
 
 describe('message image gallery', () => {
+  it('waits for the durable attachment instead of echoing a pending image preview', async () => {
+    const base = {
+      sessionId: 'session-a', align: 'end', loadImage: vi.fn().mockResolvedValue('data:image/png;base64,iVBORw0KGgo='), useProjection: () => undefined,
+      controller: new WorkbenchController(), t: translate,
+    }
+    const view = render(<MessageImageGallery {...({
+      ...base,
+      images: [{ preview: { url: 'blob:pending', name: 'pending.png', width: 320, height: 200 } }],
+    } as unknown as MessageImageGalleryProps)} />)
+
+    expect(view.container.childElementCount).toBe(0)
+
+    view.rerender(<MessageImageGallery {...({
+      ...base,
+      images: [{ attachment: {
+        attachmentId: AttachmentId('attachment-sent'), mediaType: 'image/png', bytes: 68,
+        width: 320, height: 200, name: 'sent.png',
+      } }],
+    } as unknown as MessageImageGalleryProps)} />)
+    expect(await view.findByRole('button', { name: 'Preview image sent.png' })).toBeTruthy()
+  })
+
   it('opens Image Studio only from the image edit control', async () => {
     const controller = new WorkbenchController()
     const attachment = {

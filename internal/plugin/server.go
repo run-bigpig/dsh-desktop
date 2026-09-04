@@ -51,7 +51,9 @@ type DesktopController interface {
 	MinimizeWindow() error
 	ToggleMaximizeWindow() (WindowState, error)
 	CloseWindow() error
-	OpenDesignWindow(string) error
+	OpenDesignWindow(string, bool) error
+	ChooseDesignOpenPath() (string, error)
+	ChooseDesignSavePath(string) (string, error)
 }
 
 var (
@@ -111,7 +113,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
 			return
 		}
-		capabilities := []string{"marketplace", "design.open"}
+		capabilities := []string{"marketplace", "design.open", "design.open-file", "design.save"}
 		if runtime.GOOS == "windows" {
 			capabilities = append(capabilities, "window.controls")
 		}
@@ -172,17 +174,53 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		decoder := json.NewDecoder(r.Body)
 		decoder.DisallowUnknownFields()
 		var request struct {
-			URL string `json:"url"`
+			URL      string `json:"url"`
+			Navigate *bool  `json:"navigate"`
 		}
 		if err := decoder.Decode(&request); err != nil || requireEOF(decoder) != nil || !validDesignBrowserURL(request.URL) {
 			writeError(w, http.StatusBadRequest, "invalid StarWeave Design URL")
 			return
 		}
-		if err := controller.OpenDesignWindow(request.URL); err != nil {
+		navigate := request.Navigate == nil || *request.Navigate
+		if err := controller.OpenDesignWindow(request.URL, navigate); err != nil {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
 		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/design/open-path":
+		controller := b.desktopController()
+		if controller == nil {
+			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
+			return
+		}
+		path, err := controller.ChooseDesignOpenPath()
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"path": path, "cancelled": path == ""})
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/design/save-path":
+		controller := b.desktopController()
+		if controller == nil {
+			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		var request struct {
+			SuggestedName string `json:"suggestedName"`
+		}
+		if err := decoder.Decode(&request); err != nil || requireEOF(decoder) != nil {
+			writeError(w, http.StatusBadRequest, "invalid StarWeave Design save request")
+			return
+		}
+		path, err := controller.ChooseDesignSavePath(request.SuggestedName)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]any{"path": path, "cancelled": path == ""})
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/marketplace/catalog":
 		if err := b.manager.RefreshCatalog(r.Context()); err != nil && b.manager.log != nil {
 			_, _ = fmt.Fprintln(b.manager.log, "refresh Marketplace catalog:", err)

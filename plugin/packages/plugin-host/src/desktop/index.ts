@@ -25,7 +25,7 @@ export async function desktopRequest<T>(path: string, init?: RequestInit): Promi
       'content-type': 'application/json',
       ...init?.headers,
     },
-    signal: AbortSignal.timeout(30_000),
+    signal: init?.signal ?? AbortSignal.timeout(30_000),
   })
   if (!response.ok) {
     const message = await response.text()

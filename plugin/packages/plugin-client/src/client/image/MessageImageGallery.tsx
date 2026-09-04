@@ -44,51 +44,23 @@ export interface MessageImageTilesProps {
 export function MessageImageTiles({
   images, loadImage, align, sessionId, controller, t,
 }: MessageImageTilesProps): ReactNode {
-  if (images.length === 0) return null
-  const variant = images.length === 1 ? 'single' : 'tile'
+  const attachments = images.flatMap(image => 'attachment' in image ? [image.attachment] : [])
+  if (attachments.length === 0) return null
+  const variant = attachments.length === 1 ? 'single' : 'tile'
   return (
     <HarnessImageGroup label={t('imagePreview')} closeLabel={t('closeImagePreview')}>
       <div className={css.gallery} data-align={align}>
-        {images.map((image, index) => 'attachment' in image
-          ? <MessageImageTile
-              key={`${String(image.attachment.attachmentId)}:${String(index)}`}
-              attachment={image.attachment}
-              loadImage={loadImage}
-              variant={variant}
-              sessionId={sessionId}
-              controller={controller}
-              t={t}
-            />
-          : <MessagePreviewTile
-              key={`${image.preview.url}:${String(index)}`}
-              preview={image.preview}
-              variant={variant}
-              t={t}
-            />)}
+        {attachments.map((attachment, index) => <MessageImageTile
+          key={`${String(attachment.attachmentId)}:${String(index)}`}
+          attachment={attachment}
+          loadImage={loadImage}
+          variant={variant}
+          sessionId={sessionId}
+          controller={controller}
+          t={t}
+        />)}
       </div>
     </HarnessImageGroup>
-  )
-}
-
-function MessagePreviewTile({ preview, variant, t }: {
-  readonly preview: Extract<MessageImageSource, { readonly preview: unknown }>['preview']
-  readonly variant: 'single' | 'tile'
-  readonly t: MessageImageGalleryProps['t']
-}): ReactNode {
-  const label = preview.name ?? t('imageUnnamed')
-  return (
-    <div className={css.tile} data-variant={variant}>
-      <HarnessImage
-        rootClassName={css.preview}
-        src={preview.url}
-        alt={label}
-        ariaLabel={t('imageOpenNamed', { name: label })}
-        width="100%"
-        height="100%"
-        closeLabel={t('closeImagePreview')}
-        imageStyle={{ objectFit: 'cover' }}
-      />
-    </div>
   )
 }
 

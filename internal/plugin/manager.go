@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.87"
+const desktopPluginVersion = "0.1.88"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{
@@ -829,6 +829,7 @@ func (m *Manager) commandEnvironment(home string) []string {
 	}
 	path := strings.Join(binDirs, string(os.PathListSeparator))
 	env = append(env, "PATH="+path, "DSH_HOME="+home, "PNPM_HOME="+filepath.Dir(m.tools.PNPM),
+		"STARWEAVE_DESIGN_STATE_DIR="+m.paths.State,
 		"NPM_CONFIG_UPDATE_NOTIFIER=false", "GIT_TERMINAL_PROMPT=0", "CI=1")
 	if runtime.GOOS != "windows" {
 		env = append(env, "HOME="+home, "SHELL=/bin/sh")

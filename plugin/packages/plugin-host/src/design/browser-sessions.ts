@@ -26,7 +26,9 @@ type DesignSession = {
   waiters: Set<PendingWaiter>
 }
 
-export function createBrowserSessions(openBrowser: (session: DesignSession) => Promise<void>) {
+export function createBrowserSessions(
+  openBrowser: (session: DesignSession, navigate: boolean) => Promise<void>
+) {
   const sessions = new Map<string, DesignSession>()
   let currentSessionId: string | undefined
 
@@ -68,7 +70,19 @@ export function createBrowserSessions(openBrowser: (session: DesignSession) => P
     currentSessionId = session.id
     if (reveal || (!isOpen(session.socket) && Date.now() - session.openedAt > 3000)) {
       session.openedAt = Date.now()
-      await openBrowser(session)
+      const pageSocket = isOpen(session.socket)
+        ? session.socket
+        : [...sessions.values()].find(candidate => isOpen(candidate.socket))?.socket
+      if (isOpen(session.socket)) {
+        session.socket.send(JSON.stringify({ type: 'reveal-session', sessionId: session.id }))
+      } else if (isOpen(pageSocket)) {
+        pageSocket.send(JSON.stringify({
+          type: 'open-session',
+          sessionId: session.id,
+          token: session.token
+        }))
+      }
+      await openBrowser(session, !isOpen(pageSocket))
     }
     return session
   }
@@ -165,8 +179,8 @@ async function waitForBrowser(session: DesignSession): Promise<void> {
   })
 }
 
-function isOpen(socket: WebSocket | null): socket is WebSocket {
-  return socket !== null && socket.readyState === socket.OPEN
+function isOpen(socket: WebSocket | null | undefined): socket is WebSocket {
+  return socket !== null && socket !== undefined && socket.readyState === socket.OPEN
 }
 
 function isUUID(value: string): boolean {

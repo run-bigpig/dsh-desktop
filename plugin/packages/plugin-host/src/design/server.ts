@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
 import { randomUUID } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
-import { dirname, extname, resolve, sep } from 'node:path'
+import { basename, dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, stat } from 'node:fs/promises'
 
@@ -11,6 +11,9 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { desktopRequest } from '../desktop/index.ts'
 import { createBrowserSessions, type BrowserDesignSession } from './browser-sessions.ts'
 import { createDesignMCPSessions } from './mcp-sessions.ts'
+import { createNativeDesignSave } from './native-save.ts'
+import { createDesignSaveUploads } from './save-uploads.ts'
+import { createDesignSessionFiles } from './session-files.ts'
 import { registerDesignTools } from './tools.ts'
 
 const MAX_HTTP_BODY = 2 * 1024 * 1024
@@ -29,15 +32,54 @@ export type DesignServer = {
 export async function startDesignServer(authToken: string): Promise<DesignServer> {
   let port = 0
   const lanAddresses = privateIPv4Addresses()
-  const openBrowser = async (session: BrowserDesignSession): Promise<void> => {
+  const openBrowser = async (session: BrowserDesignSession, navigate: boolean): Promise<void> => {
     if (port < 1) throw new Error('StarWeave Design server is not ready')
     const target = new URL(`http://127.0.0.1:${port}/`)
     target.searchParams.set('session', session.id)
     target.searchParams.set('token', session.token)
     if (lanAddresses[0]) target.searchParams.set('lan', `http://${lanAddresses[0]}:${port}`)
-    await desktopRequest('/v1/design/open', { method: 'POST', body: JSON.stringify({ url: target.href }) })
+    await desktopRequest('/v1/design/open', {
+      method: 'POST',
+      body: JSON.stringify({ url: target.href, navigate })
+    })
   }
   const browsers = createBrowserSessions(openBrowser)
+  const uploads = createDesignSaveUploads()
+  const sessionFiles = createDesignSessionFiles()
+  const saveFile = createNativeDesignSave({
+    sendRPC: browsers.sendRPC,
+    choosePath: async suggestedName => await desktopRequest('/v1/design/save-path', {
+      method: 'POST',
+      body: JSON.stringify({ suggestedName }),
+      signal: AbortSignal.timeout(5 * 60_000)
+    }),
+    createUpload: uploads.create,
+    loadPath: sessionFiles.get,
+    storePath: sessionFiles.set
+  })
+  const openFile = async (sessionId: string): Promise<unknown> => {
+    const selected = await desktopRequest<{ path?: string; cancelled?: boolean }>('/v1/design/open-path', {
+      method: 'POST',
+      signal: AbortSignal.timeout(5 * 60_000)
+    })
+    if (selected.cancelled || !selected.path) throw new Error('Open cancelled by user')
+    const result = await browsers.sendRPC(sessionId, 'open_file', {
+      name: basename(selected.path),
+      starweave_download_url: uploads.createDownload(selected.path)
+    })
+    if (!resultDocumentId(result)) throw new Error('StarWeave Design did not open the selected file')
+    await sessionFiles.set(sessionId, selected.path)
+    return result
+  }
+  const restoreDocument = async (sessionId: string): Promise<string | undefined> => {
+    const path = await sessionFiles.get(sessionId)
+    if (!path) return undefined
+    const result = await browsers.sendRPC(sessionId, 'open_file', {
+      name: basename(path),
+      starweave_download_url: uploads.createDownload(path)
+    })
+    return resultDocumentId(result)
+  }
   const mcpSessions = createDesignMCPSessions((server: McpServer) => {
     registerDesignTools(
       server,
@@ -45,7 +87,10 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
       async (requestedId, reveal) => {
         const session = await browsers.ensureOpen(requestedId, reveal)
         return { id: session.id, connected: session.socket?.readyState === session.socket?.OPEN }
-      }
+      },
+      saveFile,
+      openFile,
+      restoreDocument
     )
   })
 
@@ -53,7 +98,7 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
   const collaborationSockets = new WebSocketServer({ noServer: true, maxPayload: MAX_COLLAB_MESSAGE })
   const collaboration = createCollaborationRelay()
   const httpServer = createServer((request, response) => {
-    void handleHTTP(request, response, authToken, mcpSessions).catch(error => {
+    void handleHTTP(request, response, authToken, mcpSessions, uploads, port).catch(error => {
       if (!response.headersSent) writeJSON(response, 500, { error: describeError(error) })
       else response.destroy(error instanceof Error ? error : undefined)
     })
@@ -115,6 +160,7 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
     authToken,
     close: async () => {
       browsers.close()
+      uploads.clear()
       collaboration.close()
       await mcpSessions.clear()
       for (const client of designSockets.clients) client.terminate()
@@ -132,9 +178,27 @@ async function handleHTTP(
   request: IncomingMessage,
   response: ServerResponse,
   authToken: string,
-  sessions: ReturnType<typeof createDesignMCPSessions>
+  sessions: ReturnType<typeof createDesignMCPSessions>,
+  uploads: ReturnType<typeof createDesignSaveUploads>,
+  port: number
 ): Promise<void> {
   const target = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
+  const saveToken = /^\/design-save\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
+  if (saveToken) {
+    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
+      return writeJSON(response, 403, { error: 'forbidden' })
+    }
+    await uploads.handle(request, response, saveToken)
+    return
+  }
+  const openToken = /^\/design-open\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
+  if (openToken) {
+    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
+      return writeJSON(response, 403, { error: 'forbidden' })
+    }
+    await uploads.handleDownload(request, response, openToken)
+    return
+  }
   if (target.pathname === '/health') {
     if (!isLoopback(request.socket.remoteAddress ?? '')) return writeJSON(response, 403, { error: 'forbidden' })
     return writeJSON(response, 200, { status: 'ok' })
@@ -355,4 +419,9 @@ function describeError(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
+}
+
+function resultDocumentId(value: unknown): string | undefined {
+  if (!isRecord(value) || !isRecord(value.target)) return undefined
+  return typeof value.target.documentId === 'string' ? value.target.documentId : undefined
 }

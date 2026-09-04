@@ -106,6 +106,11 @@ await mkdir(overlay, { recursive: true })
 for (const name of ['plugin-host', 'plugin-client', 'plugin-bundle']) {
   await cp(resolve(project, 'packages', name), resolve(overlay, name), { recursive: true })
 }
+const designSkill = resolve(designWeb, 'skills/starweave-design')
+if (!await exists(resolve(designSkill, 'SKILL.md'))) {
+  throw new Error(`${designWeb} is missing the StarWeave Design skill`)
+}
+await cp(designSkill, resolve(overlay, 'plugin-host/skills/starweave-design'), { recursive: true })
 await run(pnpm, [
   'install', '--frozen-lockfile=false', '--ignore-scripts',
   '--filter', '@run-bigpig/dsh-desktop-plugin-host...',

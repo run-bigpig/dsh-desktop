@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-client",
   "description": "StarWeave integration UI and plugin marketplace",
-  "version": "0.1.87",
+  "version": "0.1.88",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
