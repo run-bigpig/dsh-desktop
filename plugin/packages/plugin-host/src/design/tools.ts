@@ -33,7 +33,8 @@ export function registerDesignTools(
     }
   )
 
-  registerTools(server, {
+  // OpenPencil may resolve an adjacent MCP SDK copy; its public registerTool contract is compatible.
+  registerTools(server as unknown as Parameters<typeof registerTools>[0], {
     enableEval: false,
     mcpRoot: null,
     sendRPC: async body => {
