@@ -60,8 +60,13 @@ function Get-LatestStarWeaveUIRelease {
     throw "StarWeave UI release $tag contains an unexpected asset URL"
   }
   $checksumResponse = Invoke-WebRequest -UseBasicParsing -Uri $checksumURL -Headers $designReleaseHeaders
+  $checksumContent = if ($checksumResponse.Content -is [byte[]]) {
+    [Text.Encoding]::UTF8.GetString($checksumResponse.Content)
+  } else {
+    [string]$checksumResponse.Content
+  }
   $checksumMatch = [Text.RegularExpressions.Regex]::Match(
-    [string]$checksumResponse.Content,
+    $checksumContent,
     '^[\s]*([0-9a-fA-F]{64})[\s]+\*?starweave-ui-dist\.tar\.gz[\s]*$',
     [Text.RegularExpressions.RegexOptions]::CultureInvariant
   )
