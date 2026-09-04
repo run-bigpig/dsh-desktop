@@ -230,7 +230,7 @@ await stagePackage(resolve(overlay, 'plugin-bundle'), resolve(output, 'plugin-bu
   trees: [{ path: 'LICENSES', suffixes: ['.txt'] }],
 }, versions)
 const hostManifest = JSON.parse(await readFile(resolve(output, 'plugin-host/package.json'), 'utf8'))
-for (const dependency of ['@modelcontextprotocol/sdk', '@open-pencil/core', 'undici', 'ws']) {
+for (const dependency of ['@modelcontextprotocol/sdk', '@open-pencil/core', '@open-pencil/mcp', 'undici', 'ws']) {
   if (typeof hostManifest.dependencies?.[dependency] !== 'string') {
     throw new Error(`staged Desktop Plugin Host is missing ${dependency}`)
   }

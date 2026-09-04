@@ -76,9 +76,9 @@ in `LICENSES/undici-MIT.txt` and `LICENSES/ws-MIT.txt`.
 
 StarWeave Design is derived from the Web implementation of OpenPencil version
 `0.14.0`, commit `cb7ceea61ab1a419374f9af9bde05d033be0881f`. The Rust/Tauri
-desktop, OpenPencil AI chat, model-provider, ACP, MCP server, CLI, Harness,
-documentation, and test applications are not included. The derived browser UI
-and the host's `@open-pencil/core` design-tool definitions are distributed
+desktop, OpenPencil AI chat, model-provider, ACP, CLI, Harness, documentation,
+and test applications are not included. The derived browser UI and the host's
+official `@open-pencil/core` and `@open-pencil/mcp` packages are distributed
 under the MIT License. The applicable license text is included in
 `LICENSES/open-pencil-MIT.txt`.
 

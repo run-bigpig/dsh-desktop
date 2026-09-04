@@ -1,116 +1,48 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { ALL_TOOLS } from '@open-pencil/core/tools'
-import type { ParamDef, ParamType } from '@open-pencil/core/tools'
+import { ok, registerTools } from '@open-pencil/mcp'
 import { z } from 'zod'
 
 type SendRPC = (sessionId: string | undefined, command: string, args: unknown) => Promise<unknown>
 
+type OpenWorkspace = (
+  sessionId?: string,
+  reveal?: boolean
+) => Promise<{ id: string; connected: boolean }>
+
 const sessionSchema = z.string().uuid().optional().describe(
-  'Design session returned by open_design_workspace. Omit to use the current StarWeave Design session.'
+  'Existing StarWeave Design session to reveal. Omit to open or reuse this MCP connection\'s canvas.'
 )
 
-export function registerDesignTools(server: McpServer, sendRPC: SendRPC, openWorkspace: (sessionId?: string) => Promise<{ id: string; connected: boolean }>): void {
+export function registerDesignTools(
+  server: McpServer,
+  sendRPC: SendRPC,
+  openWorkspace: OpenWorkspace
+): void {
+  let designSessionId: string | undefined
+
   server.registerTool(
     'open_design_workspace',
     {
-      description: 'Open or reuse the authenticated StarWeave Design desktop canvas window.',
+      description: 'Open or reveal the StarWeave Design canvas bound to this MCP connection.',
       inputSchema: z.object({ design_session_id: sessionSchema })
     },
-    async ({ design_session_id }) => ok(await openWorkspace(design_session_id))
-  )
-
-  server.registerTool(
-    'list_design_documents',
-    {
-      description: 'List documents and pages currently open in a StarWeave Design browser session.',
-      inputSchema: z.object({ design_session_id: sessionSchema })
-    },
-    async ({ design_session_id }) => rpcResult(await sendRPC(design_session_id, 'list_documents', {}))
-  )
-
-  server.registerTool(
-    'save_file',
-    {
-      description: 'Save the current StarWeave Design document. Uses its existing browser file handle when available; otherwise opens the save flow in the canvas window.',
-      inputSchema: z.object({
-        design_session_id: sessionSchema,
-        document_id: z.string().optional().describe('Optional StarWeave Design document/tab ID to save'),
-        page_id: z.string().optional().describe('Optional page ID used to resolve the target document')
-      }),
-      annotations: {
-        readOnlyHint: false,
-        destructiveHint: true
-      }
-    },
-    async ({ design_session_id, document_id, page_id }) => {
-      const value = await sendRPC(design_session_id, 'save_file', { document_id, page_id })
-      const envelope = isRecord(value) ? value : {}
-      if (envelope.ok === false) return fail(new Error(String(envelope.error ?? 'Unable to save design file')))
-      return ok({ saved: true, ...(envelope.target ? { target: envelope.target } : {}) })
+    async ({ design_session_id }) => {
+      const session = await openWorkspace(design_session_id, true)
+      designSessionId = session.id
+      return ok(session)
     }
   )
 
-  for (const definition of ALL_TOOLS) {
-    const changesDocument = (definition as typeof definition & { changesDocument?: boolean }).changesDocument
-    const mutates = changesDocument ?? definition.mutates ?? false
-    const shape: Record<string, z.ZodType> = { design_session_id: sessionSchema }
-    for (const [name, parameter] of Object.entries(definition.params)) shape[name] = paramToZod(parameter)
-    server.registerTool(
-      definition.name,
-      {
-        description: `${definition.description} The StarWeave Design canvas window opens automatically when needed.`,
-        inputSchema: z.object(shape),
-        annotations: {
-          readOnlyHint: !mutates,
-          destructiveHint: mutates
-        }
-      },
-      async (args: Record<string, unknown>) => {
-        const { design_session_id, ...toolArgs } = args
-        const sessionId = typeof design_session_id === 'string' ? design_session_id : undefined
-        return rpcResult(await sendRPC(sessionId, 'tool', { name: definition.name, args: toolArgs }))
+  registerTools(server, {
+    enableEval: false,
+    mcpRoot: null,
+    sendRPC: async body => {
+      if (!designSessionId) {
+        designSessionId = (await openWorkspace(undefined, false)).id
       }
-    )
-  }
-}
-
-function paramToZod(parameter: ParamDef): z.ZodType {
-  const factories: Record<ParamType, () => z.ZodType> = {
-    string: () => parameter.enum
-      ? z.enum(parameter.enum as [string, ...string[]])
-      : z.string(),
-    number: () => {
-      let schema = z.coerce.number()
-      if (parameter.min !== undefined) schema = schema.min(parameter.min)
-      if (parameter.max !== undefined) schema = schema.max(parameter.max)
-      return schema
-    },
-    boolean: () => z.boolean(),
-    color: () => z.string(),
-    'string[]': () => z.array(z.string()).min(1)
-  }
-  const schema = factories[parameter.type]().describe(parameter.description)
-  return parameter.required ? schema : schema.optional()
-}
-
-function rpcResult(value: unknown) {
-  const envelope = isRecord(value) ? value : { result: value }
-  if (envelope.ok === false) return fail(new Error(String(envelope.error ?? 'Design command failed')))
-  const result = envelope.result ?? envelope
-  if (isRecord(result) && typeof result.base64 === 'string' && typeof result.mimeType === 'string') {
-    return { content: [{ type: 'image' as const, data: result.base64, mimeType: result.mimeType }] }
-  }
-  return ok(result)
-}
-
-function ok(value: unknown) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify(value, null, 2) }] }
-}
-
-function fail(error: Error) {
-  return { content: [{ type: 'text' as const, text: JSON.stringify({ error: error.message }) }], isError: true }
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
+      const command = typeof body.command === 'string' ? body.command : ''
+      if (!command) throw new Error('OpenPencil MCP request is missing its command')
+      return await sendRPC(designSessionId, command, body.args ?? {})
+    }
+  })
 }

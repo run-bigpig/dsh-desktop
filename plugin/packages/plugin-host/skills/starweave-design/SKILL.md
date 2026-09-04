@@ -7,7 +7,7 @@ description: 使用 StarWeave Design 的 MCP 画布把文字描述、截图或�
 
 ## 核心原则
 
-直接在画布上工作，不要先输出任务列表、检查清单或长篇设计计划。意图足够明确后，立即调用 `open_design_workspace`，并在后续所有调用中复用返回的 `design_session_id`。
+直接在画布上工作，不要先输出任务列表、检查清单或长篇设计计划。意图足够明确后，立即调用 `open_design_workspace`。后续官方 OpenPencil 工具会自动复用绑定到当前 MCP 连接的画布。
 
 把页面当作一组稳定的空间积木，而不是一堆散落图层：
 
@@ -22,7 +22,7 @@ description: 使用 StarWeave Design 的 MCP 画布把文字描述、截图或�
 
 主要工具按用途选择：
 
-- 打开与上下文：`open_design_workspace`、`list_design_documents`、`get_current_page`、`get_page_tree`、`get_node`。
+- 打开与上下文：`open_design_workspace`、`list_documents`、`get_current_page`、`get_page_tree`、`get_node`。
 - 查找与选区：`get_selection`、`find_nodes`、`query_nodes`、`select_nodes`。
 - 生成：`render`。使用 `parent_id` 向稳定容器填充，使用 `replace_id` 替换完整区域。
 - 精确修改：`set_text`、`set_fill`、`set_stroke`、`set_layout`、`set_layout_child`、`set_radius`、`set_text_properties`、`update_node`、`batch_update`。

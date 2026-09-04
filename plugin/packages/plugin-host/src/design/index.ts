@@ -51,7 +51,7 @@ export class StarWeaveDesignGateway extends Service {
     this.ctx.get('systemPrompt')?.section({
       name: 'starweave:design',
       order: 120,
-      text: '创建或修改界面、根据截图或线框图生成设计时，使用 $starweave-design 和 starweave-design MCP；先打开独立画布并持续复用 design_session_id。'
+      text: '创建或修改界面、根据截图或线框图生成设计时，使用 $starweave-design 和 starweave-design MCP；先调用 open_design_workspace 打开独立画布，后续官方 OpenPencil 工具会自动操作该画布。'
     })
     this.ctx.effect(() => async () => {
       this.disposeSkill?.()

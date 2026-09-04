@@ -42,8 +42,8 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
     registerDesignTools(
       server,
       browsers.sendRPC,
-      async requestedId => {
-        const session = await browsers.ensureOpen(requestedId, true)
+      async (requestedId, reveal) => {
+        const session = await browsers.ensureOpen(requestedId, reveal)
         return { id: session.id, connected: session.socket?.readyState === session.socket?.OPEN }
       }
     )

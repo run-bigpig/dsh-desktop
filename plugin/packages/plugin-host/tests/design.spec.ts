@@ -55,7 +55,7 @@ describe('StarWeave Design browser sessions', () => {
 })
 
 describe('StarWeave Design MCP tools', () => {
-  it('registers save_file and forwards it to the browser bridge', async () => {
+  it('adds workspace opening and delegates save_file to the official OpenPencil registry', async () => {
     const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
     const server = {
       registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
@@ -63,19 +63,26 @@ describe('StarWeave Design MCP tools', () => {
       }
     } as unknown as McpServer
     const sendRPC = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'document-1' } })
+    const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
+    const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: true })
 
-    registerDesignTools(server, sendRPC, vi.fn())
+    registerDesignTools(server, sendRPC, openWorkspace)
 
+    expect(callbacks.has('list_documents')).toBe(true)
     const save = callbacks.get('save_file')
     expect(save).toBeDefined()
+    expect(callbacks.has('get_codegen_prompt')).toBe(true)
+    expect(callbacks.has('list_design_documents')).toBe(false)
+
+    await callbacks.get('open_design_workspace')?.({ design_session_id: designSessionId })
     const result = await save?.({
-      design_session_id: '123e4567-e89b-42d3-a456-426614174000',
       document_id: 'document-1'
     })
+    expect(openWorkspace).toHaveBeenCalledWith(designSessionId, true)
     expect(sendRPC).toHaveBeenCalledWith(
-      '123e4567-e89b-42d3-a456-426614174000',
+      designSessionId,
       'save_file',
-      { document_id: 'document-1', page_id: undefined }
+      { document_id: 'document-1' }
     )
     expect(result).toEqual({
       content: [
@@ -85,6 +92,24 @@ describe('StarWeave Design MCP tools', () => {
         }
       ]
     })
+  })
+
+  it('opens a StarWeave canvas lazily when an official tool is called first', async () => {
+    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
+    const server = {
+      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
+        callbacks.set(name, callback)
+      }
+    } as unknown as McpServer
+    const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
+    const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: false })
+    const sendRPC = vi.fn().mockResolvedValue({ ok: true, result: { documents: [] } })
+
+    registerDesignTools(server, sendRPC, openWorkspace)
+    await callbacks.get('list_documents')?.({})
+
+    expect(openWorkspace).toHaveBeenCalledWith(undefined, false)
+    expect(sendRPC).toHaveBeenCalledWith(designSessionId, 'list_documents', {})
   })
 })
 
@@ -97,6 +122,7 @@ describe('StarWeave Design skill', () => {
     const skill = register.mock.calls[0]?.[0]
     expect(skill?.name).toBe('starweave-design')
     expect(skill?.content).toContain('open_design_workspace')
+    expect(skill?.content).toContain('list_documents')
     expect(skill?.content).toContain('render(parent_id=区域ID)')
     expect(skill?.content).toContain('不同 `parent_id`')
     expect(skill?.content).toContain('get_selection')

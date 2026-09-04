@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.86",
+  "version": "0.1.87",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -49,6 +49,7 @@
     "@firecrawl/anydoc": "0.1.8",
     "@modelcontextprotocol/sdk": "1.30.0",
     "@open-pencil/core": "0.14.0",
+    "@open-pencil/mcp": "0.14.0",
     "undici": "6.28.0",
     "ws": "8.21.0"
   },
