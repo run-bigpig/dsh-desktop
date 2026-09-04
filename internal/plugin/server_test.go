@@ -12,6 +12,7 @@ type fakeDesktopController struct {
 	minimized int
 	maximized int
 	closed    int
+	openedURL string
 }
 
 func (f *fakeDesktopController) WindowState() (WindowState, error) { return f.state, nil }
@@ -21,7 +22,8 @@ func (f *fakeDesktopController) ToggleMaximizeWindow() (WindowState, error) {
 	f.state.Maximized = !f.state.Maximized
 	return f.state, nil
 }
-func (f *fakeDesktopController) CloseWindow() error { f.closed++; return nil }
+func (f *fakeDesktopController) CloseWindow() error              { f.closed++; return nil }
+func (f *fakeDesktopController) OpenBrowserURL(url string) error { f.openedURL = url; return nil }
 
 func TestBridgeRequiresTokenAndRejectsBrowserOrigin(t *testing.T) {
 	manager := &Manager{operations: map[string]*operationRecord{}}
@@ -127,5 +129,33 @@ func TestBridgeExposesOnlyAuthenticatedDesktopWindowActions(t *testing.T) {
 	bridge.ServeHTTP(response, request)
 	if response.Code != http.StatusOK || controller.closed != 1 {
 		t.Fatalf("close response = %d %s; calls = %d", response.Code, response.Body.String(), controller.closed)
+	}
+}
+
+func TestBridgeOpensOnlyAuthenticatedLoopbackDesignURLs(t *testing.T) {
+	controller := &fakeDesktopController{}
+	bridge := &Bridge{manager: &Manager{operations: map[string]*operationRecord{}}, token: "secret", desktop: controller}
+	validURL := "http://127.0.0.1:43123/?session=123e4567-e89b-42d3-a456-426614174000&token=abcdefghijklmnopqrstuvwxyzABCDEFGH_12345678&lan=http%3A%2F%2F192.168.1.5%3A43123"
+
+	request := httptest.NewRequest(http.MethodPost, "/v1/browser/open", strings.NewReader(`{"url":"`+validURL+`"}`))
+	request.Header.Set("Authorization", "Bearer secret")
+	response := httptest.NewRecorder()
+	bridge.ServeHTTP(response, request)
+	if response.Code != http.StatusOK || controller.openedURL != validURL {
+		t.Fatalf("open response = %d %s; url = %q", response.Code, response.Body.String(), controller.openedURL)
+	}
+
+	for _, invalidURL := range []string{
+		"https://example.com/",
+		"http://127.0.0.1:43123/?session=123e4567-e89b-42d3-a456-426614174000&token=short",
+		"http://192.168.1.5:43123/?session=123e4567-e89b-42d3-a456-426614174000&token=abcdefghijklmnopqrstuvwxyzABCDEFGH_12345678",
+	} {
+		request = httptest.NewRequest(http.MethodPost, "/v1/browser/open", strings.NewReader(`{"url":"`+invalidURL+`"}`))
+		request.Header.Set("Authorization", "Bearer secret")
+		response = httptest.NewRecorder()
+		bridge.ServeHTTP(response, request)
+		if response.Code != http.StatusBadRequest {
+			t.Fatalf("invalid URL %q returned %d", invalidURL, response.Code)
+		}
 	}
 }

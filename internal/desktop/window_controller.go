@@ -65,3 +65,7 @@ func (c *windowController) CloseWindow() error {
 	window.Close()
 	return nil
 }
+
+func (c *windowController) OpenBrowserURL(url string) error {
+	return application.Get().Browser.OpenURL(url)
+}

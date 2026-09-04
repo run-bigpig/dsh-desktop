@@ -1,13 +1,14 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.83",
+  "version": "0.1.84",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
   "exports": {
     ".": { "types": "./lib/types/index.d.ts", "default": "./lib/index.js" },
     "./mcp": { "types": "./lib/types/mcp.d.ts", "default": "./lib/mcp.js" },
+    "./design": { "types": "./lib/types/design.d.ts", "default": "./lib/design.js" },
     "./thinkingdata": { "types": "./lib/types/thinkingdata.d.ts", "default": "./lib/thinkingdata.js" },
     "./vision": { "types": "./lib/types/vision.d.ts", "default": "./lib/vision.js" },
     "./image": { "types": "./lib/types/image.d.ts", "default": "./lib/image.js" },
@@ -24,6 +25,7 @@
   "files": [
     "lib/index.js",
     "lib/mcp.js",
+    "lib/design.js",
     "lib/thinkingdata.js",
     "lib/vision.js",
     "lib/image.js",
@@ -39,11 +41,14 @@
     "lib/typert.remote-client.js",
     "lib/typert.remote-client.d.ts",
     "skills/**/*.md",
-    "skills/**/*.yaml"
+    "skills/**/*.yaml",
+    "web/**/*"
   ],
   "license": "MIT",
   "dependencies": {
     "@firecrawl/anydoc": "0.1.8",
+    "@modelcontextprotocol/sdk": "1.30.0",
+    "@open-pencil/core": "0.14.0",
     "undici": "6.28.0",
     "ws": "8.21.0"
   },

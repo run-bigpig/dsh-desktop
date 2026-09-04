@@ -69,6 +69,7 @@ function Get-SourceFingerprint {
 function Get-WindowsSeedFingerprint([string]$RepoRoot) {
   return (Get-SourceFingerprint -RepoRoot $RepoRoot -Paths @(
     "release/seed.lock.json",
+    "release/starweave-ui.release.json",
     "release/toolchain.lock.json",
     "scripts/prepare-windows-seed.ps1",
     "scripts/stage-workspace-runtime.mjs",

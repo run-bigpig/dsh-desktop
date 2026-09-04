@@ -138,7 +138,7 @@ StarWeave 的默认私有数据目录为：
 - Wails CLI `v3.0.0-beta.9`；
 - Task `v3`；
 - Windows 发布构建额外需要 NSIS；
-- 构建固定 Harness seed 时需要网络访问锁文件中的官方资源。
+- 构建固定 Harness seed 时需要网络访问锁文件中的官方资源，以及 `starweave-ui-design` 的最新稳定 GitHub Release。
 
 仓库从 WSL 编辑，但发布相关的 Go 测试、EXE 构建和安装验证必须在 Windows PowerShell 中执行。Linux 本机构建 Wails 窗口还需要 `pkg-config` 和 WebKitGTK 开发包，但 Linux 构建结果目前不属于生产支持范围。
 
@@ -156,7 +156,11 @@ task test
 go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
 ```
 
-Windows 发布相关改动还应通过 Windows PowerShell 覆盖相应包测试，并按改动范围构建 host、client 和 bundle 三个内置插件包。插件源代码位于 [plugin/packages](plugin/packages)，其构建入口为 [plugin/scripts/build-against-harness.mjs](plugin/scripts/build-against-harness.mjs)。
+Windows 发布相关改动还应通过 Windows PowerShell 覆盖相应包测试，并按改动范围构建 host、client 和 bundle 三个内置插件包。插件源代码位于 [plugin/packages](plugin/packages)，其构建入口为 [plugin/scripts/build-against-harness.mjs](plugin/scripts/build-against-harness.mjs)。该入口必须通过 `--design-web` 接收已经校验并解压的 StarWeave UI Release 目录。
+
+`task seed:windows` 会解析 `run-bigpig/starweave-ui-design` 的最新稳定 `vX.Y.Z` Release，校验 `starweave-ui-dist.tar.gz.sha256`，再将 Web UI 嵌入 plugin-host。实际 Tag、提交和归档哈希会记录在 seed 构建清单中；应用运行时不会动态下载 UI。
+
+如果 `starweave-ui-design` 是私有仓库，本地构建环境需要提供 `STARWEAVE_UI_GITHUB_TOKEN`，GitHub Actions 仓库则需要配置同名 Secret；该凭据只需拥有目标仓库的只读 Contents 权限。公开仓库无需 Token。
 
 ### 仓库结构
 

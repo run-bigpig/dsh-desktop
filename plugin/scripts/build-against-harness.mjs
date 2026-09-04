@@ -89,6 +89,7 @@ async function stagePackage(source, target, selection, versions) {
 const project = resolve(import.meta.dirname, '..')
 const harness = option('--harness')
 const output = option('--out')
+const designWeb = option('--design-web')
 const store = resolve(dirname(harness), 'pnpm-store')
 if (!await exists(resolve(harness, 'packages/client/tsdown.client.ts'))) {
   throw new Error(`${harness} is not a DeepSeek Harness source checkout`)
@@ -170,7 +171,7 @@ for (const root of ['vendor', 'packages', 'apps', 'native']) {
 }
 await stagePackage(hostDir, resolve(output, 'plugin-host'), {
   files: [
-    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/thinkingdata.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/chart-presentation.js', 'lib/web-tools.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
+    'package.json', 'lib/index.js', 'lib/mcp.js', 'lib/design.js', 'lib/thinkingdata.js', 'lib/vision.js', 'lib/image.js', 'lib/documents.js', 'lib/workspace.js', 'lib/git.js', 'lib/chart-presentation.js', 'lib/web-tools.js', 'lib/typert.host.js', 'lib/typert.host.d.ts',
     'lib/typert.remote-client.js', 'lib/typert.remote-client.d.ts',
   ],
   trees: [
@@ -178,6 +179,13 @@ await stagePackage(hostDir, resolve(output, 'plugin-host'), {
     { path: 'skills', suffixes: ['.md', '.yaml'] },
   ],
 }, versions)
+if (!await exists(resolve(designWeb, 'index.html')) || !await exists(resolve(designWeb, 'canvaskit.wasm'))) {
+  throw new Error(`${designWeb} is not a complete StarWeave UI release`)
+}
+const stagedDesignWeb = resolve(output, 'plugin-host/web/starweave-ui')
+await copySelectedTree(designWeb, stagedDesignWeb, [
+  '.html', '.js', '.css', '.wasm', '.ttf', '.png', '.svg', '.ico', '.json', '.webmanifest', '.txt',
+])
 await stagePackage(resolve(overlay, 'plugin-client'), resolve(output, 'plugin-client'), {
   files: ['package.json', 'lib/index.js', 'lib/client.js', 'lib/client.js.map'],
   trees: [{ path: 'lib/types', suffixes: ['.d.ts'] }],
@@ -222,13 +230,25 @@ await stagePackage(resolve(overlay, 'plugin-bundle'), resolve(output, 'plugin-bu
   trees: [{ path: 'LICENSES', suffixes: ['.txt'] }],
 }, versions)
 const hostManifest = JSON.parse(await readFile(resolve(output, 'plugin-host/package.json'), 'utf8'))
-for (const dependency of ['undici', 'ws']) {
+for (const dependency of ['@modelcontextprotocol/sdk', '@open-pencil/core', 'undici', 'ws']) {
   if (typeof hostManifest.dependencies?.[dependency] !== 'string') {
     throw new Error(`staged Desktop Plugin Host is missing ${dependency}`)
   }
 }
 if (!await exists(resolve(output, 'plugin-host/lib/web-tools.js'))) {
   throw new Error('staged Desktop Plugin Host is missing the web-tools entry')
+}
+if (!await exists(resolve(output, 'plugin-host/lib/design.js'))) {
+  throw new Error('staged Desktop Plugin Host is missing the StarWeave Design entry')
+}
+if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/index.html'))) {
+  throw new Error('staged Desktop Plugin Host is missing the StarWeave Design browser UI')
+}
+if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/canvaskit.wasm'))) {
+  throw new Error('staged Desktop Plugin Host is missing the StarWeave Design CanvasKit runtime')
+}
+if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/starweave-ui-build.json'))) {
+  throw new Error('staged Desktop Plugin Host is missing the StarWeave UI release manifest')
 }
 if (await exists(resolve(output, 'web-tools'))) {
   throw new Error('standalone dsh-web-tools package must not be staged')

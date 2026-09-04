@@ -73,3 +73,17 @@ included in `LICENSES/dsh-web-tools-MIT.txt`.
 The host package depends on `undici` version `6.28.0` and `ws` version `8.21.0`.
 Both are distributed under the MIT License; their license texts are included
 in `LICENSES/undici-MIT.txt` and `LICENSES/ws-MIT.txt`.
+
+StarWeave Design is derived from the Web implementation of OpenPencil version
+`0.14.0`, commit `cb7ceea61ab1a419374f9af9bde05d033be0881f`. The Rust/Tauri
+desktop, OpenPencil AI chat, model-provider, ACP, MCP server, CLI, Harness,
+documentation, and test applications are not included. The derived browser UI
+and the host's `@open-pencil/core` design-tool definitions are distributed
+under the MIT License. The applicable license text is included in
+`LICENSES/open-pencil-MIT.txt`.
+
+The embedded StarWeave Design browser UI includes CanvasKit WASM version
+`0.41.1` under the BSD 3-Clause License, Vue version `3.5.42` under the MIT
+License, and Yjs version `13.6.32` under the MIT License. Their license texts
+are included in `LICENSES/canvaskit-BSD-3-Clause.txt`, `LICENSES/vue-MIT.txt`,
+and `LICENSES/yjs-MIT.txt` respectively.

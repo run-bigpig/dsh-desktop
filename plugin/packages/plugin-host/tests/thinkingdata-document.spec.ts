@@ -47,6 +47,7 @@ describe('ThinkingData settings document', () => {
 
   it('reserves the internal server name from generic MCP settings', () => {
     expect(isReservedMcpServerName('ta-mcp-server')).toBe(true)
+    expect(isReservedMcpServerName('starweave-design')).toBe(true)
     expect(isReservedMcpServerName('openpencil-mcp')).toBe(false)
     expect(isReservedMcpServerName('other-server')).toBe(false)
   })

@@ -10,6 +10,8 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"net/url"
+	"regexp"
 	"runtime"
 	"strings"
 	"sync"
@@ -49,7 +51,13 @@ type DesktopController interface {
 	MinimizeWindow() error
 	ToggleMaximizeWindow() (WindowState, error)
 	CloseWindow() error
+	OpenBrowserURL(string) error
 }
+
+var (
+	designSessionPattern = regexp.MustCompile(`^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$`)
+	designTokenPattern   = regexp.MustCompile(`^[A-Za-z0-9_-]{43}$`)
+)
 
 func StartBridge(manager *Manager) (*Bridge, error) {
 	raw := make([]byte, 32)
@@ -103,7 +111,7 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
 			return
 		}
-		capabilities := []string{"marketplace"}
+		capabilities := []string{"marketplace", "browser.open"}
 		if runtime.GOOS == "windows" {
 			capabilities = append(capabilities, "window.controls")
 		}
@@ -150,6 +158,27 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 			return
 		}
 		if err := controller.CloseWindow(); err != nil {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, map[string]bool{"ok": true})
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/browser/open":
+		controller := b.desktopController()
+		if controller == nil {
+			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")
+			return
+		}
+		r.Body = http.MaxBytesReader(w, r.Body, 4<<10)
+		decoder := json.NewDecoder(r.Body)
+		decoder.DisallowUnknownFields()
+		var request struct {
+			URL string `json:"url"`
+		}
+		if err := decoder.Decode(&request); err != nil || requireEOF(decoder) != nil || !validDesignBrowserURL(request.URL) {
+			writeError(w, http.StatusBadRequest, "invalid StarWeave Design URL")
+			return
+		}
+		if err := controller.OpenBrowserURL(request.URL); err != nil {
 			writeError(w, http.StatusServiceUnavailable, err.Error())
 			return
 		}
@@ -208,6 +237,37 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	default:
 		writeError(w, http.StatusNotFound, "not found")
 	}
+}
+
+func validDesignBrowserURL(raw string) bool {
+	target, err := url.Parse(raw)
+	if err != nil || target.Scheme != "http" || target.Hostname() != "127.0.0.1" || target.Port() == "" || target.User != nil || target.Path != "/" || target.Fragment != "" {
+		return false
+	}
+	query := target.Query()
+	if len(query) < 2 || len(query) > 3 || len(query["session"]) != 1 || len(query["token"]) != 1 {
+		return false
+	}
+	if !designSessionPattern.MatchString(query.Get("session")) || !designTokenPattern.MatchString(query.Get("token")) {
+		return false
+	}
+	for key := range query {
+		if key != "session" && key != "token" && key != "lan" {
+			return false
+		}
+	}
+	if lan := query.Get("lan"); lan != "" {
+		origin, err := url.Parse(lan)
+		if err != nil || origin.Scheme != "http" || origin.Port() != target.Port() || origin.User != nil || origin.Path != "" || origin.RawQuery != "" || origin.Fragment != "" || !isPrivateIPv4(origin.Hostname()) {
+			return false
+		}
+	}
+	return true
+}
+
+func isPrivateIPv4(value string) bool {
+	ip := net.ParseIP(value)
+	return ip != nil && ip.To4() != nil && (ip.IsPrivate() || ip.IsLoopback() || ip.IsLinkLocalUnicast())
 }
 
 func requireEOF(decoder *json.Decoder) error {

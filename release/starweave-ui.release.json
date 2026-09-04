@@ -1,0 +1,7 @@
+{
+  "schemaVersion": 1,
+  "repository": "run-bigpig/starweave-ui-design",
+  "releaseAPI": "https://api.github.com/repos/run-bigpig/starweave-ui-design/releases/latest",
+  "archiveAsset": "starweave-ui-dist.tar.gz",
+  "checksumAsset": "starweave-ui-dist.tar.gz.sha256"
+}

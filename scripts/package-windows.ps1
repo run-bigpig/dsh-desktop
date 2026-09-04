@@ -33,11 +33,34 @@ if (-not (Test-Path $seedManifestPath)) {
 $desktopManifest = Get-Content $desktopManifestPath -Raw | ConvertFrom-Json
 $seedManifest = Get-Content $seedManifestPath -Raw | ConvertFrom-Json
 $desktopFingerprint = Get-WindowsDesktopFingerprint -RepoRoot $repoRoot -Version $Version -ReleaseAPI $ReleaseAPI
-$seedFingerprint = Get-WindowsSeedFingerprint $repoRoot
+$sourceSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
+if (
+  $seedManifest.schemaVersion -ne 2 -or
+  -not ($seedManifest.PSObject.Properties.Name -contains "sourceFingerprint") -or
+  -not ($seedManifest.PSObject.Properties.Name -contains "designRelease") -or
+  $null -eq $seedManifest.designRelease -or
+  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "tag") -or
+  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "sha256") -or
+  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "commit") -or
+  $seedManifest.designRelease.tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or
+  $seedManifest.designRelease.sha256 -notmatch '^[0-9a-f]{64}$' -or
+  $seedManifest.designRelease.commit -notmatch '^[0-9a-f]{40}$'
+) {
+  throw "Windows seed stage predates the StarWeave UI release contract; run task seed:windows"
+}
+$seedFingerprint = Get-SHA256Text ((@(
+  "source=$sourceSeedFingerprint",
+  "designTag=$($seedManifest.designRelease.tag)",
+  "designSHA256=$($seedManifest.designRelease.sha256)"
+) -join "`n"))
 if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.version -ne $Version -or $desktopManifest.releaseAPI -ne $ReleaseAPI) {
   throw "Windows desktop stage is stale; run task build:windows"
 }
-if ($seedManifest.fingerprint -ne $seedFingerprint -or $seedManifest.commit -ne $seedLock.commit) {
+if (
+  $seedManifest.fingerprint -ne $seedFingerprint -or
+  $seedManifest.sourceFingerprint -ne $sourceSeedFingerprint -or
+  $seedManifest.commit -ne $seedLock.commit
+) {
   throw "Windows seed stage is stale; run task seed:windows"
 }
 if (Test-Path -LiteralPath (Join-Path $stage "resources/openpencil")) {
@@ -84,6 +107,26 @@ foreach ($package in $pluginPackages) {
   if ($pluginManifest.version -ne $package.version) {
     throw "Windows stage contains a stale built-in plugin package: $manifest"
   }
+}
+foreach ($requiredDesignFile in @(
+  "plugin-host/lib/design.js",
+  "plugin-host/web/starweave-ui/index.html",
+  "plugin-host/web/starweave-ui/canvaskit.wasm",
+  "plugin-host/web/starweave-ui/starweave-ui-build.json",
+  "plugin-bundle/LICENSES/open-pencil-MIT.txt"
+)) {
+  if (-not (Test-Path -LiteralPath (Join-Path $pluginRoot $requiredDesignFile))) {
+    throw "Windows stage is missing StarWeave Design resource: $requiredDesignFile; run task seed:windows"
+  }
+}
+$designBuildManifest = Get-Content (Join-Path $pluginRoot "plugin-host/web/starweave-ui/starweave-ui-build.json") -Raw | ConvertFrom-Json
+if (
+  $designBuildManifest.schemaVersion -ne 1 -or
+  $designBuildManifest.tag -cne $seedManifest.designRelease.tag -or
+  $designBuildManifest.commit -cne $seedManifest.designRelease.commit -or
+  ("v" + [string]$designBuildManifest.version) -cne $seedManifest.designRelease.tag
+) {
+  throw "Windows stage contains a StarWeave UI release manifest mismatch; run task seed:windows"
 }
 
 $compilerVersion = (& makensis.exe /VERSION).Trim()
