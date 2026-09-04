@@ -98,6 +98,7 @@ import {
   type ChartPresentationLocaleKey, type SkinLocaleKey, type VisionLocaleKey, type WorkbenchLocaleKey,
 } from './locales.ts'
 import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
+import { installChatCopy } from './chat-copy.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -224,6 +225,7 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   } catch {
     capabilities = { apiVersion: 0, capabilities: [] }
   }
+  ctx.effect(() => installChatCopy(ctx.locale), 'desktop-integration: Chat running copy')
   ctx.effect(() => ctx.locale.register(NS, { zh, en }), 'desktop-marketplace: dictionaries')
   ctx.effect(() => ctx.locale.register(DESKTOP_NS, { zh: desktopZh, en: desktopEn }), 'desktop-integration: dictionaries')
   ctx.effect(() => ctx.locale.register(MCP_NS, { zh: mcpZh, en: mcpEn }), 'desktop-mcp: dictionaries')

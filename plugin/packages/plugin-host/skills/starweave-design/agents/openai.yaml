@@ -1,0 +1,4 @@
+interface:
+  display_name: "StarWeave 实时设计"
+  short_description: "将文字描述、截图、线框图和当前选区转化为实时结构化画布设计"
+  default_prompt: "使用 $starweave-design 在当前画布实时完成这项界面设计。"

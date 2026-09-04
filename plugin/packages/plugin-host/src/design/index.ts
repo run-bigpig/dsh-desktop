@@ -3,6 +3,7 @@ import { randomBytes } from 'node:crypto'
 import { Context, Service } from '@deepseek-ai/cordis'
 
 import { startDesignServer, type DesignServer } from './server.ts'
+import { registerStarWeaveDesignSkill } from './skill.ts'
 
 const MCP_SERVER_NAME = 'starweave-design'
 
@@ -13,9 +14,10 @@ declare module '@deepseek-ai/cordis' {
 }
 
 export class StarWeaveDesignGateway extends Service {
-  static inject = ['mcpSettings']
+  static inject = ['mcpSettings', 'skills']
 
   private server: DesignServer | undefined
+  private disposeSkill: (() => void) | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'starweaveDesign')
@@ -35,17 +37,25 @@ export class StarWeaveDesignGateway extends Service {
         toolCallTimeoutMs: 120_000,
         failOnStartupError: true
       })
+      this.disposeSkill = await registerStarWeaveDesignSkill(this.ctx)
     } catch (error) {
-      await server.close()
+      this.disposeSkill?.()
+      this.disposeSkill = undefined
+      await Promise.allSettled([
+        this.ctx.mcpSettings.removeSystem(MCP_SERVER_NAME),
+        server.close()
+      ])
       this.server = undefined
       throw error
     }
     this.ctx.get('systemPrompt')?.section({
       name: 'starweave:design',
       order: 120,
-      text: '需要进行界面或视觉设计时，使用 starweave-design MCP 工具。不要先创建任务列表、检查清单或在画布外一次性规划后批量执行；立即调用 open_design_workspace 打开 StarWeave Design 独立画布窗口，并在整个设计过程中持续复用返回的 design_session_id。打开画布后以用户可观察的节奏实时编辑：每次只执行一个可见的小步骤，例如创建一个 frame、section、component 或完成一次局部修改；等待当前 MCP 调用返回后再继续下一步，禁止并行发起会修改画布的工具调用。每一步都应选择或定位当前编辑目标，让用户持续看到 Agent 正在编辑的位置。大型界面必须按 frame、section、component 逐步构建，直到设计完成。'
+      text: '创建或修改界面、根据截图或线框图生成设计时，使用 $starweave-design 和 starweave-design MCP；先打开独立画布并持续复用 design_session_id。'
     })
     this.ctx.effect(() => async () => {
+      this.disposeSkill?.()
+      this.disposeSkill = undefined
       await this.ctx.mcpSettings.removeSystem(MCP_SERVER_NAME)
       await this.server?.close()
       this.server = undefined

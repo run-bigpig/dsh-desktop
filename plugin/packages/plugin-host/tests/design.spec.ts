@@ -6,6 +6,7 @@ import { WebSocket } from 'ws'
 
 import { createBrowserSessions } from '../src/design/browser-sessions.ts'
 import { startDesignServer, type DesignServer } from '../src/design/server.ts'
+import { registerStarWeaveDesignSkill } from '../src/design/skill.ts'
 import { registerDesignTools } from '../src/design/tools.ts'
 
 const activeServers: DesignServer[] = []
@@ -84,6 +85,25 @@ describe('StarWeave Design MCP tools', () => {
         }
       ]
     })
+  })
+})
+
+describe('StarWeave Design skill', () => {
+  it('loads the bundled real-time spatial design workflow', async () => {
+    const register = vi.fn(() => () => {})
+    await registerStarWeaveDesignSkill({ skills: { register } } as never)
+
+    expect(register).toHaveBeenCalledOnce()
+    const skill = register.mock.calls[0]?.[0]
+    expect(skill?.name).toBe('starweave-design')
+    expect(skill?.content).toContain('open_design_workspace')
+    expect(skill?.content).toContain('render(parent_id=区域ID)')
+    expect(skill?.content).toContain('不同 `parent_id`')
+    expect(skill?.content).toContain('get_selection')
+    expect(skill?.content).toContain('[Image: 文件名]')
+    expect(skill?.content).toContain('save_file')
+    expect(skill?.content).not.toContain('禁止并行发起会修改画布的工具调用')
+    expect(skill?.resourceBase.path).toMatch(/starweave-design[/\\]$/)
   })
 })
 
