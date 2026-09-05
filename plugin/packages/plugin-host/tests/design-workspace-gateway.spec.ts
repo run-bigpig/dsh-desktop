@@ -15,7 +15,8 @@ describe('workspace design gateway', () => {
     const root = await mkdtemp(join(tmpdir(), 'starweave-design-gateway-'))
     const workspace = join(root, 'project')
     await mkdir(workspace)
-    vi.stubEnv('STARWEAVE_DESIGN_STATE_DIR', join(root, 'state'))
+    vi.stubEnv('STARWEAVE_DESIGN_STATE_DIR', '')
+    vi.stubEnv('DSH_HOME', join(root, 'harness-home'))
     const uploads = createDesignSaveUploads()
     let boundId: string | undefined
     let writeURL = ''

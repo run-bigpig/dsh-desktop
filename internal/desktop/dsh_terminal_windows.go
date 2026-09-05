@@ -50,7 +50,7 @@ func launchDSHTerminal(config dshTerminalConfig) error {
 }
 
 func terminalBootstrap(config dshTerminalConfig, binDir string) (string, error) {
-	values := []string{config.HarnessHome, config.Node, config.PNPM, config.PNPMStore, config.CLI, binDir, filepath.Dir(config.Node), filepath.Dir(config.PNPM), config.WorkingDirectory}
+	values := []string{config.StateDirectory, config.HarnessHome, config.Node, config.PNPM, config.PNPMStore, config.CLI, binDir, filepath.Dir(config.Node), filepath.Dir(config.PNPM), config.WorkingDirectory}
 	for _, value := range values {
 		if strings.ContainsAny(value, "\r\n") {
 			return "", fmt.Errorf("dsh 终端路径包含不支持的换行符")
@@ -60,6 +60,7 @@ func terminalBootstrap(config dshTerminalConfig, binDir string) (string, error) 
 	return strings.Join([]string{
 		"@echo off",
 		`set "DSH_HOME=` + escape(config.HarnessHome) + `"`,
+		`set "STARWEAVE_DESIGN_STATE_DIR=` + escape(config.StateDirectory) + `"`,
 		`set "DSH_DESKTOP_NODE=` + escape(config.Node) + `"`,
 		`set "DSH_DESKTOP_CLI=` + escape(config.CLI) + `"`,
 		`set "PNPM_HOME=` + escape(filepath.Dir(config.PNPM)) + `"`,

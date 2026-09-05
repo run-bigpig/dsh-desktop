@@ -54,6 +54,7 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`set "DSH_HOME=` + config.HarnessHome + `"`,
+		`set "STARWEAVE_DESIGN_STATE_DIR=` + config.StateDirectory + `"`,
 		`set "DSH_DESKTOP_NODE=` + config.Node + `"`,
 		`set "DSH_DESKTOP_CLI=` + config.CLI + `"`,
 		`set "PNPM_HOME=` + filepath.Dir(config.PNPM) + `"`,

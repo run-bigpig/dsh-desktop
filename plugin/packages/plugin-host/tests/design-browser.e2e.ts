@@ -23,7 +23,8 @@ it.skipIf(process.env.STARWEAVE_DESIGN_BROWSER_TEST !== '1')('saves real UI edit
   const root = await mkdtemp(join(tmpdir(), 'starweave-design-browser-'))
   const workspace = join(root, 'project')
   await mkdir(workspace)
-  vi.stubEnv('STARWEAVE_DESIGN_STATE_DIR', join(root, 'state'))
+  vi.stubEnv('STARWEAVE_DESIGN_STATE_DIR', '')
+  vi.stubEnv('DSH_HOME', join(root, 'harness-home'))
   const profile = join(root, 'browser')
   const browser = spawn('C:\\Program Files (x86)\\Microsoft\\Edge\\Application\\msedge.exe', [
     '--headless=new', '--no-first-run', '--no-default-browser-check', '--disable-gpu',

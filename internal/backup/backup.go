@@ -104,6 +104,12 @@ func (m *Manager) Prune(keep int) error {
 	if err != nil {
 		return err
 	}
+	if keep < 0 {
+		keep = 0
+	}
+	if keep >= len(list) {
+		return nil
+	}
 	for _, item := range list[keep:] {
 		if !appconfig.IsOwnedPath(m.paths.Backups, item.Path) {
 			continue

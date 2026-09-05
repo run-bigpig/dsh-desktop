@@ -321,8 +321,7 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 	if err := c.plugins.EnsureDesktopPlugin(ctx); err != nil {
 		return "", err
 	}
-	toolPath := strings.Join([]string{filepath.Dir(c.tools.Node), os.Getenv("PATH")}, string(os.PathListSeparator))
-	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: []string{"PATH=" + toolPath, "DSH_DESKTOP_CONTROL_URL=" + c.pluginBridge.URL(), "DSH_DESKTOP_CONTROL_TOKEN=" + c.pluginBridge.Token()}, OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
+	p := harnessruntime.NewProcess(harnessruntime.LaunchConfig{Node: c.tools.Node, ChildControl: c.paths.ChildControl, RuntimeDir: runtimeDir, HarnessHome: c.paths.HarnessHome, WorkingDir: c.cfg.WorkingDirectory, StartupTimeout: c.cfg.StartDuration(), ShutdownTimeout: c.cfg.StopDuration(), Environment: c.harnessEnvironment(), OnUnexpectedExit: func(error) { c.showRecovery() }}, c.store, c.log)
 	c.mu.Lock()
 	c.process = p
 	c.mu.Unlock()
@@ -333,6 +332,16 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 		c.mu.Unlock()
 	}
 	return url, err
+}
+
+func (c *Coordinator) harnessEnvironment() []string {
+	toolPath := strings.Join([]string{filepath.Dir(c.tools.Node), os.Getenv("PATH")}, string(os.PathListSeparator))
+	return []string{
+		"PATH=" + toolPath,
+		"DSH_DESKTOP_CONTROL_URL=" + c.pluginBridge.URL(),
+		"DSH_DESKTOP_CONTROL_TOKEN=" + c.pluginBridge.Token(),
+		"STARWEAVE_DESIGN_STATE_DIR=" + c.paths.State,
+	}
 }
 
 func (c *Coordinator) Stop(ctx context.Context) error {

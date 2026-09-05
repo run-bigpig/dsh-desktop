@@ -26,6 +26,7 @@ function documentListing(id: string) {
 
 afterEach(async () => {
   await Promise.all(activeServers.splice(0).map(server => server.close()))
+  vi.unstubAllEnvs()
 })
 
 describe('StarWeave Design browser sessions', () => {
@@ -313,6 +314,7 @@ describe('StarWeave Design skill', () => {
 
 describe('StarWeave Design LAN server', () => {
   it('serves only the local gateway and relays broadcast and targeted room messages', async () => {
+    vi.stubEnv('DSH_HOME', process.cwd())
     const server = await startDesignServer('test-token')
     activeServers.push(server)
     const origin = `http://127.0.0.1:${server.port}`

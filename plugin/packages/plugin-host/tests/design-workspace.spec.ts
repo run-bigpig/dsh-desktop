@@ -1,8 +1,12 @@
 import { mkdtemp, mkdir, readFile, realpath, rm, symlink, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { join } from 'node:path'
+import { join, resolve } from 'node:path'
 import { afterEach, describe, expect, it } from 'vitest'
-import { createWorkspaceDesignFiles, validateWorkspaceDesign } from '../src/design/workspace-files.ts'
+import {
+  createWorkspaceDesignFiles,
+  resolveWorkspaceDesignStateRoot,
+  validateWorkspaceDesign
+} from '../src/design/workspace-files.ts'
 
 const roots: string[] = []
 afterEach(async () => { await Promise.all(roots.splice(0).map(root => rm(root, { recursive: true, force: true }))) })
@@ -16,6 +20,22 @@ async function fixture() {
 }
 
 describe('workspace design files', () => {
+  it('uses durable Harness home state when the desktop override is absent', async () => {
+    const { root, workspace, owner } = await fixture()
+    const harnessHome = join(root, 'harness-home')
+    expect(resolveWorkspaceDesignStateRoot('', harnessHome)).toBe(join(harnessHome, 'starweave-design'))
+    const files = createWorkspaceDesignFiles(resolveWorkspaceDesignStateRoot('', harnessHome))
+    const first = await files.select(owner)
+    expect(await createWorkspaceDesignFiles(join(harnessHome, 'starweave-design')).select(owner)).toEqual(first)
+    expect(JSON.parse(await readFile(join(harnessHome, 'starweave-design', 'workspace-designs.json'), 'utf8')))
+      .toMatchObject({ schemaVersion: 1, documents: { [first.id]: { root: first.root } } })
+  })
+
+  it('prefers the explicit desktop state directory and rejects a missing Harness home', () => {
+    expect(resolveWorkspaceDesignStateRoot('desktop-state', 'harness-home')).toBe(resolve('desktop-state'))
+    expect(() => resolveWorkspaceDesignStateRoot('', '')).toThrow('requires DSH_HOME')
+  })
+
   it('persists one default design per chat and workspace across restarts', async () => {
     const { owner, state, files } = await fixture()
     const [first, concurrent] = await Promise.all([files.select(owner), files.select(owner)])

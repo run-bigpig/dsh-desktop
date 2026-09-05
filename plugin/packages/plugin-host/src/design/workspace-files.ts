@@ -6,14 +6,22 @@ export type DesignOwner = { id: string; workspace: () => string | undefined }
 export type WorkspaceDesign = { id: string; owner: string; root: string; path: string; saved?: boolean }
 type State = { documents: Record<string, WorkspaceDesign>; latest: Record<string, string> }
 
-export function createWorkspaceDesignFiles(stateRoot = process.env.STARWEAVE_DESIGN_STATE_DIR) {
+export function resolveWorkspaceDesignStateRoot(
+  explicit = process.env.STARWEAVE_DESIGN_STATE_DIR,
+  harnessHome = process.env.DSH_HOME
+): string {
+  if (explicit?.trim()) return resolve(explicit)
+  if (harnessHome?.trim()) return resolve(harnessHome, 'starweave-design')
+  throw new Error('StarWeave Design requires DSH_HOME when no persistence directory override is configured')
+}
+
+export function createWorkspaceDesignFiles(stateRoot = resolveWorkspaceDesignStateRoot()) {
   let state: Promise<State> | undefined
   let tail = Promise.resolve()
   let selectionTail = Promise.resolve()
-  const stateFile = stateRoot ? resolve(stateRoot, 'workspace-designs.json') : undefined
+  const stateFile = resolve(stateRoot, 'workspace-designs.json')
 
   async function load(): Promise<State> {
-    if (!stateFile) throw new Error('StarWeave Design persistence directory is not configured')
     return state ??= readFile(stateFile, 'utf8').then(text => {
       const parsed = JSON.parse(text) as State & { schemaVersion: number }
       if (parsed.schemaVersion !== 1 || !parsed.documents || !parsed.latest) {
@@ -38,7 +46,7 @@ export function createWorkspaceDesignFiles(stateRoot = process.env.STARWEAVE_DES
       const current = await load()
       const next = { documents: { ...current.documents }, latest: { ...current.latest } }
       change(next)
-      await mkdir(dirname(stateFile!), { recursive: true })
+      await mkdir(dirname(stateFile), { recursive: true })
       const temporary = `${stateFile}.${randomUUID()}.tmp`
       try {
         await writeFile(temporary, JSON.stringify({ schemaVersion: 1, ...next }), { mode: 0o600 })
