@@ -160,7 +160,7 @@ export function createBrowserSessions(
     sessions.clear()
   }
 
-  return { close, disconnect, ensureOpen, handleMessage, sendRPC }
+  return { close, disconnect, ensureOpen, handleMessage, sendRPC, prepare: getOrCreate }
 }
 
 async function waitForBrowser(session: DesignSession): Promise<void> {

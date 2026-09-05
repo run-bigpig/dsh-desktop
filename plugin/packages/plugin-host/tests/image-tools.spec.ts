@@ -1,4 +1,5 @@
 import { describe, expect, it, vi } from 'vitest'
+import { Session, SessionId, type SessionEvent } from '@deepseek-ai/dsh-session'
 import {
   defineImageTools,
   type ImageGenerateBatchResult,
@@ -126,11 +127,15 @@ describe('image tools', () => {
     const tool = defineImageTools(service).find(candidate => candidate.name === 'image_edit')
     if (tool === undefined) throw new Error('image_edit was not registered')
 
+    const session = Session.create(SessionId('session-a'), [
+      { ...userMessage([imageBlock('attachment-a')]), surfaceOp: 'append' } as SessionEvent,
+    ])
+
     await tool.execute({
       instruction: 'Replace the marked sign',
     }, {
       signal: new AbortController().signal,
-      agent: { session: { id: 'session-a', events: [userMessage([imageBlock('attachment-a')])] } },
+      agent: { session },
     } as never)
 
     expect(editSource).toHaveBeenCalledWith(
@@ -146,7 +151,7 @@ describe('image tools', () => {
     if (tool === undefined) throw new Error('image_edit was not registered')
     const exec = {
       signal: new AbortController().signal,
-      agent: { session: { id: 'session-a', events: [
+      agent: { session: { id: 'session-a', snapshotEvents: () => [
         userMessage([imageBlock('old-image')]),
         userMessage([{ type: 'text', text: 'Edit it' }]),
       ] } },
@@ -162,7 +167,7 @@ describe('image tools', () => {
     if (tool === undefined) throw new Error('image_edit was not registered')
     const exec = {
       signal: new AbortController().signal,
-      agent: { session: { id: 'session-a', events: [userMessage([
+      agent: { session: { id: 'session-a', snapshotEvents: () => [userMessage([
         imageBlock('attachment-a'), imageBlock('attachment-b'),
       ])] } },
     } as never

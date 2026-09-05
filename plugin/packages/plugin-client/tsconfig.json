@@ -24,6 +24,7 @@
     { "path": "../../client/ui-tool" },
     { "path": "../../client/ui-layout" },
     { "path": "../../client/ui-conversation" },
+    { "path": "../../client/ui-model-selection" },
     { "path": "../../client/ui-settings" },
     { "path": "../../client/ui-theme" },
     { "path": "../../client/ui-slots" },

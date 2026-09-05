@@ -6,6 +6,8 @@ import {
   classifyUploadFiles,
   documentReferenceOf,
   DocumentUploadBridge,
+  DocumentUploadButton,
+  type DocumentUploadButtonProps,
   DOCUMENT_REFERENCE_SOURCE,
   type DocumentUploadBridgeProps,
 } from '../src/client/documents/DocumentUploadBridge.tsx'
@@ -219,5 +221,32 @@ describe('sent document messages', () => {
     expect(view.getByText('XLSX')).toBeTruthy()
     expect(view.container.querySelector('[data-document-message-attachment]')).not.toBeNull()
     expect(view.queryByText(DOCUMENT_MARKER)).toBeNull()
+  })
+})
+
+describe('document upload button', () => {
+  it('follows the Harness input selector through busy and ready states', () => {
+    const openPicker = vi.fn()
+    const props = (phase: string) => ({
+      useInput: (selector: (state: ReturnType<typeof inputState>) => unknown) => selector(inputState({ phase })),
+      openPicker,
+      t: translate,
+    } as unknown as DocumentUploadButtonProps)
+    const view = render(<DocumentUploadButton {...props('plain')} />)
+    const button = view.getByRole('button', { name: translate('upload') }) as HTMLButtonElement
+    fireEvent.click(button)
+    expect(openPicker).toHaveBeenCalledTimes(1)
+
+    for (const phase of ['adjudicating', 'submitting']) {
+      view.rerender(<DocumentUploadButton {...props(phase)} />)
+      expect(button.disabled).toBe(true)
+      fireEvent.click(button)
+      expect(openPicker).toHaveBeenCalledTimes(1)
+    }
+
+    view.rerender(<DocumentUploadButton {...props('plain')} />)
+    expect(button.disabled).toBe(false)
+    fireEvent.click(button)
+    expect(openPicker).toHaveBeenCalledTimes(2)
   })
 })

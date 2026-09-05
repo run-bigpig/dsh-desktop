@@ -1,3 +1,4 @@
+import { applyOpenAIOnboarding } from './openai-onboarding.tsx'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -99,6 +100,8 @@ import {
 } from './locales.ts'
 import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.ts'
 import { installChatCopy } from './chat-copy.ts'
+import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
+import { ModelDefaults, type ModelDefaultsInjected } from './model-defaults.tsx'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -235,7 +238,22 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.effect(() => ctx.locale.register(WORKBENCH_NS, { zh: workbenchZh, en: workbenchEn }), 'desktop-workbench: dictionaries')
   ctx.effect(() => ctx.locale.register(CHART_PRESENTATION_NS, { zh: chartPresentationZh, en: chartPresentationEn }), 'desktop-chart-presentation: dictionaries')
   ctx.effect(() => ctx.locale.register(SKIN_NS, { zh: skinZh, en: skinEn }), 'desktop-skin: dictionaries')
+  applyOpenAIOnboarding(ctx)
   applyWebTools(ctx)
+
+  ctx.inject(['modelDirectories', 'remote.session'], inner => {
+    inner.slots.inject('conversation.input.dock', () => inner.slots.register({
+      name: 'conversation.input.dock',
+      id: 'desktop-model-defaults',
+      inject: (sessionId): ModelDefaultsInjected => {
+        const directory = inner.modelDirectories.directoryFor(sessionId)
+        return {
+          available: inner.sessions.subagentAddress(sessionId) === undefined,
+          directory, hooks: { models: directory.store },
+        }
+      },
+    }, ModelDefaults))
+  })
 
   const skinScope = ctx.settingsScope.bind<SkinSettings>({ namespace: SKIN_SETTINGS_NAMESPACE })
   const skinBackground = new SkinBackgroundPresenter()

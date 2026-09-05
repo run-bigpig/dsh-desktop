@@ -12,6 +12,18 @@ import { registerDesignTools } from '../src/design/tools.ts'
 
 const activeServers: DesignServer[] = []
 
+function documentListing(id: string) {
+  return {
+    ok: true,
+    result: {
+      documents: [
+        { id: 'other-document', name: 'Other', active: false },
+        { id, name: 'Untitled', active: true, current_page_id: 'page-1', current_page_name: 'Page 1' }
+      ]
+    }
+  }
+}
+
 afterEach(async () => {
   await Promise.all(activeServers.splice(0).map(server => server.close()))
 })
@@ -62,6 +74,47 @@ describe('StarWeave Design browser sessions', () => {
 })
 
 describe('StarWeave Design MCP tools', () => {
+  it('binds each new session to its pre-created document without creating an extra tab', async () => {
+    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
+    const server = {
+      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
+        callbacks.set(name, callback)
+      }
+    } as unknown as McpServer
+    const openWorkspace = vi.fn(async (id: string) => ({ id, connected: true }))
+    const sendRPC = vi.fn(async (id: string) => documentListing(`document-${id}`))
+    const saveFile = vi.fn().mockResolvedValue({ ok: true })
+    registerDesignTools(server, sendRPC, openWorkspace, saveFile, vi.fn())
+
+    await callbacks.get('new_document')?.({})
+    const firstId = openWorkspace.mock.calls[0]![0]
+    await callbacks.get('save_file')?.({})
+    expect(saveFile).toHaveBeenLastCalledWith(firstId, { document_id: `document-${firstId}` })
+    await callbacks.get('new_document')?.({})
+    const secondId = openWorkspace.mock.calls[2]![0]
+    expect(secondId).not.toBe(firstId)
+    await callbacks.get('save_file')?.({})
+    expect(saveFile).toHaveBeenLastCalledWith(secondId, { document_id: `document-${secondId}` })
+    expect(sendRPC.mock.calls).toEqual([[firstId, 'list_documents', {}], [secondId, 'list_documents', {}]])
+  })
+
+  it.each([
+    { documents: [] },
+    { documents: [{ id: 'unrelated', active: false }] },
+    { documents: [{ id: 'one', active: true }, { id: 'two', active: true }] }
+  ])('rejects an unidentified session document without creating or modifying documents ($documents)', async ({ documents }) => {
+    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
+    const server = {
+      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
+        callbacks.set(name, callback)
+      }
+    } as unknown as McpServer
+    const sendRPC = vi.fn().mockResolvedValue({ ok: true, result: { documents } })
+    registerDesignTools(server, sendRPC, vi.fn().mockResolvedValue({ id: 'session', connected: true }), vi.fn(), vi.fn())
+    await expect(callbacks.get('new_document')?.({})).rejects.toThrow('did not identify its session document')
+    expect(sendRPC).toHaveBeenCalledExactlyOnceWith('session', 'list_documents', {})
+  })
+
   it('adds workspace opening and delegates save_file to the official OpenPencil registry', async () => {
     const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
     const server = {
@@ -69,7 +122,7 @@ describe('StarWeave Design MCP tools', () => {
         callbacks.set(name, callback)
       }
     } as unknown as McpServer
-    const sendRPC = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'document-1' } })
+    const sendRPC = vi.fn().mockResolvedValue(documentListing('document-1'))
     const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
     const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: true })
     const saveFile = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'document-1' } })
@@ -91,7 +144,7 @@ describe('StarWeave Design MCP tools', () => {
       document_id: 'document-1'
     })
     expect(openWorkspace).toHaveBeenCalledWith(designSessionId, true)
-    expect(sendRPC).toHaveBeenCalledWith(designSessionId, 'new_document', {})
+    expect(sendRPC).toHaveBeenCalledExactlyOnceWith(designSessionId, 'list_documents', {})
     expect(saveFile).toHaveBeenCalledWith(
       designSessionId,
       { document_id: 'document-1' }
@@ -116,7 +169,7 @@ describe('StarWeave Design MCP tools', () => {
     const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
     const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: false })
     const sendRPC = vi.fn()
-      .mockResolvedValueOnce({ ok: true, target: { documentId: 'document-1' } })
+      .mockResolvedValueOnce(documentListing('document-1'))
       .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
 
     registerDesignTools(server, sendRPC, openWorkspace, vi.fn(), vi.fn())
@@ -125,7 +178,7 @@ describe('StarWeave Design MCP tools', () => {
     const generatedSessionId = openWorkspace.mock.calls[0]?.[0]
     expect(generatedSessionId).toMatch(/^[0-9a-f-]{36}$/u)
     expect(openWorkspace).toHaveBeenCalledWith(generatedSessionId, false)
-    expect(sendRPC).toHaveBeenNthCalledWith(1, designSessionId, 'new_document', {})
+    expect(sendRPC).toHaveBeenNthCalledWith(1, designSessionId, 'list_documents', {})
     expect(sendRPC).toHaveBeenNthCalledWith(2, designSessionId, 'list_documents', {
       document_id: 'document-1'
     })
@@ -140,7 +193,7 @@ describe('StarWeave Design MCP tools', () => {
     } as unknown as McpServer
     const openWorkspace = vi.fn(async (sessionId?: string) => ({ id: sessionId ?? '', connected: true }))
     const openFile = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'opened-document' } })
-    const sendRPC = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'new-document' } })
+    const sendRPC = vi.fn().mockResolvedValue(documentListing('new-document'))
 
     registerDesignTools(server, sendRPC, openWorkspace, vi.fn(), openFile)
     await callbacks.get('open_file')?.({})
@@ -152,7 +205,7 @@ describe('StarWeave Design MCP tools', () => {
     expect(newSessionId).toMatch(/^[0-9a-f-]{36}$/u)
     expect(newSessionId).not.toBe(openSessionId)
     expect(openFile).toHaveBeenCalledWith(openSessionId)
-    expect(sendRPC).toHaveBeenCalledWith(newSessionId, 'new_document', {})
+    expect(sendRPC).toHaveBeenCalledExactlyOnceWith(newSessionId, 'list_documents', {})
   })
 
   it('restores the saved document after the canvas connection is recreated', async () => {
@@ -168,7 +221,7 @@ describe('StarWeave Design MCP tools', () => {
       .mockResolvedValueOnce(undefined)
       .mockResolvedValueOnce('restored-document')
     const sendRPC = vi.fn()
-      .mockResolvedValueOnce({ ok: true, target: { documentId: 'initial-document' } })
+      .mockResolvedValueOnce(documentListing('initial-document'))
       .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
       .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
 
@@ -184,6 +237,24 @@ describe('StarWeave Design MCP tools', () => {
 })
 
 describe('StarWeave Design MCP sessions', () => {
+  it('does not allow a different owner to reuse an initialized MCP session', async () => {
+    const sessions = createDesignMCPSessions(() => undefined)
+    try {
+      const transport = await sessions.resolve(undefined, 'owner-a')
+      const response = await transport.handleRequest(new Request('http://127.0.0.1/mcp', {
+        method: 'POST',
+        headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json' },
+        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {
+          protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' }
+        } })
+      }))
+      const id = response.headers.get('mcp-session-id')!
+      expect(await sessions.resolve(id, 'owner-a')).toBe(transport)
+      await expect(sessions.resolve(id, 'owner-b')).rejects.toThrow('not found')
+      await expect(sessions.resolve(id)).rejects.toThrow('not found')
+    } finally { await sessions.clear() }
+  })
+
   it('keeps an initialized session alive while the desktop host is running', async () => {
     const sessions = createDesignMCPSessions(() => undefined)
     const transport = await sessions.resolve()

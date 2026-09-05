@@ -589,6 +589,9 @@ foreach ($requiredDesignSource in "index.html","canvaskit.wasm","starweave-ui-bu
   }
 }
 $designBuild = Get-Content (Join-Path $designWeb "starweave-ui-build.json") -Raw | ConvertFrom-Json
+if (-not ($designBuild.PSObject.Properties.Name -contains "workspaceFileProtocol") -or $designBuild.workspaceFileProtocol -ne 1) {
+  throw "StarWeave workspace autosave requires a UI release with workspaceFileProtocol=1 (v0.1.6 or newer). Publish the matching UI release and rerun task seed:windows."
+}
 if (
   $designBuild.schemaVersion -ne 1 -or
   $designBuild.tag -cne $designRelease.tag -or

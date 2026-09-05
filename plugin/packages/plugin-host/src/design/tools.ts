@@ -12,8 +12,12 @@ type OpenWorkspace = (
 ) => Promise<{ id: string; connected: boolean }>
 
 type SaveFile = (sessionId: string, args: unknown) => Promise<unknown>
-type OpenFile = (sessionId: string) => Promise<unknown>
+type OpenFile = (sessionId: string, path?: string) => Promise<unknown>
 type RestoreDocument = (sessionId: string) => Promise<string | undefined>
+type DocumentLifecycle = {
+  select: (requestedId?: string, fresh?: boolean, path?: string) => Promise<string>
+  bind: (sessionId: string, documentId: string) => Promise<void>
+}
 
 const sessionSchema = z.string().uuid().optional().describe(
   'Existing StarWeave Design session to reveal. Omit to open or reuse this MCP connection\'s canvas.'
@@ -25,11 +29,33 @@ export function registerDesignTools(
   openWorkspace: OpenWorkspace,
   saveFile: SaveFile,
   openFile: OpenFile,
-  restoreDocument: RestoreDocument = async () => undefined
+  restoreDocument: RestoreDocument = async () => undefined,
+  lifecycle?: DocumentLifecycle
 ): void {
   let designSessionId: string | undefined
   let designDocumentId: string | undefined
   let sessionTail = Promise.resolve()
+
+  const sessionDocument = async (sessionId: string) => {
+    // The UI creates and binds a tab when it opens a browser session. Its listing
+    // marks that session's document active, independently of the visible tab.
+    const listing = await sendRPC(sessionId, 'list_documents', {})
+    const documents = isRecord(listing) && isRecord(listing.result) && Array.isArray(listing.result.documents)
+      ? listing.result.documents
+      : []
+    const active = documents.filter(document => isRecord(document) && document.active === true)
+    const document = active[0]
+    if (active.length !== 1 || !isRecord(document) || typeof document.id !== 'string' || !document.id) {
+      throw new Error('StarWeave Design did not identify its session document')
+    }
+    return {
+      documentId: document.id,
+      documentName: document.name,
+      ...(typeof document.path === 'string' ? { path: document.path } : {}),
+      pageId: document.current_page_id,
+      pageName: document.current_page_name
+    }
+  }
 
   const withSessionLock = async <T>(operation: () => Promise<T>): Promise<T> => {
     const previous = sessionTail
@@ -45,7 +71,10 @@ export function registerDesignTools(
 
   const ensureDesignDocument = async (requestedId?: string, reveal = false) => {
     return await withSessionLock(async () => {
-      const session = await openWorkspace(requestedId ?? designSessionId ?? randomUUID(), reveal)
+      const id = lifecycle
+        ? await lifecycle.select(requestedId ?? designSessionId)
+        : requestedId ?? designSessionId ?? randomUUID()
+      const session = await openWorkspace(id, reveal)
       if ((designSessionId && designSessionId !== session.id) || !session.connected) {
         designDocumentId = undefined
       }
@@ -53,12 +82,15 @@ export function registerDesignTools(
       if (!designDocumentId) {
         designDocumentId = await restoreDocument(designSessionId)
         if (!designDocumentId) {
-          const created = await sendRPC(designSessionId, 'new_document', {})
-          designDocumentId = resultDocumentId(created)
+          designDocumentId = (await sessionDocument(designSessionId)).documentId
         }
         if (!designDocumentId) throw new Error('StarWeave Design did not create a session document')
+        try { await lifecycle?.bind(session.id, designDocumentId) } catch (error) {
+          designDocumentId = undefined
+          throw error
+        }
       }
-      return { ...session, document_id: designDocumentId }
+      return { ...session, design_session_id: session.id, document_id: designDocumentId }
     })
   }
 
@@ -76,17 +108,22 @@ export function registerDesignTools(
   server.registerTool(
     'open_file',
     {
-      description: 'Open a user-approved .fig file in a new StarWeave Design session.',
-      inputSchema: z.object({})
+      description: 'Open a .fig file by workspace-relative path, without a file picker. Use open_design_workspace with design_session_id to resume a known design.',
+      inputSchema: z.object({ path: z.string().optional().describe('Workspace-relative .fig path, e.g. designs/Landing.fig') })
     },
-    async () => {
+    async ({ path }) => {
       return await withSessionLock(async () => {
-        const session = await openWorkspace(randomUUID(), true)
-        const result = await openFile(session.id)
+        const id = lifecycle ? await lifecycle.select(undefined, false, path ?? '') : randomUUID()
+        const session = await openWorkspace(id, true)
+        const result = path === undefined ? await openFile(session.id) : await openFile(session.id, path)
         const documentId = resultDocumentId(result)
         if (!documentId) throw new Error('StarWeave Design did not open the selected document')
         designSessionId = session.id
         designDocumentId = documentId
+        try { await lifecycle?.bind(session.id, documentId) } catch (error) {
+          designDocumentId = undefined
+          throw error
+        }
         return ok({ opened: true, design_session_id: session.id, target: resultTarget(result) })
       })
     }
@@ -100,13 +137,16 @@ export function registerDesignTools(
     },
     async () => {
       return await withSessionLock(async () => {
-        const session = await openWorkspace(randomUUID(), true)
-        const result = await sendRPC(session.id, 'new_document', {})
-        const documentId = resultDocumentId(result)
-        if (!documentId) throw new Error('StarWeave Design did not create a new document')
+        const id = lifecycle ? await lifecycle.select(undefined, true) : randomUUID()
+        const session = await openWorkspace(id, true)
+        const target = await sessionDocument(session.id)
         designSessionId = session.id
-        designDocumentId = documentId
-        return ok({ created: true, design_session_id: session.id, target: resultTarget(result) })
+        designDocumentId = target.documentId
+        try { await lifecycle?.bind(session.id, target.documentId) } catch (error) {
+          designDocumentId = undefined
+          throw error
+        }
+        return ok({ created: true, design_session_id: session.id, target })
       })
     }
   )

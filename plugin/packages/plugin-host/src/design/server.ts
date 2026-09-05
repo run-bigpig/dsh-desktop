@@ -1,7 +1,7 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { randomUUID } from 'node:crypto'
+import { randomBytes, randomUUID } from 'node:crypto'
 import { networkInterfaces } from 'node:os'
-import { basename, dirname, extname, resolve, sep } from 'node:path'
+import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, stat } from 'node:fs/promises'
 
@@ -11,9 +11,9 @@ import { WebSocket, WebSocketServer } from 'ws'
 import { desktopRequest } from '../desktop/index.ts'
 import { createBrowserSessions, type BrowserDesignSession } from './browser-sessions.ts'
 import { createDesignMCPSessions } from './mcp-sessions.ts'
-import { createNativeDesignSave } from './native-save.ts'
 import { createDesignSaveUploads } from './save-uploads.ts'
-import { createDesignSessionFiles } from './session-files.ts'
+import { createWorkspaceDesignGateway } from './workspace-gateway.ts'
+import type { DesignOwner } from './workspace-files.ts'
 import { registerDesignTools } from './tools.ts'
 
 const MAX_HTTP_BODY = 2 * 1024 * 1024
@@ -26,6 +26,7 @@ const UI_ROOT = resolve(
 export type DesignServer = {
   port: number
   authToken: string
+  registerOwner: (owner: DesignOwner) => { token: string; dispose: () => void }
   close: () => Promise<void>
 }
 
@@ -45,42 +46,9 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
   }
   const browsers = createBrowserSessions(openBrowser)
   const uploads = createDesignSaveUploads()
-  const sessionFiles = createDesignSessionFiles()
-  const saveFile = createNativeDesignSave({
-    sendRPC: browsers.sendRPC,
-    choosePath: async suggestedName => await desktopRequest('/v1/design/save-path', {
-      method: 'POST',
-      body: JSON.stringify({ suggestedName }),
-      signal: AbortSignal.timeout(5 * 60_000)
-    }),
-    createUpload: uploads.create,
-    loadPath: sessionFiles.get,
-    storePath: sessionFiles.set
-  })
-  const openFile = async (sessionId: string): Promise<unknown> => {
-    const selected = await desktopRequest<{ path?: string; cancelled?: boolean }>('/v1/design/open-path', {
-      method: 'POST',
-      signal: AbortSignal.timeout(5 * 60_000)
-    })
-    if (selected.cancelled || !selected.path) throw new Error('Open cancelled by user')
-    const result = await browsers.sendRPC(sessionId, 'open_file', {
-      name: basename(selected.path),
-      starweave_download_url: uploads.createDownload(selected.path)
-    })
-    if (!resultDocumentId(result)) throw new Error('StarWeave Design did not open the selected file')
-    await sessionFiles.set(sessionId, selected.path)
-    return result
-  }
-  const restoreDocument = async (sessionId: string): Promise<string | undefined> => {
-    const path = await sessionFiles.get(sessionId)
-    if (!path) return undefined
-    const result = await browsers.sendRPC(sessionId, 'open_file', {
-      name: basename(path),
-      starweave_download_url: uploads.createDownload(path)
-    })
-    return resultDocumentId(result)
-  }
-  const mcpSessions = createDesignMCPSessions((server: McpServer) => {
+  const workspace = createWorkspaceDesignGateway(browsers, uploads)
+  const owners = new Map<string, DesignOwner>()
+  const mcpSessions = createDesignMCPSessions((server: McpServer, ownerToken?: string) => {
     registerDesignTools(
       server,
       browsers.sendRPC,
@@ -88,9 +56,10 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
         const session = await browsers.ensureOpen(requestedId, reveal)
         return { id: session.id, connected: session.socket?.readyState === session.socket?.OPEN }
       },
-      saveFile,
-      openFile,
-      restoreDocument
+      workspace.save,
+      workspace.open,
+      workspace.restore,
+      workspace.lifecycle(ownerToken ? owners.get(ownerToken) : undefined)
     )
   })
 
@@ -98,7 +67,7 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
   const collaborationSockets = new WebSocketServer({ noServer: true, maxPayload: MAX_COLLAB_MESSAGE })
   const collaboration = createCollaborationRelay()
   const httpServer = createServer((request, response) => {
-    void handleHTTP(request, response, authToken, mcpSessions, uploads, port).catch(error => {
+    void handleHTTP(request, response, authToken, mcpSessions, uploads, port, owners, workspace).catch(error => {
       if (!response.headersSent) writeJSON(response, 500, { error: describeError(error) })
       else response.destroy(error instanceof Error ? error : undefined)
     })
@@ -158,7 +127,14 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
   return {
     port,
     authToken,
+    registerOwner: owner => {
+      const token = randomBytes(32).toString('base64url')
+      owners.set(token, owner)
+      return { token, dispose: () => { owners.delete(token) } }
+    },
     close: async () => {
+      owners.clear()
+      workspace.clear()
       browsers.close()
       uploads.clear()
       collaboration.close()
@@ -180,9 +156,19 @@ async function handleHTTP(
   authToken: string,
   sessions: ReturnType<typeof createDesignMCPSessions>,
   uploads: ReturnType<typeof createDesignSaveUploads>,
-  port: number
+  port: number,
+  owners: Map<string, DesignOwner>,
+  workspace: ReturnType<typeof createWorkspaceDesignGateway>
 ): Promise<void> {
   const target = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
+  const workspaceToken = /^\/design-workspace\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
+  if (workspaceToken) {
+    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
+      return writeJSON(response, 403, { error: 'forbidden' })
+    }
+    await workspace.handle(request, response, workspaceToken)
+    return
+  }
   const saveToken = /^\/design-save\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
   if (saveToken) {
     if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
@@ -208,10 +194,12 @@ async function handleHTTP(
       return writeJSON(response, 401, { error: 'unauthorized' })
     }
     const sessionId = header(request, 'mcp-session-id')
+    const owner = header(request, 'x-starweave-owner')
+    if (owner && !owners.has(owner)) return writeJSON(response, 403, { error: 'design owner expired' })
     if (request.method === 'DELETE' && !sessionId) return writeJSON(response, 400, { error: 'missing MCP session id' })
     let transport
     try {
-      transport = await sessions.resolve(sessionId)
+      transport = await sessions.resolve(sessionId, owner)
     } catch (error) {
       return writeJSON(response, sessionId ? 404 : 503, { error: describeError(error) })
     }
@@ -419,9 +407,4 @@ function describeError(error: unknown): string {
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
-
-function resultDocumentId(value: unknown): string | undefined {
-  if (!isRecord(value) || !isRecord(value.target)) return undefined
-  return typeof value.target.documentId === 'string' ? value.target.documentId : undefined
 }

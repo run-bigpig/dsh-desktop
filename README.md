@@ -100,10 +100,10 @@ Harness 始终固定到完整 commit SHA。它随新的 StarWeave 桌面发行�
 | --- | --- |
 | StarWeave | `0.2.10` |
 | Wails | `v3.0.0-beta.9` |
-| DeepSeek Harness | `dsh-v0.1.2-alpha.3` / `dd6322d604e00eec1ba5e0c8541159906a21094a` |
+| DeepSeek Harness | `dsh-v0.1.2-rc.1` / `a66e4702047846cdaa10c66c9d3df3951f5ea70d` |
 | Node.js | `24.12.0` |
 | pnpm | `11.7.0` |
-| 内置桌面插件 | `0.1.83` |
+| 内置桌面插件 | `0.1.93` |
 
 权威锁定信息位于 [release/seed.lock.json](release/seed.lock.json) 和 [release/toolchain.lock.json](release/toolchain.lock.json)。Harness 或工具链升级必须同步相关 seed 锁文件，并重新完成官方构建、插件构建和 Windows 运行验证。
 

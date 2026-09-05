@@ -13,6 +13,8 @@ const MAX_TICKETS = 32
 type SaveTicket = {
   path: string
   expiresAt: number
+  validate?: (() => Promise<void>) | undefined
+  didSave?: (() => Promise<void>) | undefined
 }
 
 export function createDesignSaveUploads() {
@@ -28,7 +30,7 @@ export function createDesignSaveUploads() {
     }
   }
 
-  function create(path: string): string {
+  function create(path: string, validate?: () => Promise<void>, didSave?: () => Promise<void>): string {
     pruneExpired()
     if (!isAbsolute(path) || extname(path).toLowerCase() !== '.fig') {
       throw new Error('StarWeave Design save path must be an absolute .fig path')
@@ -37,7 +39,7 @@ export function createDesignSaveUploads() {
       throw new Error('Too many pending StarWeave Design file transfers')
     }
     const token = randomBytes(32).toString('base64url')
-    uploadTickets.set(token, { path, expiresAt: Date.now() + TICKET_TTL_MS })
+    uploadTickets.set(token, { path, expiresAt: Date.now() + TICKET_TTL_MS, validate, didSave })
     return `/design-save/${token}`
   }
 
@@ -69,7 +71,9 @@ export function createDesignSaveUploads() {
     let file: FileHandle | undefined
     let output: WriteStream | undefined
     try {
+      await ticket.validate?.()
       await mkdir(dirname(ticket.path), { recursive: true })
+      await ticket.validate?.()
       file = await open(temporary, 'wx', 0o600)
       output = createWriteStream(temporary, { fd: file.fd, autoClose: false })
       let received = 0
@@ -84,7 +88,9 @@ export function createDesignSaveUploads() {
       await file.sync()
       await file.close()
       file = undefined
+      await ticket.validate?.()
       await rename(temporary, ticket.path)
+      await ticket.didSave?.()
       writeJSON(response, 200, { saved: true })
     } catch (error) {
       output?.destroy()

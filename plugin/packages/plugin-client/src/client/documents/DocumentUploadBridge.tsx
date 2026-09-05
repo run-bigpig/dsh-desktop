@@ -397,8 +397,8 @@ export function DocumentUploadBridge({
   )
 }
 
-export function DocumentUploadButton({ input, openPicker, t }: DocumentUploadButtonProps): ReactNode {
-  const disabled = input.phase === 'adjudicating' || input.phase === 'submitting'
+export function DocumentUploadButton({ useInput, openPicker, t }: DocumentUploadButtonProps): ReactNode {
+  const disabled = useInput(input => input.phase === 'adjudicating' || input.phase === 'submitting')
   return (
     <Tooltip label={t('upload')} side="top" delayMs={500}>
       <button

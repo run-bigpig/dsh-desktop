@@ -11,15 +11,16 @@ type MCPTransport = {
 type MCPSession = {
   transport: MCPTransport
   server: McpServer
+  owner?: string | undefined
 }
 
-export function createDesignMCPSessions(registerTools: (server: McpServer) => void) {
+export function createDesignMCPSessions(registerTools: (server: McpServer, owner?: string) => void) {
   const sessions = new Map<string, MCPSession>()
   let closed = false
 
-  async function createSession(id: string): Promise<MCPTransport> {
+  async function createSession(id: string, owner?: string): Promise<MCPTransport> {
     const server = new McpServer({ name: 'starweave-design', version: '0.1.0' })
-    registerTools(server)
+    registerTools(server, owner)
     const transport = new WebStandardStreamableHTTPServerTransport({
       sessionIdGenerator: () => id,
       enableJsonResponse: true
@@ -30,16 +31,16 @@ export function createDesignMCPSessions(registerTools: (server: McpServer) => vo
       await server.close().catch(() => undefined)
       throw new Error('MCP session manager is closed')
     }
-    sessions.set(id, { transport, server })
+    sessions.set(id, { transport, server, owner })
     return transport
   }
 
-  async function resolve(sessionId?: string): Promise<MCPTransport> {
+  async function resolve(sessionId?: string, owner?: string): Promise<MCPTransport> {
     if (closed) throw new Error('MCP session manager is closed')
     const existing = sessionId ? sessions.get(sessionId) : undefined
-    if (existing) return existing.transport
+    if (existing && existing.owner === owner) return existing.transport
     if (sessionId) throw new Error('MCP session not found')
-    return await createSession(randomUUID())
+    return await createSession(randomUUID(), owner)
   }
 
   async function remove(sessionId: string): Promise<boolean> {

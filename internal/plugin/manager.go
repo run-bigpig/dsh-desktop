@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.88"
+const desktopPluginVersion = "0.1.93"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{
@@ -162,6 +162,9 @@ func (m *Manager) SetLifecycle(lifecycle Lifecycle) {
 }
 
 func (m *Manager) EnsureDesktopPlugin(ctx context.Context) error {
+	if err := initializeDesktopWelcomeNotice(filepath.Join(m.paths.HarnessHome, "settings.yaml")); err != nil {
+		return fmt.Errorf("initialize desktop welcome settings: %w", err)
+	}
 	profile := filepath.Join(m.paths.HarnessHome, "profiles", "web")
 	legacyRoot := filepath.Join(filepath.Dir(m.paths.Root), "DeepSeekHarnessDesktop")
 	if err := migrateLegacyProfilePaths(profile, legacyRoot, m.paths.Root); err != nil {

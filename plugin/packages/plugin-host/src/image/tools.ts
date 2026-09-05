@@ -1,4 +1,5 @@
 import type { ContentBlock } from '@deepseek-ai/dsh-llm'
+import type { Session } from '@deepseek-ai/dsh-session'
 import { defineTool } from '@deepseek-ai/dsh-tools'
 import { attachmentRef, type ImageTaskRecord, type ImageVersionRecord, type StoredImageRef } from './task-store.ts'
 import type { GeminiImageResolution, ImageQuality } from './adapters.ts'
@@ -420,15 +421,12 @@ function requiredRevision(value: number | undefined): number {
 
 interface ImageToolExecution {
   readonly agent?: {
-    readonly session: {
-      readonly id: unknown
-      readonly events?: readonly unknown[]
-    }
+    readonly session: Pick<Session, 'id' | 'snapshotEvents'>
   }
 }
 
 function currentUserImage(exec: ImageToolExecution): StoredImageRef {
-  const events = exec.agent?.session.events
+  const events: readonly unknown[] | undefined = exec.agent?.session.snapshotEvents()
   if (events === undefined) throw new Error('image-workbench: current user message does not contain an image')
   const message = events.findLast((value): value is {
     readonly type: 'user/message'

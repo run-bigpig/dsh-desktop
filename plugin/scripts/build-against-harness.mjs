@@ -90,6 +90,10 @@ const project = resolve(import.meta.dirname, '..')
 const harness = option('--harness')
 const output = option('--out')
 const designWeb = option('--design-web')
+const designManifest = JSON.parse(await readFile(resolve(designWeb, 'starweave-ui-build.json'), 'utf8'))
+if (designManifest.workspaceFileProtocol !== 1) {
+  throw new Error('StarWeave workspace autosave requires a UI release with workspaceFileProtocol=1 (v0.1.6 or newer); publish the matching UI release before rebuilding the desktop seed')
+}
 const store = resolve(dirname(harness), 'pnpm-store')
 if (!await exists(resolve(harness, 'packages/client/tsdown.client.ts'))) {
   throw new Error(`${harness} is not a DeepSeek Harness source checkout`)
