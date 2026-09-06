@@ -89,11 +89,6 @@ async function stagePackage(source, target, selection, versions) {
 const project = resolve(import.meta.dirname, '..')
 const harness = option('--harness')
 const output = option('--out')
-const designWeb = option('--design-web')
-const designManifest = JSON.parse(await readFile(resolve(designWeb, 'starweave-ui-build.json'), 'utf8'))
-if (designManifest.workspaceFileProtocol !== 1) {
-  throw new Error('StarWeave workspace autosave requires a UI release with workspaceFileProtocol=1 (v0.1.6 or newer); publish the matching UI release before rebuilding the desktop seed')
-}
 const store = resolve(dirname(harness), 'pnpm-store')
 if (!await exists(resolve(harness, 'packages/client/tsdown.client.ts'))) {
   throw new Error(`${harness} is not a DeepSeek Harness source checkout`)
@@ -107,24 +102,38 @@ await mkdir(output, { recursive: true })
 
 const pnpm = process.platform === 'win32' ? 'pnpm.exe' : 'pnpm'
 await mkdir(overlay, { recursive: true })
-for (const name of ['plugin-host', 'plugin-client', 'plugin-bundle']) {
+for (const name of ['plugin-host', 'plugin-client', 'plugin-bundle', 'plugin-design-ui']) {
   await cp(resolve(project, 'packages', name), resolve(overlay, name), { recursive: true })
 }
-const designSkill = resolve(designWeb, 'skills/starweave-design')
-if (!await exists(resolve(designSkill, 'SKILL.md'))) {
-  throw new Error(`${designWeb} is missing the StarWeave Design skill`)
+const officialDesignSkill = resolve(overlay, 'plugin-host/presets/design/skills/open-pencil')
+if (!await exists(resolve(officialDesignSkill, 'SKILL.md'))) {
+  throw new Error('Desktop Plugin source is missing the official OpenPencil skill')
 }
-await cp(designSkill, resolve(overlay, 'plugin-host/skills/starweave-design'), { recursive: true })
+const designPreset = resolve(overlay, 'plugin-host/presets/design')
+await mkdir(resolve(designPreset, 'skills/open-pencil'), { recursive: true })
+await cp(
+  resolve(harness, 'packages/preset/agent-presets/presets/standard/agent.cordis.yml'),
+  resolve(designPreset, 'agent.cordis.yml'),
+)
+await writeFile(resolve(designPreset, 'preset.yml'), [
+  'name: 设计模式',
+  'description: 在当前会话中使用 OpenPencil 画布进行界面设计。',
+  'order: 2',
+  '',
+].join('\n'))
 await run(pnpm, [
   'install', '--frozen-lockfile=false', '--ignore-scripts',
   '--filter', '@run-bigpig/dsh-desktop-plugin-host...',
   '--filter', '@run-bigpig/dsh-desktop-plugin-client...',
   '--filter', '@run-bigpig/dsh-desktop-plugin...',
+  '--filter', '@run-bigpig/dsh-desktop-plugin-design-ui...',
   '--store-dir', store, '--prefer-offline',
 ], harness)
 const harnessRequire = createRequire(resolve(harness, 'package.json'))
 const tsc = harnessRequire.resolve('typescript/bin/tsc')
 const tsdown = harnessRequire.resolve('tsdown/run')
+await run(pnpm, ['--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'typecheck'], harness)
+await run(pnpm, ['--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'build'], harness)
 await run(process.execPath, [tsc, '-b', 'packages/desktop/plugin-host'], harness)
 const generatorURL = pathToFileURL(resolve(harness, 'packages/typert/generator/lib/types/workspace.js')).href
 const { WorkspaceTypertGenerator } = await import(generatorURL)
@@ -186,14 +195,13 @@ await stagePackage(hostDir, resolve(output, 'plugin-host'), {
   trees: [
     { path: 'lib/types', suffixes: ['.js', '.d.ts'] },
     { path: 'skills', suffixes: ['.md', '.yaml'] },
+    { path: 'presets', suffixes: ['.md', '.yaml', '.yml'] },
   ],
 }, versions)
-if (!await exists(resolve(designWeb, 'index.html')) || !await exists(resolve(designWeb, 'canvaskit.wasm'))) {
-  throw new Error(`${designWeb} is not a complete StarWeave UI release`)
-}
-const stagedDesignWeb = resolve(output, 'plugin-host/web/starweave-ui')
+const designWeb = resolve(overlay, 'plugin-design-ui/lib')
+const stagedDesignWeb = resolve(output, 'plugin-host/web/starweave-design')
 await copySelectedTree(designWeb, stagedDesignWeb, [
-  '.html', '.js', '.css', '.wasm', '.ttf', '.png', '.svg', '.ico', '.json', '.webmanifest', '.txt',
+  '.js', '.css', '.wasm', '.ttf', '.png', '.svg', '.ico', '.json', '.webmanifest', '.txt',
 ])
 await stagePackage(resolve(overlay, 'plugin-client'), resolve(output, 'plugin-client'), {
   files: ['package.json', 'lib/index.js', 'lib/client.js', 'lib/client.js.map'],
@@ -250,14 +258,18 @@ if (!await exists(resolve(output, 'plugin-host/lib/web-tools.js'))) {
 if (!await exists(resolve(output, 'plugin-host/lib/design.js'))) {
   throw new Error('staged Desktop Plugin Host is missing the StarWeave Design entry')
 }
-if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/index.html'))) {
-  throw new Error('staged Desktop Plugin Host is missing the StarWeave Design browser UI')
-}
-if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/canvaskit.wasm'))) {
+if (!await exists(resolve(output, 'plugin-host/web/starweave-design/canvaskit.wasm'))) {
   throw new Error('staged Desktop Plugin Host is missing the StarWeave Design CanvasKit runtime')
 }
-if (!await exists(resolve(output, 'plugin-host/web/starweave-ui/starweave-ui-build.json'))) {
-  throw new Error('staged Desktop Plugin Host is missing the StarWeave UI release manifest')
+if (!await exists(resolve(output, 'plugin-host/web/starweave-design/starweave-design-embed.js')) ||
+    !await exists(resolve(output, 'plugin-host/web/starweave-design/starweave-design-embed.css'))) {
+  throw new Error('staged Desktop Plugin Host is missing the embedded StarWeave Design module')
+}
+if (!await exists(resolve(output, 'plugin-host/presets/design/skills/open-pencil/SKILL.md'))) {
+  throw new Error('staged Desktop Plugin Host is missing the official OpenPencil skill')
+}
+if (!await exists(resolve(output, 'plugin-host/skills/thinkingdata-analysis-orchestrator/SKILL.md'))) {
+  throw new Error('staged Desktop Plugin Host is missing the ThinkingData skill')
 }
 if (await exists(resolve(output, 'web-tools'))) {
   throw new Error('standalone dsh-web-tools package must not be staged')

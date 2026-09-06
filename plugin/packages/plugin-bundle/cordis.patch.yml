@@ -37,6 +37,15 @@
     provider: dsh-unconfigured
     model: dsh-unconfigured
 
+- id: agent-presets
+  config:
+    default: standard
+    roots:
+      - path: !!js dshHomePath('.starweave-agent-presets')
+        trust: system
+    includeShippedRoot: true
+    includeUserRoot: true
+
 - target: '@root'
   insert:
     - id: desktop-integration-host

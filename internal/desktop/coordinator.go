@@ -100,10 +100,6 @@ func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledTool
 
 func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
 
-func (c *Coordinator) SetDesignWindow(window *application.WebviewWindow) {
-	c.window.SetDesignWindow(window)
-}
-
 func installBundledToolchain(paths appconfig.Paths) error {
 	legacyGit := filepath.Join(paths.Toolchain, "git")
 	if _, err := os.Stat(legacyGit); err == nil {
@@ -340,7 +336,6 @@ func (c *Coordinator) harnessEnvironment() []string {
 		"PATH=" + toolPath,
 		"DSH_DESKTOP_CONTROL_URL=" + c.pluginBridge.URL(),
 		"DSH_DESKTOP_CONTROL_TOKEN=" + c.pluginBridge.Token(),
-		"STARWEAVE_DESIGN_STATE_DIR=" + c.paths.State,
 	}
 }
 

@@ -1,0 +1,23 @@
+{
+  "name": "@run-bigpig/dsh-desktop-plugin-design-ui",
+  "version": "0.1.95",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "build": "vite build && node scripts/copy-wasm.mjs",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.json"
+  },
+  "dependencies": {
+    "@open-pencil/core": "0.14.0",
+    "@open-pencil/scene-graph": "0.14.0",
+    "@open-pencil/vue": "0.14.0",
+    "canvaskit-wasm": "0.40.0",
+    "vue": "^3.5.41"
+  },
+  "devDependencies": {
+    "@vitejs/plugin-vue": "^6.0.8",
+    "typescript": "~5.8.3",
+    "vite": "^8.1.4",
+    "vue-tsc": "^3.3.10"
+  }
+}

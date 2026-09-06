@@ -1,7 +1,7 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-host",
   "description": "Trusted Harness Remote gateway for StarWeave capabilities",
-  "version": "0.1.94",
+  "version": "0.1.95",
   "type": "module",
   "main": "lib/index.js",
   "types": "lib/types/index.d.ts",
@@ -42,6 +42,9 @@
     "lib/typert.remote-client.d.ts",
     "skills/**/*.md",
     "skills/**/*.yaml",
+    "presets/**/*.md",
+    "presets/**/*.yaml",
+    "presets/**/*.yml",
     "web/**/*"
   ],
   "license": "MIT",

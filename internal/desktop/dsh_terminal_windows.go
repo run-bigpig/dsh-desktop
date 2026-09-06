@@ -60,7 +60,6 @@ func terminalBootstrap(config dshTerminalConfig, binDir string) (string, error) 
 	return strings.Join([]string{
 		"@echo off",
 		`set "DSH_HOME=` + escape(config.HarnessHome) + `"`,
-		`set "STARWEAVE_DESIGN_STATE_DIR=` + escape(config.StateDirectory) + `"`,
 		`set "DSH_DESKTOP_NODE=` + escape(config.Node) + `"`,
 		`set "DSH_DESKTOP_CLI=` + escape(config.CLI) + `"`,
 		`set "PNPM_HOME=` + escape(filepath.Dir(config.PNPM)) + `"`,

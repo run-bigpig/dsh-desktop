@@ -1,11 +1,15 @@
 import { randomBytes } from 'node:crypto'
+import { access, mkdir, readFile, writeFile } from 'node:fs/promises'
+import { dirname, resolve } from 'node:path'
+import { fileURLToPath } from 'node:url'
 
 import { Context, Service } from '@deepseek-ai/cordis'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import * as mcpClient from '@deepseek-ai/dsh-mcp-client'
+import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 
 import { startDesignServer, type DesignServer } from './server.ts'
-import { registerStarWeaveDesignSkill } from './skill.ts'
+import type { DesignConnection } from '../shared/types.ts'
 
 const MCP_SERVER_NAME = 'starweave-design'
 
@@ -15,17 +19,15 @@ declare module '@deepseek-ai/cordis' {
   }
 }
 
-export class StarWeaveDesignGateway extends Service {
-  static inject = ['mcpSettings', 'skills', 'tools']
-
+export class StarWeaveDesignGateway extends TypertRemoteService {
   private server: DesignServer | undefined
-  private disposeSkill: (() => void) | undefined
 
   constructor(ctx: Context) {
     super(ctx, 'starweaveDesign')
   }
 
   protected async [Service.init](): Promise<void> {
+    await syncDesignPreset()
     const authToken = randomBytes(32).toString('base64url')
     const server = await startDesignServer(authToken)
     this.server = server
@@ -33,7 +35,7 @@ export class StarWeaveDesignGateway extends Service {
     const attach = (agent: Agent): Promise<void> => {
       const existing = clients.get(agent)
       if (existing) return existing
-      const owner = server.registerOwner({ id: agent.id, workspace: () => agent.session.header.cwd })
+      const owner = server.registerOwner({ id: agent.session.id })
       const fiber = agent.ctx.plugin({
         name: mcpClient.name,
         inject: mcpClient.inject,
@@ -47,6 +49,14 @@ export class StarWeaveDesignGateway extends Service {
       })
       this.ctx.effect(() => () => fiber.dispose(), 'starweave-design: dispose scoped MCP')
       agent.ctx.effect(() => () => { owner.dispose(); clients.delete(agent) }, 'starweave-design: revoke owner')
+      const systemPrompt = agent.ctx.get('systemPrompt')
+      if (systemPrompt !== undefined) {
+        agent.ctx.effect(() => systemPrompt.section({
+          name: 'starweave:design-session',
+          order: 120,
+          text: '这是设计模式。文档只能由用户在当前画布中创建、打开和保存。不要调用或请求文件生命周期工具；只使用 OpenPencil MCP 操作当前已连接文档。若工具提示尚未连接，请让用户先在画布中创建或打开文档。'
+        }), 'starweave-design: scoped design policy')
+      }
       const ready = Promise.resolve(fiber).then(() => undefined).catch(async error => {
         clients.delete(agent)
         owner.dispose()
@@ -59,51 +69,52 @@ export class StarWeaveDesignGateway extends Service {
     // The official agent-scoped MCP client preserves tool policy, projection,
     // cancellation and lifecycle while attaching trusted workspace identity.
     this.ctx.on('agent/pre-step', async ({ agent }, next) => {
-      if (this.ctx.mcpSettings.systemPhase(MCP_SERVER_NAME) === 'active') {
+      if (agent.session.header.agentPreset === 'design') {
         await attach(agent).catch(error => this.ctx.logger.warn('Unable to initialize workspace design tools', error))
       }
       return next()
     })
-    this.ctx.tools.guard(exec => {
-      if (exec.name.startsWith(`mcp__${MCP_SERVER_NAME}__`) && this.ctx.mcpSettings.systemPhase(MCP_SERVER_NAME) !== 'active') {
-        return 'StarWeave Design MCP is disabled or unavailable'
-      }
-      return undefined
-    })
-    try {
-      await this.ctx.mcpSettings.setSystem({
-        transport: 'streamable-http',
-        serverName: MCP_SERVER_NAME,
-        url: `http://127.0.0.1:${server.port}/mcp`,
-        headers: { Authorization: `Bearer ${authToken}` },
-        enabled: true,
-        toolCallTimeoutMs: 120_000,
-        failOnStartupError: true
-      })
-      this.disposeSkill = await registerStarWeaveDesignSkill(this.ctx)
-    } catch (error) {
-      this.disposeSkill?.()
-      this.disposeSkill = undefined
-      await Promise.allSettled([
-        this.ctx.mcpSettings.removeSystem(MCP_SERVER_NAME),
-        server.close()
-      ])
-      this.server = undefined
-      throw error
-    }
-    this.ctx.get('systemPrompt')?.section({
-      name: 'starweave:design',
-      order: 120,
-      text: '创建或修改界面、根据截图或线框图生成设计时，使用 $starweave-design 和 starweave-design MCP；先调用 open_design_workspace 打开独立画布，后续官方 OpenPencil 工具会自动操作该画布。'
-    })
     this.ctx.effect(() => async () => {
-      this.disposeSkill?.()
-      this.disposeSkill = undefined
-      await this.ctx.mcpSettings.removeSystem(MCP_SERVER_NAME)
       await this.server?.close()
       this.server = undefined
     }, 'starweave-design: dispose local server')
   }
+
+  @Remote('connection')
+  connection(sessionId: string): DesignConnection {
+    if (!sessionId.trim()) throw new Error('Design session id is required')
+    if (!this.server) throw new Error('StarWeave Design server is unavailable')
+    return this.server.connection(sessionId)
+  }
+}
+
+const PRESET_FILES = ['agent.cordis.yml', 'preset.yml', 'skills/open-pencil/SKILL.md'] as const
+
+async function syncDesignPreset(): Promise<void> {
+  const harnessHome = process.env.DSH_HOME?.trim()
+  if (!harnessHome) throw new Error('StarWeave Design requires DSH_HOME')
+  const source = await findPresetSource()
+  const target = resolve(harnessHome, '.starweave-agent-presets/design')
+  for (const relative of PRESET_FILES) {
+    const content = await readFile(resolve(source, relative))
+    const filename = resolve(target, relative)
+    await mkdir(dirname(filename), { recursive: true })
+    await writeFile(filename, content)
+  }
+}
+
+async function findPresetSource(): Promise<string> {
+  const candidates = [
+    fileURLToPath(new URL('../presets/design/', import.meta.url)),
+    fileURLToPath(new URL('../../presets/design/', import.meta.url))
+  ]
+  for (const candidate of candidates) {
+    try {
+      await access(resolve(candidate, 'agent.cordis.yml'))
+      return candidate
+    } catch { continue }
+  }
+  throw new Error('StarWeave Design preset is missing')
 }
 
 export default StarWeaveDesignGateway

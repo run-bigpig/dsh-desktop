@@ -102,6 +102,13 @@ import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.
 import { installChatCopy } from './chat-copy.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { ModelDefaults, type ModelDefaultsInjected } from './model-defaults.tsx'
+import {
+  DesignConversationView,
+  DesignConversationDock,
+  type DesignConnection,
+  type DesignConversationViewInjected,
+} from './design/DesignConversationView.tsx'
+import { createDesignSessionMode } from './design/session-mode.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -195,6 +202,10 @@ interface DesktopGitRemote {
   commit: (sessionId: string, request: GitCommitRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
 }
 
+interface DesignRemote {
+  connection: (sessionId: string) => Promise<RemoteResult<DesignConnection>>
+}
+
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
 
 const CAPABILITY_RETRY_DELAYS_MS = [0, 50, 100, 200, 400, 800]
@@ -222,6 +233,52 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     await disposeRemote()
     throw new Error('Desktop Remote namespace did not start')
   }
+  ctx.inject(['remote.starweaveDesign', 'sessions'], (inner: ClientContext) => {
+    const design = (inner.remote as ClientContext['remote'] & { starweaveDesign: DesignRemote }).starweaveDesign
+    const mode = createDesignSessionMode({
+      prepare: sessionId => {
+        const key = `dsh.conversation.${sessionId}`
+        try {
+          if (localStorage.getItem(key) === null) {
+            localStorage.setItem(key, JSON.stringify({ draft: '', view: 'design', viewRequest: null }))
+          }
+        } catch { /* Storage is optional; the design tab remains available. */ }
+      },
+      registerView: () => inner.slots.register({
+        name: 'conversation.view',
+        id: 'design',
+        order: -10,
+        label: () => '设计',
+        inject: (sessionId): DesignConversationViewInjected => ({
+          connect: async () => unwrap(await design.connection(String(sessionId))),
+        }),
+      }, DesignConversationView),
+      registerDock: () => inner.slots.register({
+        name: 'conversation.input.dock',
+        id: 'design-blank-canvas',
+        order: -100,
+        inject: (sessionId): DesignConversationViewInjected => ({
+          connect: async () => unwrap(await design.connection(String(sessionId))),
+        }),
+      }, DesignConversationDock),
+    })
+    const sync = (): void => {
+      const snapshot = inner.sessions.list.getSnapshot()
+      const current = snapshot.current
+      const session = current === undefined ? undefined : snapshot.byId[current]
+      mode.sync(session === undefined ? undefined : {
+        id: String(current),
+        design: session.projectionValues?.agentPreset === 'design',
+        blank: session.blank,
+      })
+    }
+    const unsubscribe = inner.sessions.list.subscribe(sync)
+    sync()
+    return () => {
+      unsubscribe()
+      mode.dispose()
+    }
+  })
   let capabilities: DesktopCapabilities
   try {
     capabilities = await discoverCapabilities(remote)

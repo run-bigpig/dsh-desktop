@@ -58,6 +58,14 @@ export interface DesktopWindowState {
   fullscreen: boolean
 }
 
+export interface DesignConnection {
+  baseUrl: string
+  sessionId: string
+  token: string
+  scriptPath: string
+  stylePath: string
+}
+
 export type McpServerOrigin = 'settings' | 'system' | 'composition'
 export type McpServerFiberPhase = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
 export type McpServerTransport = 'stdio' | 'streamable-http'
