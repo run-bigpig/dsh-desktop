@@ -9,6 +9,7 @@ import { WebSocketServer } from 'ws'
 
 import { createBrowserSessions } from './browser-sessions.ts'
 import { createDesignMCPSessions } from './mcp-sessions.ts'
+import { createDesignDocumentStore, MAX_DESIGN_DOCUMENT_BASE64_LENGTH } from './storage.ts'
 import { registerDesignTools } from './tools.ts'
 import type { DesignConnection } from '../shared/types.ts'
 
@@ -28,14 +29,20 @@ export type DesignServer = {
   close: () => Promise<void>
 }
 
-export async function startDesignServer(authToken: string): Promise<DesignServer> {
+export async function startDesignServer(
+  authToken: string,
+  documentPath?: (sessionId: string) => Promise<string | undefined>
+): Promise<DesignServer> {
   let port = 0
   const browsers = createBrowserSessions()
   const owners = new Map<string, DesignOwner>()
   const mcpSessions = createDesignMCPSessions((server: McpServer, ownerToken?: string) => {
     registerDesignTools(server, browsers.sendRPC, ownerToken ? owners.get(ownerToken)?.id : undefined)
   })
-  const designSockets = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
+  const designSockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_DESIGN_DOCUMENT_BASE64_LENGTH + 64 * 1024
+  })
   const httpServer = createServer((request, response) => {
     void handleHTTP(request, response, authToken, mcpSessions, owners).catch(error => {
       if (!response.headersSent) writeJSON(response, 500, { error: describeError(error) })
@@ -59,7 +66,9 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
       client.on('message', raw => {
         try {
           const value = JSON.parse(Buffer.from(raw as Buffer).toString('utf8')) as unknown
-          if (isRecord(value)) browsers.handleMessage(client, value)
+          if (isRecord(value)) void browsers.handleMessage(client, value).catch(() => {
+            client.close(1011, 'design session failed')
+          })
         } catch {
           client.close(1007, 'invalid JSON')
         }
@@ -85,7 +94,12 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
     port,
     authToken,
     connection: sessionId => {
-      const session = browsers.prepare(sessionId)
+      const session = browsers.prepare(sessionId, documentPath
+        ? async () => {
+            const filename = await documentPath(sessionId)
+            return filename ? createDesignDocumentStore(filename) : undefined
+          }
+        : undefined)
       return {
         baseUrl,
         sessionId: session.id,
@@ -95,7 +109,12 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
       }
     },
     registerOwner: owner => {
-      browsers.prepare(owner.id)
+      browsers.prepare(owner.id, documentPath
+        ? async () => {
+            const filename = await documentPath(owner.id)
+            return filename ? createDesignDocumentStore(filename) : undefined
+          }
+        : undefined)
       const token = randomBytes(32).toString('base64url')
       owners.set(token, owner)
       return { token, dispose: () => { owners.delete(token) } }

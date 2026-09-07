@@ -170,6 +170,14 @@ func main() {
 	service.SetWindow(splashWindow)
 	service.SetUpdateWindow(updateWindow)
 	finishHarnessNavigation := func(*application.WindowEvent) {
+		if coordinator.Store().Snapshot().HarnessURL != "" {
+			script, err := coordinator.DesignFontScript()
+			if err != nil {
+				logger.Error("prepare design font injection", "error", err)
+			} else if script != "" {
+				mainWindow.ExecJS(script)
+			}
+		}
 		if awaitingHarnessNavigation.CompareAndSwap(true, false) {
 			logger.Info("Harness navigation completed; swapping desktop windows")
 			showMain()

@@ -21,7 +21,7 @@ const dirty = computed(() => {
 })
 
 function canReplaceDocument(): boolean {
-  return !dirty.value || window.confirm('当前设计尚未保存，确定要关闭并继续吗？')
+  return !dirty.value || window.confirm('当前设计尚未另存为 .fig 文件。替换文档也会更新此会话的设计快照，确定继续吗？')
 }
 
 function createDocument(): void {
@@ -94,11 +94,12 @@ onUnmounted(() => window.removeEventListener('beforeunload', warnBeforeUnload))
       </div>
       <div class="document-state" role="status" aria-live="polite">
         <strong>{{ session.document?.name ?? '尚未打开文档' }}</strong>
-        <span v-if="session.document" :class="dirty ? 'unsaved' : 'saved'">{{ dirty ? '未保存' : '已保存' }}</span>
+        <span v-if="session.document" :class="dirty ? 'unsaved' : 'saved'" title="会话快照自动保存；保存按钮用于另存为 .fig 文件">{{ dirty ? '未另存为文件' : '文件已保存' }}</span>
         <span class="bridge-state" :data-phase="session.bridgePhase">{{ session.bridgeDetail }}</span>
       </div>
     </header>
     <div v-if="error" class="error-banner" role="alert">{{ error }}</div>
+    <div v-if="session.persistenceError" class="error-banner" role="alert">{{ session.persistenceError }}</div>
     <EditorWorkspace
       v-if="session.document"
       :key="session.generation"

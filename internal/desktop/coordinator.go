@@ -49,6 +49,10 @@ type Coordinator struct {
 	onRecovery   func()
 }
 
+func (c *Coordinator) DesignFontScript() (string, error) {
+	return c.pluginBridge.DesignFontScript(c.store.Snapshot().HarnessURL)
+}
+
 func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	paths := appconfig.NewPaths(root)
 	if err := paths.Ensure(); err != nil {

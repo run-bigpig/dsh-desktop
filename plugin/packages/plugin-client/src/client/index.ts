@@ -103,8 +103,7 @@ import { installChatCopy } from './chat-copy.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { ModelDefaults, type ModelDefaultsInjected } from './model-defaults.tsx'
 import {
-  DesignConversationView,
-  DesignConversationDock,
+  DesignConversationSplit,
   type DesignConnection,
   type DesignConversationViewInjected,
 } from './design/DesignConversationView.tsx'
@@ -236,31 +235,14 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   ctx.inject(['remote.starweaveDesign', 'sessions'], (inner: ClientContext) => {
     const design = (inner.remote as ClientContext['remote'] & { starweaveDesign: DesignRemote }).starweaveDesign
     const mode = createDesignSessionMode({
-      prepare: sessionId => {
-        const key = `dsh.conversation.${sessionId}`
-        try {
-          if (localStorage.getItem(key) === null) {
-            localStorage.setItem(key, JSON.stringify({ draft: '', view: 'design', viewRequest: null }))
-          }
-        } catch { /* Storage is optional; the design tab remains available. */ }
-      },
-      registerView: () => inner.slots.register({
-        name: 'conversation.view',
-        id: 'design',
-        order: -10,
-        label: () => '设计',
-        inject: (sessionId): DesignConversationViewInjected => ({
-          connect: async () => unwrap(await design.connection(String(sessionId))),
-        }),
-      }, DesignConversationView),
-      registerDock: () => inner.slots.register({
+      registerSplit: () => inner.slots.register({
         name: 'conversation.input.dock',
-        id: 'design-blank-canvas',
+        id: 'design-split-layout',
         order: -100,
         inject: (sessionId): DesignConversationViewInjected => ({
           connect: async () => unwrap(await design.connection(String(sessionId))),
         }),
-      }, DesignConversationDock),
+      }, DesignConversationSplit),
     })
     const sync = (): void => {
       const snapshot = inner.sessions.list.getSnapshot()

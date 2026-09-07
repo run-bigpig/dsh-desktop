@@ -23,13 +23,15 @@ var (
 )
 
 type Bridge struct {
-	manager  *Manager
-	server   *http.Server
-	listener net.Listener
-	token    string
-	url      string
-	mu       sync.RWMutex
-	desktop  DesktopController
+	manager    *Manager
+	server     *http.Server
+	listener   net.Listener
+	token      string
+	url        string
+	mu         sync.RWMutex
+	desktop    DesktopController
+	fontToken  string
+	fontOrigin string
 }
 
 const DesktopBridgeAPIVersion = 1
@@ -52,7 +54,7 @@ type DesktopController interface {
 }
 
 func StartBridge(manager *Manager) (*Bridge, error) {
-	raw := make([]byte, 32)
+	raw := make([]byte, 64)
 	if _, err := rand.Read(raw); err != nil {
 		return nil, fmt.Errorf("generate desktop plugin bridge token: %w", err)
 	}
@@ -60,7 +62,7 @@ func StartBridge(manager *Manager) (*Bridge, error) {
 	if err != nil {
 		return nil, fmt.Errorf("listen for desktop plugin bridge: %w", err)
 	}
-	b := &Bridge{manager: manager, listener: listener, token: base64.RawURLEncoding.EncodeToString(raw)}
+	b := &Bridge{manager: manager, listener: listener, token: base64.RawURLEncoding.EncodeToString(raw[:32]), fontToken: base64.RawURLEncoding.EncodeToString(raw[32:])}
 	b.url = "http://" + listener.Addr().String() + "/"
 	b.server = &http.Server{Handler: b, ReadHeaderTimeout: 5 * time.Second, MaxHeaderBytes: 16 << 10}
 	go func() { _ = b.server.Serve(listener) }()
@@ -87,6 +89,10 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	w.Header().Set("Cache-Control", "no-store")
 	w.Header().Set("Content-Type", "application/json; charset=utf-8")
 	w.Header().Set("X-Content-Type-Options", "nosniff")
+	if r.URL.Path == "/v1/design/font" {
+		b.serveDesignFont(w, r)
+		return
+	}
 	if r.Header.Get("Origin") != "" {
 		writeError(w, http.StatusForbidden, "browser origins are not allowed")
 		return

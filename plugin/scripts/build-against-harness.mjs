@@ -111,10 +111,26 @@ if (!await exists(resolve(officialDesignSkill, 'SKILL.md'))) {
 }
 const designPreset = resolve(overlay, 'plugin-host/presets/design')
 await mkdir(resolve(designPreset, 'skills/open-pencil'), { recursive: true })
-await cp(
+const standardAgent = await readFile(
   resolve(harness, 'packages/preset/agent-presets/presets/standard/agent.cordis.yml'),
-  resolve(designPreset, 'agent.cordis.yml'),
+  'utf8',
 )
+const skillFilesystemRow = [
+  '- id: skill-filesystem',
+  "  name: '@deepseek-ai/dsh-skill-filesystem'",
+  '',
+].join('\n')
+if (!standardAgent.includes(skillFilesystemRow)) {
+  throw new Error('unexpected Harness standard preset skill-filesystem shape')
+}
+await writeFile(resolve(designPreset, 'agent.cordis.yml'), standardAgent.replace(skillFilesystemRow, [
+  '- id: skill-filesystem',
+  "  name: '@deepseek-ai/dsh-skill-filesystem'",
+  '  config:',
+  '    customSkillDirs:',
+  `      - !!js "process.getBuiltinModule('node:url').fileURLToPath(new URL('skills/', baseUrl))"`,
+  '',
+].join('\n')))
 await writeFile(resolve(designPreset, 'preset.yml'), [
   'name: 设计模式',
   'description: 在当前会话中使用 OpenPencil 画布进行界面设计。',
@@ -127,13 +143,16 @@ await run(pnpm, [
   '--filter', '@run-bigpig/dsh-desktop-plugin-client...',
   '--filter', '@run-bigpig/dsh-desktop-plugin...',
   '--filter', '@run-bigpig/dsh-desktop-plugin-design-ui...',
+  '--filter', '@deepseek-ai/dsh-typert-generator...',
   '--store-dir', store, '--prefer-offline',
 ], harness)
 const harnessRequire = createRequire(resolve(harness, 'package.json'))
 const tsc = harnessRequire.resolve('typescript/bin/tsc')
 const tsdown = harnessRequire.resolve('tsdown/run')
-await run(pnpm, ['--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'typecheck'], harness)
-await run(pnpm, ['--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'build'], harness)
+// Dependencies were installed with the selected plugin filters above. pnpm 11's
+// default pre-run install would replace that layout with the entire workspace.
+await run(pnpm, ['--config.verify-deps-before-run=false', '--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'typecheck'], harness)
+await run(pnpm, ['--config.verify-deps-before-run=false', '--filter', '@run-bigpig/dsh-desktop-plugin-design-ui', 'run', 'build'], harness)
 await run(process.execPath, [tsc, '-b', 'packages/desktop/plugin-host'], harness)
 const generatorURL = pathToFileURL(resolve(harness, 'packages/typert/generator/lib/types/workspace.js')).href
 const { WorkspaceTypertGenerator } = await import(generatorURL)
@@ -265,8 +284,20 @@ if (!await exists(resolve(output, 'plugin-host/web/starweave-design/starweave-de
     !await exists(resolve(output, 'plugin-host/web/starweave-design/starweave-design-embed.css'))) {
   throw new Error('staged Desktop Plugin Host is missing the embedded StarWeave Design module')
 }
+const stagedDesignEntry = await readFile(resolve(output, 'plugin-host/web/starweave-design/starweave-design-embed.js'), 'utf8')
+if (!stagedDesignEntry.includes('__starweaveWorkerUrl') || /new URL\([^)]*\/assets\/(?:export-)?worker-/su.test(stagedDesignEntry)) {
+  throw new Error('staged StarWeave Design module does not contain self-hosted OpenPencil workers')
+}
+if ((await readdir(resolve(output, 'plugin-host/web/starweave-design'), { recursive: true }))
+  .some(path => /(?:^|[\\/])(?:export-)?worker-[\w-]+\.js$/u.test(path))) {
+  throw new Error('staged StarWeave Design module contains cross-origin OpenPencil worker chunks')
+}
 if (!await exists(resolve(output, 'plugin-host/presets/design/skills/open-pencil/SKILL.md'))) {
   throw new Error('staged Desktop Plugin Host is missing the official OpenPencil skill')
+}
+const stagedDesignAgent = await readFile(resolve(output, 'plugin-host/presets/design/agent.cordis.yml'), 'utf8')
+if (!stagedDesignAgent.includes("new URL('skills/', baseUrl)")) {
+  throw new Error('staged Design preset does not load its bundled OpenPencil skill')
 }
 if (!await exists(resolve(output, 'plugin-host/skills/thinkingdata-analysis-orchestrator/SKILL.md'))) {
   throw new Error('staged Desktop Plugin Host is missing the ThinkingData skill')

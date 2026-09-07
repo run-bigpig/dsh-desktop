@@ -1,5 +1,6 @@
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { registerTools } from '@open-pencil/mcp'
+import { z } from 'zod'
 
 type SendRPC = (sessionId: string, command: string, args: unknown) => Promise<unknown>
 
@@ -23,6 +24,20 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, designS
   const filteredServer = Object.create(server) as McpServer
   filteredServer.registerTool = ((name: string, ...args: unknown[]) => {
     if (USER_OWNED_TOOLS.has(name)) return undefined
+    // The official registrar treats every base64 export as an image. PDFs must
+    // use MCP resource content so Harness does not send them to an image decoder.
+    if (name === 'export_pdf') {
+      const callback = args.pop() as (...values: unknown[]) => Promise<{ content: Array<Record<string, unknown>> }>
+      args.push(async (...values: unknown[]) => {
+        const result = await callback(...values)
+        return {
+          ...result,
+          content: result.content.map(item => item.type === 'image' && item.mimeType === 'application/pdf'
+            ? { type: 'resource', resource: { uri: `starweave-design://${designSessionId}/export.pdf`, mimeType: 'application/pdf', blob: item.data } }
+            : item)
+        }
+      })
+    }
     return (server.registerTool as (...values: unknown[]) => unknown).call(server, name, ...args)
   }) as McpServer['registerTool']
 
@@ -43,6 +58,43 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, designS
       const documentId = await currentDocument()
       const args = isRecord(body.args) ? body.args : {}
       return await sendRPC(designSessionId, command, { ...args, document_id: documentId })
+    }
+  })
+
+  for (const command of ['undo', 'redo'] as const) {
+    server.registerTool(command, {
+      description: `${command === 'undo' ? 'Undo' : 'Redo'} the last edit in this Harness session's current design document and persist the resulting document.`,
+      inputSchema: {}
+    }, async () => {
+      try {
+        await currentDocument()
+        const result = await sendRPC(designSessionId!, command, {})
+        if (isRecord(result) && result.ok === false) throw new Error(String(result.error))
+        return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+      } catch (error) {
+        return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }] }
+      }
+    })
+  }
+
+  server.registerTool('shared_style', {
+    description: 'Manage official OpenPencil shared styles in the current design session. Create/update from node_id, apply/detach to node_ids (defaults to selection). Updating propagates to all bound nodes; deleting preserves their appearance. Mutations support undo and session persistence.',
+    inputSchema: {
+      action: z.enum(['list', 'create', 'update', 'rename', 'delete', 'apply', 'detach']),
+      kind: z.enum(['fill', 'stroke', 'text', 'effect', 'grid']),
+      style_id: z.string().optional(),
+      node_id: z.string().optional(),
+      node_ids: z.array(z.string()).optional(),
+      name: z.string().optional()
+    }
+  }, async args => {
+    try {
+      await currentDocument()
+      const result = await sendRPC(designSessionId!, 'shared_style', args)
+      if (isRecord(result) && result.ok === false) throw new Error(String(result.error))
+      return { content: [{ type: 'text' as const, text: JSON.stringify(result) }] }
+    } catch (error) {
+      return { isError: true, content: [{ type: 'text' as const, text: error instanceof Error ? error.message : String(error) }] }
     }
   })
 }

@@ -1,5 +1,5 @@
-import { useEffect, useRef, useState } from 'react'
-import type { ConvViewProps } from '@deepseek-ai/dsh-client-ui-conversation/client'
+import { useEffect, useLayoutEffect, useRef, useState } from 'react'
+import { createPortal } from 'react-dom'
 import type {} from '@deepseek-ai/dsh-client-ui-session/client'
 import type { DesignConnection } from '@run-bigpig/dsh-desktop-plugin-host/types'
 
@@ -12,10 +12,9 @@ type DesignEmbedHandle = { unmount: () => void }
 type DesignEmbedAPI = {
   mount: (element: HTMLElement, options: Pick<DesignConnection, 'baseUrl' | 'sessionId' | 'token'>) => Promise<DesignEmbedHandle>
 }
+type DesignEmbedModule = { mount?: DesignEmbedAPI['mount'] }
 
-declare global { interface Window { StarWeaveDesignEmbed?: DesignEmbedAPI } }
-
-const scriptLoads = new Map<string, Promise<void>>()
+const embedLoads = new Map<string, Promise<DesignEmbedAPI>>()
 
 function DesignSurface({ connect, className }: DesignConversationViewInjected & { className: string }) {
   const hostRef = useRef<HTMLDivElement>(null)
@@ -41,10 +40,8 @@ function DesignSurface({ connect, className }: DesignConversationViewInjected & 
       surface.style.width = '100%'
       surface.style.height = '100%'
       shadow.append(style, surface)
-      await loadScript(new URL(connection.scriptPath, baseUrl).href)
+      const api = await loadDesignEmbed(new URL(connection.scriptPath, baseUrl).href)
       if (cancelled) return
-      const api = window.StarWeaveDesignEmbed
-      if (!api) throw new Error('设计画布模块未完成初始化')
       const mounted = await api.mount(surface, connection)
       if (cancelled) mounted.unmount()
       else handle = mounted
@@ -66,33 +63,81 @@ function DesignSurface({ connect, className }: DesignConversationViewInjected & 
   )
 }
 
-export function DesignConversationView({ connect }: ConvViewProps & DesignConversationViewInjected) {
+export function DesignConversationSplit({ connect }: DesignConversationViewInjected) {
+  const anchorRef = useRef<HTMLSpanElement>(null)
+  const [portal, setPortal] = useState<HTMLElement | null>(null)
+
+  useLayoutEffect(() => {
+    const anchor = anchorRef.current
+    const scroll = anchor?.closest<HTMLElement>('[data-conversation-scroll]')
+    const layout = scroll?.parentElement
+    if (!anchor || !scroll || !layout) return
+    const restoreTab = markDesignConversationTab(anchor)
+    const target = document.createElement('section')
+    target.className = css.splitPortal
+    target.dataset.starweaveDesignCanvas = ''
+    target.setAttribute('aria-label', '设计画布')
+    layout.dataset.starweaveDesignLayout = ''
+    layout.insertBefore(target, scroll)
+    setPortal(target)
+    return () => {
+      restoreTab()
+      target.remove()
+      if (layout.querySelector('[data-starweave-design-canvas]') === null) {
+        delete layout.dataset.starweaveDesignLayout
+      }
+    }
+  }, [])
+
   return (
-    <div className={css.view} data-conversation-composer-overlay="">
-      <DesignSurface connect={connect} className={css.root} />
-    </div>
+    <>
+      <span ref={anchorRef} className={css.splitAnchor} aria-hidden="true" />
+      {portal === null ? null : createPortal(
+        <DesignSurface connect={connect} className={css.root} />,
+        portal,
+      )}
+    </>
   )
 }
 
-export function DesignConversationDock({ connect }: DesignConversationViewInjected) {
-  return <DesignSurface connect={connect} className={css.dock} />
-}
-
-function loadScript(src: string): Promise<void> {
-  const existing = scriptLoads.get(src)
+function loadDesignEmbed(src: string): Promise<DesignEmbedAPI> {
+  const existing = embedLoads.get(src)
   if (existing) return existing
-  const promise = new Promise<void>((resolve, reject) => {
-    const script = document.createElement('script')
-    script.type = 'module'
-    script.src = src
-    script.async = true
-    script.addEventListener('load', () => resolve(), { once: true })
-    script.addEventListener('error', () => reject(new Error('无法加载设计画布模块')), { once: true })
-    document.head.append(script)
+  const promise = import(/* @vite-ignore */ src).then((module: DesignEmbedModule) => {
+    if (typeof module.mount !== 'function') throw new Error('设计画布模块未完成初始化')
+    return { mount: module.mount }
   }).catch(error => {
-    scriptLoads.delete(src)
+    embedLoads.delete(src)
     throw error
   })
-  scriptLoads.set(src, promise)
+  embedLoads.set(src, promise)
   return promise
+}
+
+function markDesignConversationTab(anchor: HTMLElement): () => void {
+  const conversation = anchor.closest<HTMLElement>('[data-slot="conversation"]')
+  const tablist = conversation?.querySelector<HTMLElement>('[role="tablist"]')
+  const initial = tablist?.querySelector<HTMLElement>('[role="tab"]')
+  if (!tablist || !initial) return () => undefined
+  const originalText = initial.textContent
+  const originalAria = initial.getAttribute('aria-label')
+  const apply = (): void => {
+    const tab = tablist.querySelector<HTMLElement>('[role="tab"]')
+    if (!tab || tab.textContent === '设计') return
+    tab.textContent = '设计'
+    tab.setAttribute('aria-label', '设计')
+    tab.dataset.starweaveDesignTab = ''
+  }
+  const observer = new MutationObserver(apply)
+  observer.observe(tablist, { childList: true, characterData: true, subtree: true })
+  apply()
+  return () => {
+    observer.disconnect()
+    const tab = tablist.querySelector<HTMLElement>('[data-starweave-design-tab]')
+    if (!tab) return
+    tab.textContent = originalText
+    if (originalAria === null) tab.removeAttribute('aria-label')
+    else tab.setAttribute('aria-label', originalAria)
+    delete tab.dataset.starweaveDesignTab
+  }
 }

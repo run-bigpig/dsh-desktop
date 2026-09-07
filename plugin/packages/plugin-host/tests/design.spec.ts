@@ -1,10 +1,15 @@
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { ALL_TOOLS } from '@open-pencil/core/tools'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { WebSocket } from 'ws'
 
 import { createBrowserSessions } from '../src/design/browser-sessions.ts'
 import { createDesignMCPSessions } from '../src/design/mcp-sessions.ts'
 import { startDesignServer, type DesignServer } from '../src/design/server.ts'
+import { createDesignDocumentStore } from '../src/design/storage.ts'
 import { registerDesignTools } from '../src/design/tools.ts'
 
 const activeServers: DesignServer[] = []
@@ -34,20 +39,106 @@ describe('StarWeave Design browser sessions', () => {
       close: vi.fn()
     } as unknown as WebSocket
 
-    sessions.handleMessage(socket, { type: 'register', sessionId: first.id, token: first.token })
+    await sessions.handleMessage(socket, { type: 'register', sessionId: first.id, token: first.token })
     const pending = sessions.sendRPC(first.id, 'tool', { name: 'get_selection' })
     const request = JSON.parse(String(send.mock.calls[1]?.[0])) as { id: string; sessionId: string }
     expect(request.sessionId).toBe('session-a')
     await expect(sessions.sendRPC('session-b', 'list_documents', {}))
       .rejects.toThrow('请先在设计模式中创建或打开文档')
 
-    sessions.handleMessage(socket, { type: 'response', id: request.id, ok: true, result: { selection: [] } })
+    await sessions.handleMessage(socket, { type: 'response', id: request.id, ok: true, result: { selection: [] } })
     await expect(pending).resolves.toMatchObject({ ok: true, result: { selection: [] } })
     sessions.close()
+  })
+
+  it('restores only the matching session document after the browser session is recreated', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'starweave-design-'))
+    try {
+      const filename = join(root, 'session-a', 'starweave-design.json')
+      const firstSessions = createBrowserSessions()
+      const first = firstSessions.prepare('session-a', async () => createDesignDocumentStore(filename))
+      const firstSocket = mockSocket()
+      await firstSessions.handleMessage(firstSocket.socket, {
+        type: 'register', sessionId: first.id, token: first.token
+      })
+      await firstSessions.handleMessage(firstSocket.socket, {
+        type: 'persist_document',
+        id: 'save-1',
+        document: { name: 'Landing.fig', data: 'AQIDBA==' }
+      })
+      expect(JSON.parse(String(firstSocket.send.mock.calls.at(-1)?.[0])))
+        .toMatchObject({ type: 'persisted', id: 'save-1' })
+      firstSessions.close()
+
+      const restoredSessions = createBrowserSessions()
+      const resolveStore = vi.fn(async () => createDesignDocumentStore(filename))
+      const restored = restoredSessions.prepare('session-a', resolveStore)
+      expect(resolveStore).not.toHaveBeenCalled()
+      const restoredSocket = mockSocket()
+      await restoredSessions.handleMessage(restoredSocket.socket, {
+        type: 'register', sessionId: restored.id, token: restored.token
+      })
+      expect(JSON.parse(String(restoredSocket.send.mock.calls[0]?.[0]))).toMatchObject({
+        type: 'registered',
+        sessionId: 'session-a',
+        persistence: true,
+        document: { name: 'Landing.fig', data: 'AQIDBA==' }
+      })
+      expect(resolveStore).toHaveBeenCalledOnce()
+
+      const otherSessions = createBrowserSessions()
+      const other = otherSessions.prepare(
+        'session-b',
+        async () => createDesignDocumentStore(join(root, 'session-b', 'starweave-design.json'))
+      )
+      const otherSocket = mockSocket()
+      await otherSessions.handleMessage(otherSocket.socket, {
+        type: 'register', sessionId: other.id, token: other.token
+      })
+      expect(JSON.parse(String(otherSocket.send.mock.calls[0]?.[0]))).not.toHaveProperty('document')
+      restoredSessions.close()
+      otherSessions.close()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 
 describe('StarWeave Design MCP tools', () => {
+  it('routes shared style operations through the current session', async () => {
+    const callbacks = toolCallbacks()
+    const sendRPC = vi.fn()
+      .mockResolvedValueOnce({ ok: true, result: { documents: [{ id: 'design-session', active: true }] } })
+      .mockResolvedValueOnce({ ok: true, result: { style_id: '0:10' } })
+    registerDesignTools(callbacks.server, sendRPC, 'design-session')
+    const args = { action: 'create', kind: 'fill', node_id: '0:3', name: 'Brand' }
+    await callbacks.get('shared_style')?.(args)
+    expect(sendRPC).toHaveBeenLastCalledWith('design-session', 'shared_style', args)
+  })
+
+  it('returns PDF exports as MCP resources while preserving image exports', async () => {
+    const callbacks = toolCallbacks()
+    const sendRPC = vi.fn(async (_session: string, command: string, args: any) => command === 'list_documents'
+      ? { ok: true, result: { documents: [{ id: 'design-session', active: true }] } }
+      : { ok: true, result: { base64: 'AQIDBA==', mimeType: args.name === 'export_pdf' ? 'application/pdf' : 'image/png' } })
+    registerDesignTools(callbacks.server, sendRPC, 'design-session')
+    expect(await callbacks.get('export_pdf')?.({})).toMatchObject({ content: [{
+      type: 'resource', resource: { mimeType: 'application/pdf', blob: 'AQIDBA==' }
+    }] })
+    expect(await callbacks.get('export_image')?.({})).toMatchObject({ content: [{
+      type: 'image', mimeType: 'image/png', data: 'AQIDBA=='
+    }] })
+  })
+
+  it('exposes every official non-eval canvas tool and session-scoped history commands', () => {
+    const callbacks = toolCallbacks()
+    registerDesignTools(callbacks.server, vi.fn(), 'design-session')
+    expect([...callbacks.keys()].sort()).toEqual([
+      ...ALL_TOOLS.filter(tool => tool.name !== 'eval').map(tool => tool.name),
+      'list_documents', 'get_codegen_prompt', 'undo', 'redo', 'shared_style'
+    ].sort())
+  })
+
   it('does not expose file lifecycle or eval tools to the Agent', () => {
     const callbacks = toolCallbacks()
     registerDesignTools(callbacks.server, vi.fn(), 'design-session')
@@ -153,6 +244,19 @@ function initializeRequest(): Request {
       params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } }
     })
   })
+}
+
+function mockSocket(): { socket: WebSocket; send: ReturnType<typeof vi.fn> } {
+  const send = vi.fn()
+  return {
+    send,
+    socket: {
+      OPEN: WebSocket.OPEN,
+      readyState: WebSocket.OPEN,
+      send,
+      close: vi.fn()
+    } as unknown as WebSocket
+  }
 }
 
 function rejectedUpgrade(url: string, origin: string): Promise<number> {

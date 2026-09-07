@@ -1,8 +1,9 @@
 import { shallowReactive } from 'vue'
-import { createEditor, type Editor } from '@open-pencil/core/editor'
-import { BUILTIN_IO_FORMATS, IORegistry } from '@open-pencil/core/io'
+import type { Editor } from '@open-pencil/core/editor'
 
 import { startBridge } from './bridge.ts'
+import { createSessionEditor, decodeSessionDocument, documentIO } from './session-document.ts'
+import { finishVectorEdit } from './vector-edit/adapter.ts'
 
 export interface DesignConnection {
   baseUrl: string
@@ -32,11 +33,13 @@ export interface DesignSession {
   mounts: number
   stopBridge?: () => void
   editorCleanup?: () => void
+  persistNow?: () => Promise<void>
+  schedulePersistence?: () => void
+  restoreDocument?: (name: string, data: string) => Promise<void>
+  persistenceError: string
 }
 
 const sessions = new Map<string, DesignSession>()
-export const documentIO = new IORegistry(BUILTIN_IO_FORMATS)
-
 export function acquireSession(connection: DesignConnection): DesignSession {
   let session = sessions.get(connection.sessionId)
   if (!session) {
@@ -47,9 +50,12 @@ export function acquireSession(connection: DesignConnection): DesignSession {
       revision: 0,
       bridgePhase: 'disconnected',
       bridgeDetail: '请先新建或打开文档',
-      mounts: 0
+      mounts: 0,
+      persistenceError: ''
     })
     sessions.set(connection.sessionId, session)
+    session.restoreDocument = (name, data) => restoreSessionDocument(session!, name, data)
+    createBlankDocument(session)
   } else {
     session.connection = connection
   }
@@ -61,14 +67,31 @@ export function acquireSession(connection: DesignConnection): DesignSession {
 export function releaseSession(session: DesignSession): void {
   session.mounts = Math.max(0, session.mounts - 1)
   if (session.mounts > 0) return
-  session.stopBridge?.()
-  session.stopBridge = undefined
-  session.bridgePhase = 'disconnected'
-  session.bridgeDetail = session.document ? '画布未显示，Agent 已断开' : '请先新建或打开文档'
+  if (session.document) finishVectorEdit(session.document.editor)
+  const bridge = session.stopBridge
+  const disconnect = (): void => {
+    if (session.mounts > 0 || session.stopBridge !== bridge) return
+    bridge?.()
+    session.stopBridge = undefined
+    session.bridgePhase = 'disconnected'
+    session.bridgeDetail = session.document ? '画布未显示，Agent 已断开' : '请先新建或打开文档'
+  }
+  // Flush the debounce before closing the socket. A quick session switch must
+  // not discard the last manual edit and then restore an older snapshot.
+  if (session.bridgePhase === 'connected' && session.persistNow) {
+    void session.persistNow().catch(error => {
+      session.persistenceError = `会话设计保存失败：${error instanceof Error ? error.message : String(error)}`
+    }).finally(disconnect)
+  } else disconnect()
 }
 
 export function createBlankDocument(session: DesignSession): void {
-  setDocument(session, createEditor(), '未命名.fig', undefined, -1)
+  setDocument(session, createSessionEditor(), '未命名.fig', undefined, -1)
+}
+
+export async function restoreSessionDocument(session: DesignSession, name: string, data: string): Promise<void> {
+  const restored = await decodeSessionDocument(name, data)
+  setDocument(session, restored.editor, restored.name, undefined, -1, false)
 }
 
 export async function openDocument(
@@ -81,17 +104,17 @@ export async function openDocument(
     mimeType: file.type,
     data: new Uint8Array(await file.arrayBuffer())
   })
-  const editor = createEditor({ graph: imported.graph })
+  const editor = createSessionEditor(imported.graph)
   const name = imported.sourceFormat === 'fig'
     ? file.name
     : `${file.name.replace(/\.[^.]+$/u, '')}.fig`
   setDocument(session, editor, name, imported.sourceFormat === 'fig' ? handle : undefined, editor.state.sceneVersion)
-  queueMicrotask(() => editor.zoomToFit())
 }
 
 export async function saveDocument(session: DesignSession): Promise<'saved' | 'cancelled'> {
   const designDocument = session.document
   if (!designDocument) throw new Error('没有可保存的设计文档')
+  finishVectorEdit(designDocument.editor)
   const output = await documentIO.writeDocument('fig', designDocument.editor.graph, {
     thumbnailPageId: designDocument.editor.state.currentPageId,
     renderThumbnail: false
@@ -137,11 +160,15 @@ function setDocument(
   editor: Editor,
   name: string,
   handle: WritableFileHandle | undefined,
-  savedVersion: number
+  savedVersion: number,
+  persist = true
 ): void {
   session.editorCleanup?.()
   const stops = [
-    editor.onEditorEvent('render:requested', () => { session.revision += 1 }),
+    editor.onEditorEvent('render:requested', () => {
+      session.revision += 1
+      session.schedulePersistence?.()
+    }),
     editor.onEditorEvent('repaint:requested', () => { session.revision += 1 }),
     editor.onEditorEvent('selection:changed', () => { session.revision += 1 }),
     editor.onEditorEvent('tool:changed', () => { session.revision += 1 }),
@@ -151,6 +178,7 @@ function setDocument(
   session.document = shallowReactive({ editor, name, handle, savedVersion })
   session.generation += 1
   session.revision += 1
+  if (persist) session.schedulePersistence?.()
   if (session.mounts > 0 && !session.stopBridge) session.stopBridge = startBridge(session)
 }
 

@@ -5,44 +5,26 @@ export interface DesignSessionState {
 }
 
 export interface DesignSessionModeHooks {
-  prepare: (sessionId: string) => void
-  registerView: () => () => void
-  registerDock: () => () => void
+  registerSplit: () => () => void
 }
 
 export function createDesignSessionMode(hooks: DesignSessionModeHooks) {
-  const prepared = new Set<string>()
-  let disposeView: (() => void) | undefined
-  let disposeDock: (() => void) | undefined
+  let disposeSplit: (() => void) | undefined
 
   const sync = (session: DesignSessionState | undefined): void => {
-    if (!session?.design) {
-      disposeView?.()
-      disposeDock?.()
-      disposeView = undefined
-      disposeDock = undefined
+    if (!session?.design || session.blank) {
+      disposeSplit?.()
+      disposeSplit = undefined
       return
     }
-    if (!prepared.has(session.id)) {
-      prepared.add(session.id)
-      hooks.prepare(session.id)
-    }
-    disposeView ??= hooks.registerView()
-    if (session.blank) {
-      disposeDock ??= hooks.registerDock()
-    } else if (disposeDock) {
-      disposeDock()
-      disposeDock = undefined
-    }
+    disposeSplit ??= hooks.registerSplit()
   }
 
   return {
     sync,
     dispose: (): void => {
-      disposeView?.()
-      disposeDock?.()
-      disposeView = undefined
-      disposeDock = undefined
+      disposeSplit?.()
+      disposeSplit = undefined
     }
   }
 }
