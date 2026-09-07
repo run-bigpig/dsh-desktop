@@ -27,7 +27,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/update"
 )
 
-const desktopPluginVersion = "0.1.102"
+const desktopPluginVersion = "0.1.107"
 const maxPluginArchiveBytes int64 = 64 << 20
 
 var bundledPackageDirectories = []string{
@@ -827,6 +827,9 @@ func (m *Manager) commandEnvironment(home string) []string {
 		}
 	}
 	binDirs := []string{filepath.Dir(m.tools.Node), filepath.Dir(m.tools.PNPM)}
+	if m.tools.UV != "" {
+		binDirs = append(binDirs, filepath.Dir(m.tools.UV))
+	}
 	if m.tools.Git != "" {
 		binDirs = append(binDirs, filepath.Dir(m.tools.Git))
 	}

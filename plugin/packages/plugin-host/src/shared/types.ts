@@ -129,6 +129,12 @@ export type McpServerUpsertRequest = McpStdioUpsertRequest | McpHttpUpsertReques
 
 export interface McpSystemUpdateRequest {
   readonly serverName: string
+  readonly transport?: 'stdio' | 'streamable-http'
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env?: Readonly<Record<string, string>>
+  readonly cwd?: string
+  readonly enabled?: boolean
   readonly url?: string
   readonly headers?: Readonly<Record<string, string>>
   readonly toolCallTimeoutMs: number

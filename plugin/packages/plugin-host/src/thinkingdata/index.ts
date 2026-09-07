@@ -68,7 +68,7 @@ export class ThinkingDataGateway extends TypertRemoteService {
     return this.enqueue(async () => {
       const tokenConfigured = (await this.ctx.credentials.describe(TOKEN_REF)).configured
       return {
-        enabled: true,
+        enabled: this.ctx.mcpSettings.systemEnabled(THINKINGDATA_SERVER_NAME),
         url: this.document.url,
         effectiveUrl: effectiveThinkingDataUrl(this.document.url),
         tokenConfigured,
@@ -80,16 +80,20 @@ export class ThinkingDataGateway extends TypertRemoteService {
   @Remote('save')
   save(request: ThinkingDataSaveRequest): Promise<{ readonly ok: true }> {
     return this.enqueue(async () => {
-      if (typeof request.url !== 'string') {
+      if (typeof request.url !== 'string' || typeof request.enabled !== 'boolean') {
         throw new Error('thinkingdata: invalid settings request')
       }
       validateThinkingDataUrl(request.url)
       const token = request.token?.trim()
       if (token !== undefined && token.length > 0) await this.ctx.credentials.set(TOKEN_REF, token)
-      const next = { version: 1 as const, enabled: true, url: request.url.trim() }
+      const next = { version: 1 as const, enabled: request.enabled, url: request.url.trim() }
       await this.persist(next)
       this.document = next
       await this.syncConnection()
+      await this.ctx.mcpSettings.updateSystem({
+        serverName: THINKINGDATA_SERVER_NAME, enabled: request.enabled,
+        toolCallTimeoutMs: THINKINGDATA_TOOL_TIMEOUT_MS, failOnStartupError: false,
+      })
       return { ok: true }
     })
   }
@@ -107,6 +111,7 @@ export class ThinkingDataGateway extends TypertRemoteService {
   }
 
   private phase(tokenConfigured: boolean): ThinkingDataConnectionPhase {
+    if (!this.ctx.mcpSettings.systemEnabled(THINKINGDATA_SERVER_NAME)) return 'disabled'
     if (!tokenConfigured) return 'missing-token'
     const phase = this.ctx.mcpSettings.systemPhase(THINKINGDATA_SERVER_NAME)
     if (phase === null) return 'pending'
@@ -122,7 +127,7 @@ export class ThinkingDataGateway extends TypertRemoteService {
     await this.ctx.mcpSettings.setSystem({
       transport: 'streamable-http',
       serverName: THINKINGDATA_SERVER_NAME,
-      enabled: true,
+      enabled: this.document.enabled,
       url: effectiveThinkingDataUrl(this.document.url),
       headers: token === undefined || token.length === 0 ? {} : { Authorization: `Bearer ${token}` },
       toolCallTimeoutMs: THINKINGDATA_TOOL_TIMEOUT_MS,

@@ -41,7 +41,7 @@ async function chooseFile(): Promise<void> {
     const [handle] = await window.showOpenFilePicker({
       multiple: false,
       types: [{
-        description: 'OpenPencil Documents',
+        description: 'StarWeave 设计文档',
         accept: { 'application/octet-stream': ['.fig'], 'application/json': ['.pen'] }
       }]
     })

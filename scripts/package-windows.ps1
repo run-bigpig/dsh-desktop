@@ -61,7 +61,7 @@ if ($desktopManifest.executableSHA256 -ne $desktopHash) {
 if (-not (Test-Path (Join-Path $stage "resources/toolchain/node/node.exe"))) {
   throw "Windows stage is missing embedded Node"
 }
-foreach ($requiredToolchainFile in "node/LICENSE","node/node.exe","pnpm/pnpm.exe","pnpm/dist/pnpm.mjs","pnpm/dist/pnpmrc","pnpm/dist/worker.js") {
+foreach ($requiredToolchainFile in "node/LICENSE","node/node.exe","pnpm/pnpm.exe","pnpm/dist/pnpm.mjs","pnpm/dist/pnpmrc","pnpm/dist/worker.js","uv/uv.exe","uv/uvx.exe","uv/uvw.exe","uv/LICENSE-MIT","uv/LICENSE-APACHE") {
   if (-not (Test-Path (Join-Path $stage ("resources/toolchain/" + $requiredToolchainFile)))) {
     throw "Windows stage is missing runtime toolchain file: $requiredToolchainFile"
   }

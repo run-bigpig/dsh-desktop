@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useState, useSyncExternalStore, type ReactNode } from 'react'
+import { useEffect, useLayoutEffect, useMemo, useRef, useState, useSyncExternalStore, type ReactNode } from 'react'
 import {
   IconCloseOutline16,
   IconFolderClose16,
@@ -169,6 +169,54 @@ export function WorkbenchDrawer({
   const current = useSessions(state => state.current)
   const summary = useSessions(state => current === undefined ? undefined : state.byId[current])
   const sessionId = current === undefined ? undefined : String(current)
+  const [width, setWidth] = useState(readWorkbenchWidth)
+  const [resizing, setResizing] = useState(false)
+  const drawerRef = useRef<HTMLElement>(null)
+  const resizeStart = useRef({ x: 0, width: 0 })
+  const changeWidth = (next: number): void => {
+    const value = Math.max(360, Math.min(1200, next))
+    setWidth(value)
+    try { localStorage.setItem(WORKBENCH_WIDTH_KEY, String(value)) } catch { /* Storage may be unavailable. */ }
+  }
+  useEffect(() => {
+    if (open) openDetails()
+  }, [open, openDetails, sessionId])
+
+  useLayoutEffect(() => {
+    if (!open || summary?.blank !== false) return
+    // Extend only the active details occupant's geometry, like desktop chrome.
+    // Harness still owns the frame, panel visibility and session lifecycle.
+    let frame = drawerRef.current?.parentElement
+    while (frame && !frame.querySelector(':scope > [data-shell-overlay]')) frame = frame.parentElement
+    if (!frame) return
+    const root = frame
+    const syncWidth = (): void => {
+      const sidebar = Number.parseFloat(root.style.gridTemplateColumns)
+      if (!Number.isFinite(sidebar)) return
+      const available = root.getBoundingClientRect().width - sidebar
+      const target = Math.min(width, Math.max(0, available - 400))
+      for (const [key, value] of [
+        ['--starweave-workbench-sidebar', `${sidebar}px`],
+        ['--starweave-workbench-width', `${target}px`],
+      ] as const) {
+        if (root.style.getPropertyValue(key) !== value) root.style.setProperty(key, value)
+      }
+    }
+    root.classList.add(css.workbenchFrame!)
+    syncWidth()
+    const size = new ResizeObserver(syncWidth)
+    size.observe(root)
+    const geometry = new MutationObserver(syncWidth)
+    geometry.observe(root, { attributes: true, attributeFilter: ['style'] })
+    return () => {
+      size.disconnect()
+      geometry.disconnect()
+      root.classList.remove(css.workbenchFrame!)
+      root.style.removeProperty('--starweave-workbench-sidebar')
+      root.style.removeProperty('--starweave-workbench-width')
+    }
+  }, [open, width, sessionId, summary?.blank])
+
   const [tab, setTab] = useState<WorkbenchTab>('files')
   const [git, setGit] = useState<GitLoadState>({ phase: 'idle' })
   const currentGitActions = useMemo(
@@ -179,10 +227,6 @@ export function WorkbenchDrawer({
   useEffect(() => {
     setTab(imageIntent?.sessionId === sessionId ? 'image' : 'files')
   }, [imageIntent, sessionId])
-
-  useEffect(() => {
-    if (open) openDetails()
-  }, [open, openDetails, sessionId])
 
   useEffect(() => {
     if (!open || currentGitActions === undefined) {
@@ -208,10 +252,46 @@ export function WorkbenchDrawer({
     if (!gitVisible && tab === 'git') setTab('files')
   }, [gitVisible, tab])
 
-  if (!open) return null
+  if (!open || current === undefined || summary?.blank !== false) return null
 
   return (
-    <aside className={css.drawer} aria-label={t('title')}>
+    <aside ref={drawerRef} className={css.drawer} data-workbench-resizing={resizing || undefined} aria-label={t('title')}>
+      <div
+        className={css.drawerResize}
+        role="separator"
+        aria-label={t('resizeWorkbench')}
+        aria-orientation="vertical"
+        aria-valuemin={360}
+        aria-valuemax={1200}
+        aria-valuenow={width}
+        tabIndex={0}
+        onDoubleClick={() => { changeWidth(800) }}
+        onKeyDown={event => {
+          if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return
+          event.preventDefault()
+          changeWidth(event.key === 'Home' ? 800 : width + (event.key === 'ArrowLeft' ? 40 : -40))
+        }}
+        onPointerDown={event => {
+          if (event.button !== 0) return
+          event.preventDefault()
+          resizeStart.current = { x: event.clientX, width: (event.currentTarget.closest('[data-slot="details"]')?.parentElement ?? event.currentTarget.parentElement)!.getBoundingClientRect().width }
+          event.currentTarget.setPointerCapture(event.pointerId)
+          setResizing(true)
+        }}
+        onPointerMove={event => {
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+            changeWidth(resizeStart.current.width + resizeStart.current.x - event.clientX)
+          }
+        }}
+        onPointerUp={event => {
+          setResizing(false)
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+        }}
+        onPointerCancel={event => {
+          setResizing(false)
+          if (event.currentTarget.hasPointerCapture(event.pointerId)) event.currentTarget.releasePointerCapture(event.pointerId)
+        }}
+      />
       <header className={css.header}>
         <div className={css.headingGroup}>
           <h2>{t('title')}</h2>
@@ -293,6 +373,16 @@ export function WorkbenchDrawer({
       </section>
     </aside>
   )
+}
+
+const WORKBENCH_WIDTH_KEY = 'starweave-workbench-width-v1'
+
+function readWorkbenchWidth(): number {
+  try {
+    const width = Number(localStorage.getItem(WORKBENCH_WIDTH_KEY))
+    if (Number.isFinite(width) && width >= 360 && width <= 1200) return width
+  } catch { /* Use the default when storage is unavailable. */ }
+  return 800
 }
 
 const ignorePreviewVisibility = (): void => undefined

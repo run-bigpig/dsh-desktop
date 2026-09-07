@@ -73,6 +73,11 @@ function Test-VerifiedSeedLayout([string]$Root) {
     "resources/toolchain/pnpm/dist/pnpm.mjs",
     "resources/toolchain/pnpm/dist/pnpmrc",
     "resources/toolchain/pnpm/dist/worker.js",
+    "resources/toolchain/uv/uv.exe",
+    "resources/toolchain/uv/uvx.exe",
+    "resources/toolchain/uv/uvw.exe",
+    "resources/toolchain/uv/LICENSE-MIT",
+    "resources/toolchain/uv/LICENSE-APACHE",
     ("resources/seed/source/" + $seedLock.commit + "/" + $seedLock.cliEntry),
     "resources/plugin/plugin-host/package.json",
     "resources/plugin/plugin-host/lib/design.js",
@@ -169,6 +174,14 @@ foreach ($artifact in $toolLock.artifacts) {
       if (-not $pnpmExe) { throw "pnpm.exe missing from locked archive" }
       if ($pnpmExe.DirectoryName -ne $pnpmDir) { Copy-Item -Force $pnpmExe.FullName (Join-Path $pnpmDir "pnpm.exe") }
     }
+    "uv" {
+      $uvDir = Join-Path $tools "uv"
+      New-Item -ItemType Directory -Force $uvDir | Out-Null
+      Expand-Archive -Force $archive $uvDir
+      foreach ($entry in "uv.exe","uvx.exe","uvw.exe") {
+        if (-not (Test-Path (Join-Path $uvDir $entry))) { throw "$entry missing from locked uv archive" }
+      }
+    }
     "git" {
       $gitDir = Join-Path $tools "git"
       $extractExitCode = -1
@@ -189,11 +202,13 @@ $node = Join-Path $tools "node/node.exe"
 $pnpm = Join-Path $tools "pnpm/pnpm.exe"
 $pnpmScript = Join-Path $tools "pnpm/dist/pnpm.mjs"
 $git = Join-Path $tools "git/cmd/git.exe"
-foreach ($required in $node,$pnpm,$pnpmScript,$git) {
+$uv = Join-Path $tools "uv/uv.exe"
+foreach ($required in $node,$pnpm,$pnpmScript,$git,$uv) {
   if (-not (Test-Path $required)) { throw "Missing embedded tool: $required" }
 }
 if ((& $node --version).TrimStart('v') -ne $seedLock.node) { throw "Embedded Node version mismatch" }
 if ((& $node $pnpmScript --version) -ne $seedLock.pnpm) { throw "Embedded pnpm version mismatch" }
+if ((& $uv --version).Split(' ')[1] -ne $seedLock.uv) { throw "Embedded uv version mismatch" }
 $lockedGit = $toolLock.artifacts | Where-Object { $_.name -eq "git" -and $_.platform -eq "windows" -and $_.architecture -eq "x64" } | Select-Object -First 1
 if (-not $lockedGit -or ((& $git --version).Trim() -ne ("git version " + $lockedGit.version))) { throw "Embedded Git version mismatch" }
 
@@ -543,6 +558,10 @@ New-Item -ItemType Directory -Force $runtimeNode | Out-Null
 Copy-Item -Force $node (Join-Path $runtimeNode "node.exe")
 Copy-Item -Force (Join-Path $tools "node/LICENSE") (Join-Path $runtimeNode "LICENSE")
 Copy-Item -Recurse -Force (Join-Path $tools "pnpm") (Join-Path $runtimeTools "pnpm")
+Copy-Item -Recurse -Force (Join-Path $tools "uv") (Join-Path $runtimeTools "uv")
+foreach ($license in "LICENSE-MIT","LICENSE-APACHE") {
+  Copy-Item -Force (Join-Path $repoRoot "build/licenses/uv/$license") (Join-Path $runtimeTools "uv/$license")
+}
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
 $finalSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
 if ($finalSeedFingerprint -ne $sourceSeedFingerprint) {
@@ -556,6 +575,7 @@ Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
   ref = $seedLock.ref
   node = $seedLock.node
   pnpm = $seedLock.pnpm
+  uv = $seedLock.uv
   pluginVersion = $pluginVersion
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })

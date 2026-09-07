@@ -11,6 +11,12 @@ tasks:
     cmds:
       - go test ./internal/appconfig ./internal/state ./internal/runtime ./internal/update ./internal/selfupdate ./internal/logging ./internal/backup ./internal/seed
 
+  test:windows:
+    desc: Run all desktop and built-in plugin manager Go tests on Windows
+    platforms: [windows]
+    cmds:
+      - go test ./internal/...
+
   build:windows:
     desc: Build and fingerprint the production Windows x64 desktop executable
     platforms: [windows]

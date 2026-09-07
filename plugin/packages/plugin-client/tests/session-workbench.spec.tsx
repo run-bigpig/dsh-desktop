@@ -6,6 +6,8 @@ import {
   HARNESS_FILE_REFERENCE_SOURCE,
   WorkbenchController,
   WorkbenchLauncher,
+  WorkbenchDrawer,
+  type WorkbenchDrawerProps,
   WORKSPACE_DRAG_MIME,
   WorkspaceReferenceDropDock,
   type WorkbenchLauncherProps,
@@ -14,7 +16,7 @@ import {
 } from '../src/client/workbench/SessionWorkbench.tsx'
 import { workbenchEn, workbenchZh } from '../src/client/locales.ts'
 
-afterEach(() => { cleanup() })
+afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function translate(key: keyof typeof workbenchEn): string {
   return workbenchEn[key]
@@ -85,4 +87,40 @@ describe('session workbench file references', () => {
     })
     expect(controller.getDrag()).toBeNull()
   })
+})
+
+vi.mock('../src/client/workbench/WorkspaceWorkbench.tsx', () => ({ WorkspaceWorkbench: () => <div>Document preview</div> }))
+
+it('opens a wider workbench, remembers manual width and hides on a blank session', () => {
+  localStorage.clear()
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 1800 } as DOMRect)
+  const controller = new WorkbenchController()
+  controller.toggle()
+  let state = { current: 'session-1', byId: { 'session-1': { blank: false, cwd: '/workspace' } } }
+  const props = {
+    controller,
+    openDetails: vi.fn(),
+    useSessions: (selector: (value: typeof state) => unknown) => selector(state),
+    gitActions: () => ({ snapshot: () => new Promise(() => {}) }),
+    t: translate,
+  } as unknown as WorkbenchDrawerProps
+  const frame = () => <div data-testid="frame" style={{ gridTemplateColumns: '280px minmax(0, 1fr) 360px' }}><div /><div /><div data-slot="details"><WorkbenchDrawer {...props} /></div><div data-shell-overlay /></div>
+  const view = render(frame())
+  const root = view.getByTestId('frame')
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('800px')
+  expect(view.getByRole('complementary').closest('[data-slot="details"]')).not.toBeNull()
+  const separator = view.getByRole('separator', { name: workbenchEn.resizeWorkbench })
+  fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('840px')
+  view.unmount()
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('')
+  const reopened = render(frame())
+  expect(reopened.getByTestId('frame').style.getPropertyValue('--starweave-workbench-width')).toBe('840px')
+  fireEvent.doubleClick(reopened.getByRole('separator'))
+  expect(reopened.getByTestId('frame').style.getPropertyValue('--starweave-workbench-width')).toBe('800px')
+  state = { ...state, byId: { 'session-1': { blank: true, cwd: '/workspace' } } }
+  reopened.rerender(frame())
+  expect(reopened.queryByRole('complementary')).toBeNull()
+  localStorage.clear()
 })

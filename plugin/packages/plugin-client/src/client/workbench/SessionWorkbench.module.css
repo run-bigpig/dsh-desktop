@@ -41,6 +41,7 @@
 
 .drawer {
   position: relative;
+  box-sizing: border-box;
   display: grid;
   grid-template-rows: auto auto minmax(0, 1fr);
   width: 100%;
@@ -50,6 +51,20 @@
   overflow: hidden;
   background: var(--dsw-alias-bg-base);
   color: var(--dsw-alias-label-primary);
+}
+
+/* The workbench replaces details through its native slot. Limit this sizing
+   override to its mounted lifetime; the official frame still controls collapse. */
+.workbenchFrame:not([data-details-collapsed]) {
+  grid-template-columns: var(--starweave-workbench-sidebar) minmax(0, 1fr) var(--starweave-workbench-width) !important;
+}
+
+.workbenchFrame:has([data-workbench-resizing]) {
+  transition: none;
+}
+
+.workbenchFrame > [data-side='details'] {
+  display: none;
 }
 
 .header {
@@ -422,4 +437,19 @@
     width: calc(100vw - 72px);
     min-width: 0;
   }
+}
+
+.drawerResize {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.drawerResize:hover,
+.drawerResize:focus-visible {
+  background: var(--dsw-alias-state-business-primary);
+  outline: none;
 }

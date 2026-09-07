@@ -216,7 +216,7 @@ async function execute(session: DesignSession, command: string, args: unknown): 
   if (envelope.document_id !== session.connection.sessionId) throw new Error('Agent 只能操作当前设计会话的文档')
   const name = typeof envelope.name === 'string' ? envelope.name : ''
   const definition = ALL_TOOLS.find(tool => tool.name === name)
-  if (!definition) throw new Error(`Unknown OpenPencil tool: ${name}`)
+  if (!definition) throw new Error(`Unknown StarWeave design tool: ${name}`)
   const toolArgs = record(envelope.args)
   const editor = document.editor
   const pageId = typeof envelope.page_id === 'string' ? envelope.page_id : editor.state.currentPageId
@@ -314,7 +314,7 @@ function assertMutationApplied(
     ...(Array.isArray(value.siblings) ? value.siblings.map(item => record(item).id as string) : [])
   ].filter((id): id is string => id !== undefined)
   for (const id of ids) {
-    if (!editor.graph.getNode(id)) throw new Error(`OpenPencil mutation did not commit node "${id}"`)
+    if (!editor.graph.getNode(id)) throw new Error(`StarWeave design mutation did not commit node "${id}"`)
   }
   return ids
 }

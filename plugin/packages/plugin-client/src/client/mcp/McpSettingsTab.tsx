@@ -33,6 +33,7 @@ type Draft = {
   transport: 'stdio' | 'streamable-http'
   command: string
   argsText: string
+  cwd: string
   envText: string
   url: string
   headersText: string
@@ -43,7 +44,7 @@ type Draft = {
 type Editor = null | 'create' | { serverName: string }
 
 const EMPTY_DRAFT: Draft = {
-  serverName: '', enabled: true, transport: 'stdio', command: '', argsText: '', envText: '', url: '', headersText: '',
+  serverName: '', enabled: true, transport: 'stdio', command: '', argsText: '', cwd: '', envText: '', url: '', headersText: '',
   toolCallTimeoutMs: '60000', failOnStartupError: false,
 }
 const SETTLING = new Set<McpServerFiberPhase>(['pending', 'loading', 'unloading'])
@@ -127,7 +128,7 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
     ? state.snapshot.servers.find(server => server.serverName === editing.serverName)
     : undefined
   const editingSystem = editingServer?.origin === 'system'
-  const editingSystemConnection = editingSystem && editingServer.serverName === 'ta-mcp-server'
+  const runtimeManaged = editingSystem && editingServer.serverName === 'starweave-design'
 
   return (
     <section className={css.section} aria-busy={state.status === 'loading' || saving || removing}>
@@ -195,7 +196,6 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
           {editing !== null ? (
             <form className={css.form} onSubmit={event => { void submit(event) }}>
               <h4>{editing === 'create' ? t('add') : t('edit')}</h4>
-              {editingSystem ? <p className={css.hint}>{t('systemHint')}</p> : null}
               <div className={css.formGrid}>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-name`}>{t('serverName')}</label>
@@ -203,20 +203,21 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
                 </div>
                 <div className={css.field}>
                   <label htmlFor={`${formId}-transport`}>{t('transport')}</label>
-                  <select id={`${formId}-transport`} disabled={editingSystem} value={draft.transport} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, transport: value === 'streamable-http' ? 'streamable-http' : 'stdio' })) }}>
+                  <select id={`${formId}-transport`} disabled={runtimeManaged} value={draft.transport} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, transport: value === 'streamable-http' ? 'streamable-http' : 'stdio' })) }}>
                     <option value="stdio">{t('transportStdio')}</option><option value="streamable-http">{t('transportHttp')}</option>
                   </select>
                 </div>
                 {draft.transport === 'stdio' ? (
                   <>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-command`}>{t('command')}</label><input id={`${formId}-command`} disabled={editingSystem} required value={draft.command} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, command: value })) }} /></div>
-                    <div className={css.field}><label htmlFor={`${formId}-args`}>{t('args')}</label><textarea id={`${formId}-args`} disabled={editingSystem} value={draft.argsText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, argsText: value })) }} /></div>
-                    <div className={css.field}><label htmlFor={`${formId}-env`}>{t('env')}</label><textarea id={`${formId}-env`} disabled={editingSystem} value={draft.envText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, envText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-command`}>{t('command')}</label><input id={`${formId}-command`} disabled={runtimeManaged} required value={draft.command} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, command: value })) }} /></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-cwd`}>{t('cwd')}</label><input id={`${formId}-cwd`} disabled={runtimeManaged} value={draft.cwd} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, cwd: value })) }} /></div>
+                    <div className={css.field}><label htmlFor={`${formId}-args`}>{t('args')}</label><textarea id={`${formId}-args`} disabled={runtimeManaged} value={draft.argsText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, argsText: value })) }} /></div>
+                    <div className={css.field}><label htmlFor={`${formId}-env`}>{t('env')}</label><textarea id={`${formId}-env`} disabled={runtimeManaged} value={draft.envText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, envText: value })) }} /></div>
                   </>
                 ) : (
                   <>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} disabled={editingSystem && !editingSystemConnection} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
-                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} disabled={editingSystem && !editingSystemConnection} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /><p className={css.hint}>{t('secretHint')}</p></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-url`}>{t('url')}</label><input id={`${formId}-url`} disabled={runtimeManaged} type="url" required value={draft.url} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, url: value })) }} /></div>
+                    <div className={css.field} data-wide="true"><label htmlFor={`${formId}-headers`}>{t('headers')}</label><textarea id={`${formId}-headers`} disabled={runtimeManaged} value={draft.headersText} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, headersText: value })) }} /></div>
                   </>
                 )}
                 <div className={css.field}>
@@ -224,7 +225,7 @@ export function McpSettingsTab({ list, upsert, updateSystem, remove, t }: McpSet
                   <input id={`${formId}-timeout`} type="number" min="1" required value={draft.toolCallTimeoutMs} onChange={event => { const value = event.currentTarget.value; setDraft(current => ({ ...current, toolCallTimeoutMs: value })) }} />
                 </div>
               </div>
-              <label className={css.checkRow}><input type="checkbox" disabled={editingSystem} checked={editingSystem || draft.enabled} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, enabled: checked })) }} />{t('enabled')}</label>
+              <label className={css.checkRow}><input type="checkbox" disabled={runtimeManaged} checked={draft.enabled} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, enabled: checked })) }} />{t('enabled')}</label>
               <label className={css.checkRow}><input type="checkbox" checked={draft.failOnStartupError} onChange={event => { const checked = event.currentTarget.checked; setDraft(current => ({ ...current, failOnStartupError: checked })) }} />{t('failOnStartup')}</label>
               {formError !== null ? <p className={css.notice} data-kind="error" role="alert">{t(formError)}</p> : null}
               <div className={css.buttonGroup}>
@@ -252,6 +253,7 @@ function draftFrom(server: McpServerView): Draft {
     transport: server.transport,
     command: server.transport === 'stdio' ? server.command : '',
     argsText: server.transport === 'stdio' ? server.args.join('\n') : '',
+    cwd: server.transport === 'stdio' ? server.cwd : '',
     url: server.transport === 'streamable-http' ? server.url : '',
     toolCallTimeoutMs: String(server.toolCallTimeoutMs),
     failOnStartupError: server.failOnStartupError,
@@ -264,7 +266,7 @@ function toRequest(draft: Draft, previousName?: string): McpServerUpsertRequest 
     const env = parseKv(draft.envText)
     return {
       transport: 'stdio', serverName: draft.serverName.trim(), enabled: draft.enabled,
-      command: draft.command.trim(), args: draft.argsText.split('\n').map(line => line.trimEnd()).filter(Boolean),
+      cwd: draft.cwd.trim(), command: draft.command.trim(), args: draft.argsText.split('\n').map(line => line.trimEnd()).filter(Boolean),
       toolCallTimeoutMs: Number(draft.toolCallTimeoutMs), failOnStartupError: draft.failOnStartupError,
       ...rename, ...(env === undefined ? {} : { env }),
     }
@@ -278,14 +280,12 @@ function toRequest(draft: Draft, previousName?: string): McpServerUpsertRequest 
 }
 
 function toSystemRequest(draft: Draft): McpSystemUpdateRequest {
-  const headers = draft.serverName === 'ta-mcp-server' ? parseKv(draft.headersText) : undefined
-  return {
+  const tuning = {
     serverName: draft.serverName,
-    ...(draft.serverName === 'ta-mcp-server' ? { url: draft.url.trim() } : {}),
-    ...(headers === undefined ? {} : { headers }),
     toolCallTimeoutMs: Number(draft.toolCallTimeoutMs),
     failOnStartupError: draft.failOnStartupError,
   }
+  return draft.serverName === 'starweave-design' ? tuning : { ...toRequest(draft), ...tuning }
 }
 
 function parseKv(text: string): Record<string, string> | undefined {

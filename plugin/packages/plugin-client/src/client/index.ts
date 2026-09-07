@@ -1,4 +1,5 @@
 import { applyOpenAIOnboarding } from './openai-onboarding.tsx'
+import { applyModePicker } from './design/mode-picker.tsx'
 import type {} from '@deepseek-ai/dsh-client-locale/client'
 import type { Context as ClientContext } from '@deepseek-ai/cordis'
 import type { ConversationController } from '@deepseek-ai/dsh-client-ui-conversation/client'
@@ -226,6 +227,7 @@ async function discoverCapabilities(remote: DesktopRemote): Promise<DesktopCapab
 }
 
 export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
+  applyModePicker(ctx)
   const disposeRemote = await ctx.remote.$mount(desktopRemote)
   const remote = ctx.get('remote.desktop') as DesktopRemote | undefined
   if (remote === undefined) {

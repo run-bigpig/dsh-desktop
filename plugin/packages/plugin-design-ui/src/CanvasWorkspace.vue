@@ -45,7 +45,7 @@ onUnmounted(() => window.removeEventListener('mouseup', commitVectorGesture))
       class="design-canvas"
       tabindex="-1"
       :style="{ cursor }"
-      aria-label="OpenPencil 设计画布"
+      aria-label="StarWeave 设计画布"
     />
     <div v-if="isDraggingOver" class="canvas-drop" aria-hidden="true" />
   </div>

@@ -133,7 +133,7 @@ await writeFile(resolve(designPreset, 'agent.cordis.yml'), standardAgent.replace
 ].join('\n')))
 await writeFile(resolve(designPreset, 'preset.yml'), [
   'name: 设计模式',
-  'description: 在当前会话中使用 OpenPencil 画布进行界面设计。',
+  'description: 在当前会话中使用 StarWeave 画布进行界面设计。',
   'order: 2',
   '',
 ].join('\n'))
@@ -305,4 +305,6 @@ if (!await exists(resolve(output, 'plugin-host/skills/thinkingdata-analysis-orch
 if (await exists(resolve(output, 'web-tools'))) {
   throw new Error('standalone dsh-web-tools package must not be staged')
 }
+// Test the freshly copied overlay before its output can enter a verified seed cache.
+await run(process.execPath, [resolve(dirname(harnessRequire.resolve('vitest/package.json')), 'vitest.mjs'), 'run', 'packages/desktop'], harness)
 process.stdout.write(`Desktop integration package directories written to ${basename(output)}\n`)

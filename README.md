@@ -17,7 +17,7 @@ StarWeave 不 fork、复制或修改 Harness 作为本项目的应用源码，�
 ## 核心能力
 
 - **官方 Harness Web 界面**：直接加载固定提交构建出的官方 Web profile，不使用 iframe 或平行渲染器。
-- **独立运行环境**：安装包提供锁定的 Node 和完整 pnpm 运行时；安装及 Harness 启动不依赖系统 Node、npm、npx、pnpm 或 Git。
+- **独立运行环境**：安装包提供锁定的 Node、完整 pnpm 运行时和 uv 工具（含 uvx、uvw）；安装及 Harness 启动不依赖系统 Node、npm、npx、pnpm 或 Git。内置 uv 版本为 `0.12.10`，可在 Agent/MCP 子进程和 dsh 终端直接调用 `uv`、`uvx`，无需配置系统 PATH。
 - **严格的本地访问边界**：Harness 只监听 `127.0.0.1` 的随机端口；StarWeave 校验就绪 URL 和 `window.__DSH_BOOT__` 后才显示主界面。
 - **桌面生命周期管理**：支持单实例、启动过渡、托盘驻留、Harness 重启、日志访问、优雅关闭和完整进程树清理。
 - **可恢复的版本切换**：桌面发行版携带固定 Harness 版本；切换前备份 `harness-home`，新版本启动失败时自动恢复上一版本。
@@ -120,7 +120,7 @@ StarWeave 的默认私有数据目录为：
 ├─ plugin/                  内置插件发布数据
 ├─ pnpm-store/              跨安装和插件事务复用的 pnpm store
 ├─ state/                   当前版本、配置和 WebView2 数据
-├─ toolchain/               缓存的内置 Node/pnpm 工具链
+├─ toolchain/               缓存的内置 Node/pnpm/uv 工具链
 ├─ updates/                 桌面更新下载
 ├─ versions/                按完整 commit 保存的 Harness 运行时
 └─ workspaces/              默认工作目录
@@ -201,10 +201,18 @@ dist/windows/StarWeaveInstaller.exe.sha256
 
 发布流程会校验锁定下载、执行 Harness 官方 `pnpm install --frozen-lockfile` 与 `pnpm run build:official`、针对精确提交构建内置插件、执行启动冒烟检查，并确认发行内容不包含 PortableGit、npm/npx 或完整 Harness `node_modules`。
 
-GitHub Actions 的 [Windows Package](.github/workflows/windows-package.yml) 工作流支持手动构建；推送 `v*` 标签时会将安装器和 SHA-256 sidecar 发布到对应 GitHub Release。
+GitHub Actions 的 [Windows Package](.github/workflows/windows-package.yml) 工作流支持手动构建，版本留空时读取 `Taskfile.yml`；指定 `publish_tag` 时从该标签构建，并校验发布前标签提交未变化。推送 `v*` 标签时会将安装器和 SHA-256 sidecar 发布到对应 GitHub Release。流程运行 Windows 全部内部 Go 测试；插件构建后对刚同步的 Harness 插件副本运行完整测试，测试变化会使 seed 缓存失效。构建日志与校验清单作为独立诊断产物保存，发布前再次校验安装器 SHA-256。
 
 ## 相关项目与说明
 
 - [DeepSeek Harness](https://github.com/deepseek-ai/deepseek-harness)：StarWeave 加载的官方 Harness 项目。
 - [内置桌面插件说明](plugin/README.md)：host、client 和 bundle 三个包的构建关系。
 - [第三方许可声明](plugin/THIRD_PARTY_NOTICES.md)：内置插件分发涉及的第三方许可信息。
+
+### 默认 MCP
+
+`ta-mcp-server` 默认关闭，可在设置 → 插件 → MCP → 编辑中启用或关闭，状态在重启后保留。普通 MCP 与内置 TA、Blender 共用配置表单和校验；内置名称固定，传输方式、命令、参数、工作目录、环境变量或 HTTP 地址及请求头均可编辑。环境变量与请求头留空时保留已存值。
+
+预置 [Blender MCP](https://github.com/ahujasid/blender-mcp) `1.9.1`，默认关闭。首次启用时，内置 uv 下载受管理的 Python 3.11 和服务依赖，无需系统 Python。MCP 服务连接本机 `127.0.0.1:9876`，遥测默认关闭；Blender 应用本身不包含在安装包中。
+
+在 dsh 终端执行 `uvx --python 3.11 --from blender-mcp==1.9.1 blender-mcp install-addon` 安装官方 Blender 插件，然后在 Blender 中启用 **MCP for Blender**，在其侧栏点击 **Start MCP Server**。在 MCP 设置中编辑 Blender 条目即可启用或关闭服务。

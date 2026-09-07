@@ -6,10 +6,11 @@ import type {
   McpServerUpsertRequest,
   McpServerView,
   McpStdioServerView,
+  McpSystemUpdateRequest,
 } from '../shared/types.ts'
 
 export const MCP_CLIENT_MODULE = '@deepseek-ai/dsh-mcp-client'
-export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server', 'starweave-design'])
+export const RESERVED_MCP_SERVER_NAMES = new Set(['ta-mcp-server', 'starweave-design', 'blender'])
 const REMOVED_MCP_SERVER_NAMES = new Set(['openpencil-mcp'])
 
 const SERVER_NAME_PATTERN = /^[A-Za-z0-9_-]{1,32}$/
@@ -39,13 +40,7 @@ export interface McpHttpRecord {
 
 export type McpServerRecord = McpStdioRecord | McpHttpRecord
 
-export interface McpSystemOverride {
-  readonly serverName: string
-  readonly url?: string
-  readonly headers?: Readonly<Record<string, string>>
-  readonly toolCallTimeoutMs: number
-  readonly failOnStartupError: boolean
-}
+export type McpSystemOverride = McpSystemUpdateRequest
 
 export interface McpSettingsDocument {
   readonly version: 2
@@ -133,15 +128,7 @@ export function updateMcpSystemOverride(
 ): McpSettingsDocument {
   const serverName = parseServerName(override.serverName)
   const previous = document.systemOverrides.find(entry => entry.serverName === serverName)
-  const url = override.url === undefined ? previous?.url : requiredString(override.url, 'url')
-  const headers = override.headers === undefined ? previous?.headers : parseStringMap(override.headers, 'headers')
-  const next = {
-    serverName,
-    ...(url === undefined ? {} : { url }),
-    ...(headers === undefined ? {} : { headers }),
-    toolCallTimeoutMs: parsePositive(override.toolCallTimeoutMs, 'toolCallTimeoutMs'),
-    failOnStartupError: parseBoolean(override.failOnStartupError, 'failOnStartupError'),
-  }
+  const next = parseSystemOverrides([{ ...previous, ...override, serverName }])[0]!
   const exists = document.systemOverrides.some(entry => entry.serverName === serverName)
   return {
     ...document,
@@ -156,14 +143,10 @@ export function applyMcpSystemOverride(
   document: McpSettingsDocument,
 ): McpServerRecord {
   const override = document.systemOverrides.find(entry => entry.serverName === record.serverName)
-  return override === undefined ? record : {
+  return override === undefined ? record : mergeRecord(record, {
     ...record,
-    enabled: true,
-    ...(record.transport === 'streamable-http' && override.url !== undefined ? { url: override.url } : {}),
-    ...(record.transport === 'streamable-http' && override.headers !== undefined ? { headers: override.headers } : {}),
-    toolCallTimeoutMs: override.toolCallTimeoutMs,
-    failOnStartupError: override.failOnStartupError,
-  }
+    ...override,
+  } as McpServerUpsertRequest)
 }
 
 export function toMcpClientConfig(record: McpServerRecord): McpClientConfig {
@@ -274,9 +257,9 @@ export function viewCompositionConfig(
 }
 
 function mergeRecord(existing: McpServerRecord | undefined, request: McpServerUpsertRequest): McpServerRecord {
-  const enabled = request.enabled ?? existing?.enabled ?? true
-  const toolCallTimeoutMs = request.toolCallTimeoutMs ?? existing?.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS
-  const failOnStartupError = request.failOnStartupError ?? existing?.failOnStartupError ?? false
+  const enabled = parseBoolean(request.enabled ?? existing?.enabled ?? true, 'enabled')
+  const toolCallTimeoutMs = parsePositive(request.toolCallTimeoutMs ?? existing?.toolCallTimeoutMs ?? DEFAULT_TOOL_CALL_TIMEOUT_MS, 'toolCallTimeoutMs')
+  const failOnStartupError = parseBoolean(request.failOnStartupError ?? existing?.failOnStartupError ?? false, 'failOnStartupError')
   if (request.transport === 'stdio') {
     return {
       transport: 'stdio',
@@ -284,18 +267,19 @@ function mergeRecord(existing: McpServerRecord | undefined, request: McpServerUp
       enabled,
       command: requiredString(request.command, 'command'),
       args: request.args === undefined ? [] : parseStringArray(request.args, 'args'),
-      env: request.env ?? (existing?.transport === 'stdio' ? existing.env : {}),
-      cwd: request.cwd ?? '',
+      env: parseStringMap(request.env ?? (existing?.transport === 'stdio' ? existing.env : {}), 'env'),
+      cwd: parseOptionalString(request.cwd ?? (existing?.transport === 'stdio' ? existing.cwd : ''), 'cwd'),
       toolCallTimeoutMs,
       failOnStartupError,
     }
   }
+  if (request.transport !== 'streamable-http') throw new Error('mcp-settings: unsupported transport')
   return {
     transport: 'streamable-http',
     serverName: parseServerName(request.serverName),
     enabled,
     url: requiredString(request.url, 'url'),
-    headers: request.headers ?? (existing?.transport === 'streamable-http' ? existing.headers : {}),
+    headers: parseStringMap(request.headers ?? (existing?.transport === 'streamable-http' ? existing.headers : {}), 'headers'),
     toolCallTimeoutMs,
     failOnStartupError,
   }
@@ -346,9 +330,18 @@ function parseSystemOverrides(value: unknown): McpSystemOverride[] {
   const result = value.map((entry, index) => {
     const label = `systemOverrides[${String(index)}]`
     if (!isRecord(entry)) throw new Error(`mcp-settings: ${label} must be an object`)
-    assertKnownKeys(entry, ['serverName', 'url', 'headers', 'toolCallTimeoutMs', 'failOnStartupError'], label)
+    assertKnownKeys(entry, ['serverName', 'transport', 'command', 'args', 'env', 'cwd', 'enabled', 'url', 'headers', 'toolCallTimeoutMs', 'failOnStartupError'], label)
+    if (entry.transport !== undefined && entry.transport !== 'stdio' && entry.transport !== 'streamable-http') {
+      throw new Error(`mcp-settings: ${label}.transport must be "stdio" or "streamable-http"`)
+    }
     return {
       serverName: parseServerName(entry.serverName, `${label}.serverName`),
+      ...(entry.transport === undefined ? {} : { transport: entry.transport as 'stdio' | 'streamable-http' }),
+      ...(entry.command === undefined ? {} : { command: requiredString(entry.command, `${label}.command`) }),
+      ...(entry.args === undefined ? {} : { args: parseStringArray(entry.args, `${label}.args`) }),
+      ...(entry.env === undefined ? {} : { env: parseStringMap(entry.env, `${label}.env`) }),
+      ...(entry.cwd === undefined ? {} : { cwd: parseOptionalString(entry.cwd, `${label}.cwd`) }),
+      ...(entry.enabled === undefined ? {} : { enabled: parseBoolean(entry.enabled, `${label}.enabled`) }),
       ...(entry.url === undefined ? {} : { url: requiredString(entry.url, `${label}.url`) }),
       ...(entry.headers === undefined ? {} : { headers: parseStringMap(entry.headers, `${label}.headers`) }),
       toolCallTimeoutMs: parsePositive(entry.toolCallTimeoutMs, `${label}.toolCallTimeoutMs`),

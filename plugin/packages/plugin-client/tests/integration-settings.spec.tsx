@@ -33,7 +33,7 @@ describe('integration settings controls', () => {
     expect(screen.getByRole('heading', { name: mcpEn.add })).toBeTruthy()
   })
 
-  it('allows system MCP tuning without exposing disable or delete controls', async () => {
+  it('allows disabling the default ThinkingData MCP without renaming or deleting it', async () => {
     const updateSystem = vi.fn().mockResolvedValue(undefined)
     const props = {
       list: vi.fn().mockResolvedValue({
@@ -58,7 +58,9 @@ describe('integration settings controls', () => {
     const enabled = screen.getByRole('checkbox', { name: mcpEn.enabled }) as HTMLInputElement
     const name = screen.getByRole('textbox', { name: mcpEn.serverName }) as HTMLInputElement
     expect(enabled.checked).toBe(true)
-    expect(enabled.disabled).toBe(true)
+    expect(enabled.disabled).toBe(false)
+    fireEvent.click(enabled)
+    expect(enabled.checked).toBe(false)
     expect(name.disabled).toBe(true)
     expect(name.value).toBe('ta-mcp-server')
     fireEvent.change(screen.getByRole('spinbutton', { name: mcpEn.timeout }), { target: { value: '180000' } })
@@ -66,6 +68,8 @@ describe('integration settings controls', () => {
     await waitFor(() => {
       expect(updateSystem).toHaveBeenCalledWith({
         serverName: 'ta-mcp-server',
+        transport: 'streamable-http',
+        enabled: false,
         url: 'http://10.225.40.100:13360/mcp',
         toolCallTimeoutMs: 180000,
         failOnStartupError: false,
@@ -100,6 +104,8 @@ describe('integration settings controls', () => {
     await waitFor(() => {
       expect(updateSystem).toHaveBeenCalledWith({
         serverName: 'ta-mcp-server',
+        transport: 'streamable-http',
+        enabled: true,
         url: 'https://analytics.example/mcp',
         headers: { Authorization: 'Bearer configured-token' },
         toolCallTimeoutMs: 120000,
@@ -249,4 +255,56 @@ describe('integration settings controls', () => {
       expect(cancelButton.disabled).toBe(true)
     })
   })
+})
+
+it('provides a Blender enable switch without extra configuration descriptions', async () => {
+  const updateSystem = vi.fn().mockResolvedValue(undefined)
+  render(<McpSettingsTab {...{
+    list: vi.fn().mockResolvedValue({ servers: [{
+      serverName: 'blender', origin: 'system', enabled: false, fiberPhase: null, toolCount: 0,
+      transport: 'stdio', command: 'uvx', cwd: '', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'],
+      envKeys: [], headerKeys: [], toolCallTimeoutMs: 120000, failOnStartupError: false,
+    }] }), upsert: vi.fn(), updateSystem, remove: vi.fn(), t: (key: keyof typeof mcpEn) => mcpEn[key],
+  } as unknown as McpSettingsTabProps} />)
+  await screen.findByText('blender')
+  fireEvent.click(screen.getByRole('button', { name: mcpEn.edit }))
+  expect((screen.getByRole('textbox', { name: mcpEn.command }) as HTMLInputElement).disabled).toBe(false)
+  const toggle = screen.getByRole('checkbox', { name: mcpEn.enabled }) as HTMLInputElement
+  expect(toggle.checked).toBe(false)
+  expect(toggle.disabled).toBe(false)
+  fireEvent.click(toggle)
+  fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
+  await waitFor(() => expect(updateSystem).toHaveBeenCalledWith({ serverName: 'blender', enabled: true, transport: 'stdio', command: 'uvx', cwd: '', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'], toolCallTimeoutMs: 120000, failOnStartupError: false }))
+})
+
+it.each(['settings', 'system'] as const)('uses the same editable connection fields and validation for %s MCPs', async origin => {
+  const upsert = vi.fn().mockResolvedValue(undefined)
+  const updateSystem = vi.fn().mockResolvedValue(undefined)
+  render(<McpSettingsTab {...{
+    list: vi.fn().mockResolvedValue({ servers: [{
+      serverName: origin === 'system' ? 'blender' : 'local-tools', origin, enabled: false,
+      fiberPhase: null, toolCount: 0, transport: 'stdio', command: 'uvx', args: [], cwd: 'D:\\tools',
+      envKeys: ['SECRET'], headerKeys: [], toolCallTimeoutMs: 120000, failOnStartupError: false,
+    }] }), upsert, updateSystem, remove: vi.fn(), t: (key: keyof typeof mcpEn) => mcpEn[key],
+  } as unknown as McpSettingsTabProps} />)
+  fireEvent.click(await screen.findByRole('button', { name: mcpEn.edit }))
+  const cwd = screen.getByRole('textbox', { name: mcpEn.cwd }) as HTMLInputElement
+  expect(cwd.value).toBe('D:\\tools')
+  for (const label of [mcpEn.command, mcpEn.args, mcpEn.env, mcpEn.cwd]) {
+    expect((screen.getByRole('textbox', { name: label }) as HTMLInputElement).disabled).toBe(false)
+  }
+  fireEvent.change(screen.getByRole('textbox', { name: mcpEn.env }), { target: { value: 'invalid' } })
+  fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
+  expect(await screen.findByRole('alert')).toHaveProperty('textContent', mcpEn.invalidKv)
+  expect(upsert).not.toHaveBeenCalled()
+  expect(updateSystem).not.toHaveBeenCalled()
+  fireEvent.change(screen.getByRole('combobox', { name: mcpEn.transport }), { target: { value: 'streamable-http' } })
+  fireEvent.change(screen.getByRole('textbox', { name: mcpEn.url }), { target: { value: 'https://example.test/mcp' } })
+  fireEvent.change(screen.getByRole('textbox', { name: mcpEn.headers }), { target: { value: 'Authorization=Bearer example' } })
+  fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
+  await waitFor(() => expect(origin === 'system' ? updateSystem : upsert).toHaveBeenCalledWith({
+    serverName: origin === 'system' ? 'blender' : 'local-tools', enabled: false,
+    transport: 'streamable-http', url: 'https://example.test/mcp', headers: { Authorization: 'Bearer example' },
+    toolCallTimeoutMs: 120000, failOnStartupError: false,
+  }))
 })

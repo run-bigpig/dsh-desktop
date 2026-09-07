@@ -55,3 +55,7 @@ Windows Edge 浏览器实测覆盖 Harness 新设计会话、Agent 创建并填�
 新增能力的浏览器回归脚本位于 `packages/plugin-design-ui/scripts/browser-smoke.cjs`，参数为构建后的设计资源目录、Playwright 模块路径、ws 模块路径、浏览器 EXE 路径和截图输出目录。它建立隔离的 loopback WebSocket 会话及内存快照存储，覆盖真实图片上传、样式 RPC、锚点鼠标交互、跨会话隔离及 .fig 解码恢复，不接触用户运行中的会话。
 
 中文字体原生验证：在 Windows 编译并运行 `go build -tags production -ldflags "-H windowsgui" -o dist/windows/design-font-wails.exe ./internal/plugin/testdata/design-font-wails`，给上述浏览器脚本追加第六个参数 `http://127.0.0.1:9229`。独立测试窗口沿用生产版的 Wails 启动页→外部 loopback 导航和字体注入，使用临时 WebView profile。验证 Inter 字体声明下的中文实际绘制、不同汉字的像素差异及新页面恢复后的字形一致性；官方 .fig 导入存在 1 像素基线取整，因此字形比较只允许上下移动 1 像素，要求 alpha 覆盖完全相同。仅测试窗口启用 CDP，生产桌面不启用；测试结束关闭该窗口。
+
+StarWeave 的新会话模式菜单通过 Harness 插槽优先级复用官方组件和选择控制器，仅展示标准模式与设计模式，旧 preset 及其会话仍可由 Host 恢复。首次安装写入 `ui-theme.preference: dark`，已有主题选择保持不变。设计界面及文件对话框使用 StarWeave 品牌；OpenPencil 官方 Skill、依赖标识和来源许可证保持原样。
+
+工作台替换官方 `details` 插槽，与会话区同层并排，沿用原生打开、关闭和会话生命周期。工作台挂载期间扩展 details 列宽，默认偏好 800px，至少保留 400px 会话空间；窄窗口仍由 Harness 自动收起 details。拖动或方向键调整宽度，双击或 Home 恢复默认值。关闭工作台后清除局部布局样式，恢复原生详情区域，不改变文件树默认宽度。

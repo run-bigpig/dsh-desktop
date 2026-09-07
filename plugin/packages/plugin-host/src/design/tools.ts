@@ -78,7 +78,7 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, designS
   }
 
   server.registerTool('shared_style', {
-    description: 'Manage official OpenPencil shared styles in the current design session. Create/update from node_id, apply/detach to node_ids (defaults to selection). Updating propagates to all bound nodes; deleting preserves their appearance. Mutations support undo and session persistence.',
+    description: 'Manage StarWeave design shared styles in the current design session. Create/update from node_id, apply/detach to node_ids (defaults to selection). Updating propagates to all bound nodes; deleting preserves their appearance. Mutations support undo and session persistence.',
     inputSchema: {
       action: z.enum(['list', 'create', 'update', 'rename', 'delete', 'apply', 'detach']),
       kind: z.enum(['fill', 'stroke', 'text', 'effect', 'grid']),

@@ -125,7 +125,7 @@ export async function saveDocument(session: DesignSession): Promise<'saved' | 'c
     try {
       handle = await window.showSaveFilePicker({
         suggestedName: normalizeFigName(designDocument.name),
-        types: [{ description: 'OpenPencil Document', accept: { 'application/octet-stream': ['.fig'] } }]
+        types: [{ description: 'StarWeave 设计文档', accept: { 'application/octet-stream': ['.fig'] } }]
       })
     } catch (error) {
       if (isAbortError(error)) return 'cancelled'

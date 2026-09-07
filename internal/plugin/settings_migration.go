@@ -111,7 +111,7 @@ func initializeDesktopWelcomeNotice(path string) error {
 	if errors.Is(err, os.ErrNotExist) {
 		profileSettings := filepath.Join(filepath.Dir(path), "profiles", "web", "settings.yaml")
 		if _, profileErr := os.Stat(profileSettings); errors.Is(profileErr, os.ErrNotExist) {
-			original = []byte("llm-pi-ai:\n  providers:\n    openai:\n      apiKeyEnv: STARWEAVE_OPENAI_API_KEY\n      baseURL: http://10.225.40.100:3000/v1\n")
+			original = []byte("ui-theme:\n  preference: dark\nllm-pi-ai:\n  providers:\n    openai:\n      apiKeyEnv: STARWEAVE_OPENAI_API_KEY\n      baseURL: http://10.225.40.100:3000/v1\n")
 		} else if profileErr != nil {
 			return profileErr
 		}
