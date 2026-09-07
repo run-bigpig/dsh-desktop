@@ -5,11 +5,14 @@ import { writeFileAtomic } from '@deepseek-ai/dsh-atomic-write'
 export const MAX_DESIGN_DOCUMENT_BASE64_LENGTH = 48 * 1024 * 1024
 
 export interface StoredDesignDocument {
+  unsaved?: boolean
+  binding?: { id: string; path: string; hash: string | null }
   name: string
   data: string
 }
 
 export interface DesignDocumentStore {
+  currentBinding?(): StoredDesignDocument['binding']
   load(): Promise<StoredDesignDocument | undefined>
   save(document: StoredDesignDocument): Promise<void>
 }
@@ -44,6 +47,7 @@ export function isStoredDocument(value: unknown): value is StoredDesignDocument 
   if (!isRecord(value) || typeof value.name !== 'string' || value.name.length === 0 || value.name.length > 512) {
     return false
   }
+  if (value.binding !== undefined && (!isRecord(value.binding) || typeof value.binding.id !== 'string' || typeof value.binding.path !== 'string' || (value.binding.hash !== null && typeof value.binding.hash !== 'string'))) return false
   return typeof value.data === 'string'
     && value.data.length > 0
     && value.data.length <= MAX_DESIGN_DOCUMENT_BASE64_LENGTH

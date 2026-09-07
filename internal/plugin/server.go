@@ -1,12 +1,14 @@
 package plugin
 
 import (
+	"context"
 	"crypto/rand"
 	"crypto/subtle"
 	"encoding/base64"
 	"encoding/json"
 	"errors"
 	"fmt"
+	"github.com/run-bigpig/dsh-desktop/internal/browser"
 	"io"
 	"net"
 	"net/http"
@@ -30,6 +32,7 @@ type Bridge struct {
 	url        string
 	mu         sync.RWMutex
 	desktop    DesktopController
+	browser    browser.Controller
 	fontToken  string
 	fontOrigin string
 }
@@ -79,6 +82,12 @@ func (b *Bridge) SetDesktopController(controller DesktopController) {
 	b.mu.Unlock()
 }
 
+func (b *Bridge) SetBrowserController(controller browser.Controller) {
+	b.mu.Lock()
+	b.browser = controller
+	b.mu.Unlock()
+}
+
 func (b *Bridge) desktopController() DesktopController {
 	b.mu.RLock()
 	defer b.mu.RUnlock()
@@ -104,6 +113,31 @@ func (b *Bridge) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	switch {
+	case r.Method == http.MethodPost && r.URL.Path == "/v1/browser/command":
+		var command browser.Command
+		if err := json.NewDecoder(http.MaxBytesReader(w, r.Body, 2<<20)).Decode(&command); err != nil {
+			writeError(w, http.StatusBadRequest, "invalid browser command")
+			return
+		}
+		if err := command.Validate(); err != nil {
+			writeError(w, http.StatusBadRequest, err.Error())
+			return
+		}
+		b.mu.RLock()
+		controller := b.browser
+		b.mu.RUnlock()
+		if controller == nil {
+			writeError(w, http.StatusServiceUnavailable, "native browser is unavailable")
+			return
+		}
+		ctx, cancel := context.WithTimeout(r.Context(), 25*time.Second)
+		defer cancel()
+		value, err := controller.Execute(ctx, command)
+		if err != nil {
+			writeError(w, http.StatusServiceUnavailable, err.Error())
+			return
+		}
+		writeJSON(w, http.StatusOK, value)
 	case r.Method == http.MethodGet && r.URL.Path == "/v1/desktop/capabilities":
 		if b.desktopController() == nil {
 			writeError(w, http.StatusServiceUnavailable, "desktop window controller is unavailable")

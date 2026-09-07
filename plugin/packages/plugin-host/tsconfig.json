@@ -11,6 +11,7 @@
     { "path": "../../attachment/attachment" },
     { "path": "../../credentials/credentials" },
     { "path": "../../core/agent" },
+    { "path": "../../api/session-controller/tsconfig.host.json" },
     { "path": "../../preset/agent-presets" },
     { "path": "../../core/system-prompt" },
     { "path": "../../core/tools" },

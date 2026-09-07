@@ -16,7 +16,7 @@ export function registerDesignTools(server: McpServer, sendRPC: SendRPC, designS
     const active = documents.filter(document => isRecord(document) && document.active === true)
     const document = active[0]
     if (active.length !== 1 || !isRecord(document) || typeof document.id !== 'string' || !document.id) {
-      throw new Error('请先在设计模式中创建或打开文档')
+      throw new Error('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
     }
     return document.id
   }

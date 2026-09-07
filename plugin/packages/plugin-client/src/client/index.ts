@@ -12,6 +12,8 @@ import type {} from '@deepseek-ai/dsh-client-ui-sidebar/client'
 import type {} from '@deepseek-ai/dsh-client-ui-tool/client'
 import desktopRemote from '@run-bigpig/dsh-desktop-plugin-host/remote'
 import type {
+  BrowserCommand,
+  WorkspacePresentationSnapshot,
   DesktopCapabilities,
   DesktopWindowState,
   DocumentUploadRequest,
@@ -64,12 +66,8 @@ import {
 } from './documents/DocumentMessageView.tsx'
 import { ChartPresentationCard } from './chart-presentation/ChartPresentationCard.tsx'
 import { ImageToolView, type ImageToolViewInjected } from './image/ImageToolView.tsx'
-import {
-  ImageResultTail,
-  type ImageResultTailInjected,
-  imageResultDefinition,
-  selectImageResultTail,
-} from './image/ImageResultTail.tsx'
+import { imageResultDefinition } from './image/ImageResultTail.tsx'
+import { ArtifactResultTail, canvasResultDefinition, selectArtifactResultTail, type ArtifactResultTailInjected } from './design/CanvasResultTail.tsx'
 import {
   ImageStudioInputBridge,
   type ImageStudioInputBridgeInjected,
@@ -103,12 +101,9 @@ import { applyWebTools, type WebToolsLocaleKey } from './web-tools/client/index.
 import { installChatCopy } from './chat-copy.ts'
 import type {} from '@deepseek-ai/dsh-client-ui-model-selection/client'
 import { ModelDefaults, type ModelDefaultsInjected } from './model-defaults.tsx'
-import {
-  DesignConversationSplit,
-  type DesignConnection,
-  type DesignConversationViewInjected,
-} from './design/DesignConversationView.tsx'
-import { createDesignSessionMode } from './design/session-mode.ts'
+import type { DesignConnection } from './design/DesignConversationView.tsx'
+import { CanvasResources } from './design/canvas-resources.ts'
+import { createResourceOpeners, resourceOpenerInject } from './workbench/resource-openers.ts'
 
 declare module '@deepseek-ai/dsh-client-ui-slots' {
   interface LocaleNamespaceMap {
@@ -176,7 +171,9 @@ interface DocumentsRemote {
   uploadDocument: (request: DocumentUploadRequest) => Promise<RemoteResult<DocumentUploadResult>>
 }
 
-interface DesktopWorkspaceRemote {
+export interface DesktopWorkspaceRemote {
+  browserCommand: (sessionId: string, request: BrowserCommand, signal: AbortSignal) => Promise<RemoteResult<string>>
+  requests: () => Promise<RemoteResult<WorkspacePresentationSnapshot>>
   listDirectory: (
     sessionId: string,
     directory: string,
@@ -202,8 +199,10 @@ interface DesktopGitRemote {
   commit: (sessionId: string, request: GitCommitRequest, signal: AbortSignal) => Promise<RemoteResult<GitSnapshot>>
 }
 
-interface DesignRemote {
+export interface DesignRemote {
+  openFile: (sessionId: string, request: { path: string; reloadFromDisk?: boolean }, signal: AbortSignal) => Promise<RemoteResult<void>>
   connection: (sessionId: string) => Promise<RemoteResult<DesignConnection>>
+  activeConnections: () => Promise<RemoteResult<DesignConnection[]>>
 }
 
 type RemoteResult<T> = { ok: true; value: T } | { ok: false; error: { code: string; message: string } }
@@ -234,35 +233,6 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
     await disposeRemote()
     throw new Error('Desktop Remote namespace did not start')
   }
-  ctx.inject(['remote.starweaveDesign', 'sessions'], (inner: ClientContext) => {
-    const design = (inner.remote as ClientContext['remote'] & { starweaveDesign: DesignRemote }).starweaveDesign
-    const mode = createDesignSessionMode({
-      registerSplit: () => inner.slots.register({
-        name: 'conversation.input.dock',
-        id: 'design-split-layout',
-        order: -100,
-        inject: (sessionId): DesignConversationViewInjected => ({
-          connect: async () => unwrap(await design.connection(String(sessionId))),
-        }),
-      }, DesignConversationSplit),
-    })
-    const sync = (): void => {
-      const snapshot = inner.sessions.list.getSnapshot()
-      const current = snapshot.current
-      const session = current === undefined ? undefined : snapshot.byId[current]
-      mode.sync(session === undefined ? undefined : {
-        id: String(current),
-        design: session.projectionValues?.agentPreset === 'design',
-        blank: session.blank,
-      })
-    }
-    const unsubscribe = inner.sessions.list.subscribe(sync)
-    sync()
-    return () => {
-      unsubscribe()
-      mode.dispose()
-    }
-  })
   let capabilities: DesktopCapabilities
   try {
     capabilities = await discoverCapabilities(remote)
@@ -357,6 +327,50 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
   }, SkinSettingsRow))
 
   const workbenchController = new WorkbenchController()
+  const canvasResources = new CanvasResources()
+  ctx.inject(['remote.starweaveDesign', 'sessions'], (inner: ClientContext) => {
+    const design = (inner.remote as ClientContext['remote'] & { starweaveDesign: DesignRemote }).starweaveDesign
+    const initialized = new Set<string>()
+    let stopped = false
+    let failed = false
+    let timer: ReturnType<typeof setTimeout> | undefined
+    const poll = async (): Promise<void> => {
+      try {
+        const connections = unwrap(await design.activeConnections())
+        const results = await Promise.allSettled(connections.map(async connection => {
+          if (stopped) return
+          if (!initialized.has(connection.sessionId)) {
+            await canvasResources.ensure(connection).ready
+            if (!stopped) initialized.add(connection.sessionId)
+          }
+        }))
+        const failure = results.find(result => result.status === 'rejected')
+        if (failure?.status === 'rejected') throw failure.reason
+        failed = false
+      } catch (error) {
+        if (!stopped && !failed) console.warn('StarWeave canvas activation failed', error instanceof Error ? error.message : String(error))
+        failed = true
+      } finally { if (!stopped) timer = setTimeout(() => { void poll() }, 1500) }
+    }
+    void poll()
+    const legacy = new Set<string>()
+    const restoreLegacy = (): void => {
+      const snapshot = inner.sessions.list.getSnapshot()
+      const id = snapshot.current
+      const session = id === undefined ? undefined : snapshot.byId[id]
+      if (id === undefined || session?.blank !== false || session.projectionValues?.agentPreset !== 'design' || legacy.has(String(id))) return
+      legacy.add(String(id))
+      void design.connection(String(id)).then(unwrap).catch(error => { legacy.delete(String(id)); console.warn('Legacy canvas restore failed', String(error)) })
+    }
+    const stopLegacy = inner.sessions.list.subscribe(restoreLegacy)
+    restoreLegacy()
+    const stopRemoved = inner.remote.$on('api-session/removed', id => {
+      workbenchController.remove(String(id))
+      canvasResources.remove(String(id))
+      initialized.delete(String(id))
+    })
+    return () => { stopped = true; clearTimeout(timer); stopRemoved(); stopLegacy(); canvasResources.dispose() }
+  })
   ctx.slots.inject('conversation.message.images', () => ctx.slots.register({
     name: 'conversation.message.images',
     priority: -10,
@@ -402,8 +416,11 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       }),
     }, ImageSettingsTab))
   })
-  ctx.inject(['uiConversation'], (inner: ClientContext) => {
-    const imageResultActions: ImageResultTailInjected = {
+  ctx.inject(['uiConversation', ...resourceOpenerInject], (inner: ClientContext) => {
+    const { openCanvasFile, openBrowserPage } = createResourceOpeners(inner, workbenchController)
+    const imageResultActions: ArtifactResultTailInjected = {
+      openCanvasFile,
+      openBrowserPage,
       loadImage: (sessionId, attachment) => inner.uiConversation.imageUrl(
         sessionId as Parameters<ClientContext['uiConversation']['imageUrl']>[0],
         attachment,
@@ -411,13 +428,14 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       controller: workbenchController,
     }
     inner.uiConversation.events.register(imageResultDefinition)
+    inner.uiConversation.events.register(canvasResultDefinition)
     inner.slots.inject('conversation.chat.turnTail', () => inner.slots.register({
       name: 'conversation.chat.turnTail',
       priority: 10,
-      select: selectImageResultTail,
+      select: selectArtifactResultTail,
       locale: WORKBENCH_NS,
-      inject: (): ImageResultTailInjected => imageResultActions,
-    }, ImageResultTail))
+      inject: (): ArtifactResultTailInjected => imageResultActions,
+    }, ArtifactResultTail))
     for (const key of ['image_generate', 'image_edit', 'image_task_continue', 'image_task_get', 'image_versions']) {
       inner.slots.inject('tool.call.toolview', () => inner.slots.register({
         name: 'tool.call.toolview',
@@ -494,13 +512,51 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       inject: (): DocumentMessageInjected => ({ documentT }),
     }, DocumentSteeringMessageView))
   })
-  ctx.inject(['remote.desktopWorkspace', 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'sessions', 'layout'], (inner: ClientContext) => {
+  ctx.inject([...resourceOpenerInject, 'remote.desktopGit', 'remote.imageWorkbench', 'conversation', 'layout'], (inner: ClientContext) => {
+    const { openCanvasFile } = createResourceOpeners(inner, workbenchController)
     const remotes = inner.remote as ClientContext['remote'] & {
       desktopWorkspace: DesktopWorkspaceRemote
       desktopGit: DesktopGitRemote
       imageWorkbench: ImageWorkbenchRemote
     }
     const workspace = remotes.desktopWorkspace
+    const syncActiveSession = (): void => {
+      const current = inner.sessions.list.getSnapshot().current
+      workbenchController.setActiveSession(current === undefined ? undefined : String(current))
+    }
+    syncActiveSession()
+    const stopActive = inner.sessions.list.subscribe(syncActiveSession)
+    let stoppedRequests = false
+    let failedRequests = false
+    let pollingRequests = false
+    let refreshRequested = false
+    let requestTimer: ReturnType<typeof setTimeout> | undefined
+    const pollRequests = async (): Promise<void> => {
+      if (stoppedRequests) return
+      if (pollingRequests) { refreshRequested = true; return }
+      clearTimeout(requestTimer)
+      pollingRequests = true
+      const interactions = workbenchController.captureInteractions()
+      try {
+        const snapshot = unwrap(await workspace.requests())
+        if (stoppedRequests) return
+        workbenchController.receive(snapshot, document.visibilityState !== 'hidden' && document.hasFocus(), interactions)
+        failedRequests = false
+      } catch (error) {
+        if (!stoppedRequests && !failedRequests) console.warn('Workbench presentation sync failed', error instanceof Error ? error.message : String(error))
+        failedRequests = true
+      } finally {
+        pollingRequests = false
+        if (!stoppedRequests) {
+          requestTimer = setTimeout(() => { void pollRequests() }, refreshRequested ? 0 : 1500)
+          refreshRequested = false
+        }
+      }
+    }
+    const stopActivity = inner.remote.$on('api-session/activity', () => { void pollRequests() })
+    const stopStatus = inner.remote.$on('api-session/status', () => { void pollRequests() })
+    void pollRequests()
+    inner.effect(() => () => { stoppedRequests = true; clearTimeout(requestTimer); stopActive(); stopActivity(); stopStatus() }, 'desktop-workspace: stop presentation observer')
     const git = remotes.desktopGit
     const conversation = inner.get('conversation') as ConversationController | undefined
     if (conversation === undefined) throw new Error('desktop-image-workbench: Harness conversation service is unavailable')
@@ -512,58 +568,39 @@ export async function apply(ctx: ClientContext): Promise<() => Promise<void>> {
       locale: WORKBENCH_NS,
       inject: (): WorkbenchLauncherInjected => ({ controller: workbenchController }),
     }, WorkbenchLauncher))
-    inner.slots.inject('details', () => {
-      let disposePanel: (() => void) | undefined
-      const openDetails = (): void => { inner.layout.openDetails() }
-      const syncPanel = (): void => {
-        if (workbenchController.getOpen() && disposePanel === undefined) {
-          disposePanel = inner.slots.register({
-            name: 'details',
-            priority: -100,
-            locale: WORKBENCH_NS,
-            inject: (): WorkbenchDrawerInjected => ({
-              controller: workbenchController,
-              openDetails,
-              listDirectory: async (sessionId, directory, signal) =>
-                unwrap(await workspace.listDirectory(sessionId, directory, signal)),
-              searchWorkspace: async (sessionId, query, signal) =>
-                unwrap(await workspace.search(sessionId, query, signal)),
-              readWorkspaceFile: async (sessionId, path, signal) =>
-                unwrap(await workspace.readFile(sessionId, path, signal)),
-              writeWorkspaceFile: async (sessionId, request, signal) =>
-                unwrap(await workspace.writeFile(sessionId, request, signal)),
-              gitActions: sessionId => ({
-                snapshot: async signal => unwrap(await git.snapshot(sessionId, signal)),
-                diff: async (path, staged, signal) => unwrap(await git.diff(sessionId, { path, staged }, signal)),
-                stage: async (path, signal) => unwrap(await git.stage(sessionId, { path }, signal)),
-                unstage: async (path, signal) => unwrap(await git.unstage(sessionId, { path }, signal)),
-                stageMany: async (paths, signal) => unwrap(await git.stageMany(sessionId, { paths }, signal)),
-                unstageMany: async (paths, signal) => unwrap(await git.unstageMany(sessionId, { paths }, signal)),
-                discard: async (paths, signal) => unwrap(await git.discard(sessionId, { paths }, signal)),
-                commit: async (message, signal) => unwrap(await git.commit(sessionId, { message }, signal)),
-              }),
-              submitImageEdit: (sessionId, instruction, file) => imageInserters.get(sessionId)?.(instruction, file) ?? false,
-            }),
-          }, WorkbenchDrawer)
-          openDetails()
-          return
-        }
-        if (!workbenchController.getOpen() && disposePanel !== undefined) {
-          disposePanel()
-          disposePanel = undefined
-          inner.layout.closeDetails()
-        }
-      }
-      const unsubscribe = workbenchController.subscribeOpen(syncPanel)
-      syncPanel()
-      return () => {
-        unsubscribe()
-        if (disposePanel !== undefined) {
-          disposePanel()
-          inner.layout.closeDetails()
-        }
-      }
-    })
+    inner.slots.inject('details', () => inner.slots.register({
+      name: 'details',
+      priority: -100,
+      locale: WORKBENCH_NS,
+      inject: (): WorkbenchDrawerInjected => ({
+        controller: workbenchController,
+        canvasResources,
+        openCanvasFile,
+        browserCommand: async (sessionId, request, signal) => unwrap(await workspace.browserCommand(sessionId, request, signal)),
+        connectCanvas: async sessionId => unwrap(await (inner.remote as ClientContext['remote'] & { starweaveDesign: DesignRemote }).starweaveDesign.connection(sessionId)),
+        openDetails: () => { inner.layout.openDetails() },
+        closeDetails: () => { inner.layout.closeDetails() },
+        listDirectory: async (sessionId, directory, signal) =>
+          unwrap(await workspace.listDirectory(sessionId, directory, signal)),
+        searchWorkspace: async (sessionId, query, signal) =>
+          unwrap(await workspace.search(sessionId, query, signal)),
+        readWorkspaceFile: async (sessionId, path, signal) =>
+          unwrap(await workspace.readFile(sessionId, path, signal)),
+        writeWorkspaceFile: async (sessionId, request, signal) =>
+          unwrap(await workspace.writeFile(sessionId, request, signal)),
+        gitActions: sessionId => ({
+          snapshot: async signal => unwrap(await git.snapshot(sessionId, signal)),
+          diff: async (path, staged, signal) => unwrap(await git.diff(sessionId, { path, staged }, signal)),
+          stage: async (path, signal) => unwrap(await git.stage(sessionId, { path }, signal)),
+          unstage: async (path, signal) => unwrap(await git.unstage(sessionId, { path }, signal)),
+          stageMany: async (paths, signal) => unwrap(await git.stageMany(sessionId, { paths }, signal)),
+          unstageMany: async (paths, signal) => unwrap(await git.unstageMany(sessionId, { paths }, signal)),
+          discard: async (paths, signal) => unwrap(await git.discard(sessionId, { paths }, signal)),
+          commit: async (message, signal) => unwrap(await git.commit(sessionId, { message }, signal)),
+        }),
+        submitImageEdit: (sessionId, instruction, file) => imageInserters.get(sessionId)?.(instruction, file) ?? false,
+      }),
+    }, WorkbenchDrawer))
     inner.slots.inject('conversation.input.dock', () => inner.slots.register({
       name: 'conversation.input.dock',
       id: 'desktop-image-studio-input-bridge',

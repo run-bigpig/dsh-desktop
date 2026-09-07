@@ -6,7 +6,7 @@ vi.mock('../src/session-document.ts', () => ({
 }))
 
 import { startBridge } from '../src/bridge.ts'
-import type { DesignSession } from '../src/runtime.ts'
+import { saveState, type DesignSession } from '../src/runtime.ts'
 
 class FakeWebSocket {
   static readonly OPEN = 1
@@ -54,6 +54,50 @@ afterEach(() => {
 })
 
 describe('design bridge', () => {
+  it('updates saved state on edits and does not acknowledge newer changes with an older save', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const session = createSession()
+    const document = session.document!
+    const stop = startBridge(session)
+    const socket = FakeWebSocket.instances[0]
+    socket.emit('message', { data: JSON.stringify({ type: 'registered', persistence: true }) })
+    await vi.waitFor(() => expect(session.bridgePhase).toBe('connected'))
+    try {
+      document.savedVersion = document.editor.state.sceneVersion
+      expect(saveState(session)).toBe('saved')
+      const node = document.editor.graph.createNode('RECTANGLE', document.editor.state.currentPageId, { width: 100 })
+      expect(saveState(session)).toBe('unsaved')
+      const first = session.persistNow!()
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+      expect(saveState(session)).toBe('saving')
+      document.editor.updateNodeWithUndo(node.id, { width: 240 }, 'Resize during save')
+      socket.emit('message', { data: JSON.stringify({ type: 'persisted', id: JSON.parse(socket.sent[0]).id }) })
+      await first
+      expect(saveState(session)).toBe('unsaved')
+      const second = session.persistNow!()
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(2))
+      socket.emit('message', { data: JSON.stringify({ type: 'persisted', id: JSON.parse(socket.sent[1]).id }) })
+      await second
+      expect(saveState(session)).toBe('saved')
+      document.editor.updateNodeWithUndo(node.id, { width: 300 }, 'Resize again')
+      expect(saveState(session)).toBe('unsaved')
+      const failed = session.persistNow!()
+      const rejection = expect(failed).rejects.toThrow('disk full')
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(3))
+      socket.emit('message', { data: JSON.stringify({ type: 'persistence_error', id: JSON.parse(socket.sent[2]).id, error: 'disk full' }) })
+      await rejection
+      expect(saveState(session)).toBe('error')
+      expect(document.savedVersion).not.toBe(document.editor.state.sceneVersion)
+      const retry = session.persistNow!()
+      await vi.waitFor(() => expect(socket.sent).toHaveLength(4))
+      expect(saveState(session)).toBe('saving')
+      socket.emit('message', { data: JSON.stringify({ type: 'persisted', id: JSON.parse(socket.sent[3]).id }) })
+      await retry
+      expect(saveState(session)).toBe('saved')
+      expect(session.persistenceError).toBe('')
+    } finally { stop() }
+  })
+
   it('synchronizes Agent selection and page navigation with the visible editor', async () => {
     vi.stubGlobal('WebSocket', FakeWebSocket)
     vi.stubGlobal('window', { innerWidth: 800, innerHeight: 600 })
@@ -171,16 +215,51 @@ describe('design bridge', () => {
     stop()
   })
 
-  it('does not fight another window for a replaced session connection', () => {
+  it('waits for the owning window and automatically restores the connection when it is released', async () => {
     vi.useFakeTimers()
     vi.stubGlobal('WebSocket', FakeWebSocket)
     const session = createSession()
-    startBridge(session)
+    const stop = startBridge(session)
     FakeWebSocket.instances[0].emit('close', { code: 4001 })
-    vi.advanceTimersByTime(5000)
+    expect(session.bridgePhase).toBe('standby')
+    await vi.advanceTimersByTimeAsync(1500)
+    expect(FakeWebSocket.instances).toHaveLength(2)
+    const retry = FakeWebSocket.instances[1]
+    retry.emit('open', {})
+    expect(JSON.parse(retry.sent[0])).toMatchObject({ type: 'register', sessionId: 'design-test' })
+    retry.emit('message', { data: JSON.stringify({ type: 'registered', persistence: true, document: { name: 'Saved.fig', data: 'AQIDBA==' } }) })
+    await vi.advanceTimersByTimeAsync(0)
+    expect(session.restoreDocument).toHaveBeenCalledWith('Saved.fig', 'AQIDBA==')
+    expect(session.bridgePhase).toBe('connected')
+    stop()
+  })
 
+  it('cancels standby reconnection when its resource is disposed', async () => {
+    vi.useFakeTimers()
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const stop = startBridge(createSession())
+    FakeWebSocket.instances[0].emit('close', { code: 4001 })
+    stop()
+    await vi.advanceTimersByTimeAsync(5000)
     expect(FakeWebSocket.instances).toHaveLength(1)
-    expect(session.bridgeDetail).toBe('当前设计已在另一个窗口中打开')
+  })
+
+  it('does not autosave a clean reopened file just because its viewport rendered', async () => {
+    vi.stubGlobal('WebSocket', FakeWebSocket)
+    const session = createSession()
+    session.document!.savedVersion = session.document!.editor.state.sceneVersion
+    const stop = startBridge(session)
+    const socket = FakeWebSocket.instances[0]
+    socket.emit('message', { data: JSON.stringify({ type: 'registered', persistence: true, binding: { id: 'file-a', path: 'a.fig', hash: 'disk' } }) })
+    await vi.waitFor(() => expect(session.bridgePhase).toBe('connected'))
+    session.schedulePersistence?.()
+    socket.emit('message', { data: JSON.stringify({ type: 'request', id: 'flush', command: 'flush_document', args: { onlyDirty: true } }) })
+    await vi.waitFor(() => expect(socket.sent).toHaveLength(1))
+    expect(JSON.parse(socket.sent[0])).toMatchObject({ id: 'flush', ok: true })
+    expect(socket.sent.some(raw => JSON.parse(raw).type === 'persist_document')).toBe(false)
+    const stale = await callTool(socket, 'create_shape', { type: 'RECTANGLE', width: 20, height: 20 })
+    expect(stale).toMatchObject({ ok: false, error: expect.stringContaining('文档已切换') })
+    stop()
   })
 
   it('waits for the session snapshot to be durable before acknowledging an Agent mutation', async () => {

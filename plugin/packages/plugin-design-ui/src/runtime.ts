@@ -21,14 +21,16 @@ export interface DesignDocument {
   name: string
   handle?: WritableFileHandle
   savedVersion: number
+  saving?: boolean
 }
 
 export interface DesignSession {
+  binding?: { id: string; path: string; hash: string | null }
   connection: DesignConnection
   document: DesignDocument | null
   generation: number
   revision: number
-  bridgePhase: 'disconnected' | 'connecting' | 'connected' | 'error'
+  bridgePhase: 'disconnected' | 'connecting' | 'connected' | 'standby' | 'error'
   bridgeDetail: string
   mounts: number
   stopBridge?: () => void
@@ -74,7 +76,9 @@ export function releaseSession(session: DesignSession): void {
     bridge?.()
     session.stopBridge = undefined
     session.bridgePhase = 'disconnected'
-    session.bridgeDetail = session.document ? '画布未显示，Agent 已断开' : '请先新建或打开文档'
+    session.bridgeDetail = '画布资源已释放'
+    session.editorCleanup?.()
+    sessions.delete(session.connection.sessionId)
   }
   // Flush the debounce before closing the socket. A quick session switch must
   // not discard the last manual edit and then restore an older snapshot.
@@ -91,7 +95,7 @@ export function createBlankDocument(session: DesignSession): void {
 
 export async function restoreSessionDocument(session: DesignSession, name: string, data: string): Promise<void> {
   const restored = await decodeSessionDocument(name, data)
-  setDocument(session, restored.editor, restored.name, undefined, -1, false)
+  setDocument(session, restored.editor, restored.name, undefined, restored.editor.state.sceneVersion, false)
 }
 
 export async function openDocument(
@@ -115,44 +119,63 @@ export async function saveDocument(session: DesignSession): Promise<'saved' | 'c
   const designDocument = session.document
   if (!designDocument) throw new Error('没有可保存的设计文档')
   finishVectorEdit(designDocument.editor)
-  const output = await documentIO.writeDocument('fig', designDocument.editor.graph, {
-    thumbnailPageId: designDocument.editor.state.currentPageId,
-    renderThumbnail: false
-  })
-  const bytes = typeof output.data === 'string' ? new TextEncoder().encode(output.data) : output.data
-  let handle = designDocument.handle
-  if (!handle && typeof window.showSaveFilePicker === 'function') {
-    try {
-      handle = await window.showSaveFilePicker({
-        suggestedName: normalizeFigName(designDocument.name),
-        types: [{ description: 'StarWeave 设计文档', accept: { 'application/octet-stream': ['.fig'] } }]
-      })
-    } catch (error) {
-      if (isAbortError(error)) return 'cancelled'
-      throw error
+  if (session.binding) {
+    if (!session.persistNow || session.bridgePhase !== 'connected') throw new Error('画布尚未连接，无法保存到工作区')
+    await session.persistNow()
+    return 'saved'
+  }
+  const version = designDocument.editor.state.sceneVersion
+  designDocument.saving = true
+  try {
+    const output = await documentIO.writeDocument('fig', designDocument.editor.graph, {
+      thumbnailPageId: designDocument.editor.state.currentPageId,
+      renderThumbnail: false
+    })
+    const bytes = typeof output.data === 'string' ? new TextEncoder().encode(output.data) : output.data
+    let handle = designDocument.handle
+    if (!handle && typeof window.showSaveFilePicker === 'function') {
+      try {
+        handle = await window.showSaveFilePicker({
+          suggestedName: normalizeFigName(designDocument.name),
+          types: [{ description: 'StarWeave 设计文档', accept: { 'application/octet-stream': ['.fig'] } }]
+        })
+      } catch (error) {
+        if (isAbortError(error)) return 'cancelled'
+        throw error
+      }
     }
-  }
-  if (handle) {
-    const writable = await handle.createWritable()
-    try { await writable.write(bytes) } finally { await writable.close() }
-    designDocument.handle = handle
-    designDocument.name = (await handle.getFile()).name
-  } else {
-    const url = URL.createObjectURL(new Blob([bytes], { type: output.mimeType }))
-    const anchor = window.document.createElement('a')
-    anchor.href = url
-    anchor.download = normalizeFigName(designDocument.name)
-    anchor.click()
-    setTimeout(() => URL.revokeObjectURL(url), 0)
-  }
-  designDocument.savedVersion = designDocument.editor.state.sceneVersion
-  session.revision += 1
-  return 'saved'
+    if (handle) {
+      const writable = await handle.createWritable()
+      try { await writable.write(bytes) } finally { await writable.close() }
+      designDocument.handle = handle
+      designDocument.name = (await handle.getFile()).name
+    } else {
+      const url = URL.createObjectURL(new Blob([bytes], { type: output.mimeType }))
+      const anchor = window.document.createElement('a')
+      anchor.href = url
+      anchor.download = normalizeFigName(designDocument.name)
+      anchor.click()
+      setTimeout(() => URL.revokeObjectURL(url), 0)
+    }
+    designDocument.savedVersion = version
+    if (session.document === designDocument) session.persistenceError = ''
+    session.revision += 1
+    return 'saved'
+  } catch (error) {
+    if (session.document === designDocument) session.persistenceError = `设计文件保存失败：${error instanceof Error ? error.message : String(error)}`
+    throw error
+  } finally { designDocument.saving = false }
 }
 
 export function isDirty(session: DesignSession): boolean {
   const document = session.document
   return document !== null && document.savedVersion !== document.editor.state.sceneVersion
+}
+
+export function saveState(session: DesignSession): 'saved' | 'unsaved' | 'saving' | 'error' {
+  if (session.document?.saving) return 'saving'
+  if (session.persistenceError) return 'error'
+  return isDirty(session) ? 'unsaved' : 'saved'
 }
 
 function setDocument(

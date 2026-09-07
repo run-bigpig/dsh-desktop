@@ -16,7 +16,7 @@ import {
 } from '../src/client/workbench/SessionWorkbench.tsx'
 import { workbenchEn, workbenchZh } from '../src/client/locales.ts'
 
-afterEach(() => { cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
+afterEach(() => { localStorage.clear(); cleanup(); vi.restoreAllMocks(); vi.unstubAllGlobals() })
 
 function translate(key: keyof typeof workbenchEn): string {
   return workbenchEn[key]
@@ -32,6 +32,7 @@ describe('session workbench file references', () => {
     const controller = new WorkbenchController()
     const props = {
       controller,
+      sessionId: 'session-1',
       t: translate,
     } as unknown as WorkbenchLauncherProps
     const view = render(<WorkbenchLauncher {...props} />)
@@ -39,9 +40,22 @@ describe('session workbench file references', () => {
 
     fireEvent.click(button)
 
-    expect(controller.getOpen()).toBe(true)
+    expect(controller.getSession('session-1').open).toBe(true)
     expect(button.getAttribute('aria-pressed')).toBe('true')
     expect(view.getByRole('button', { name: workbenchEn.close })).toBe(button)
+  })
+
+  it('opens files from the manual launcher even when an Agent target is pending', () => {
+    const controller = new WorkbenchController()
+    controller.setActiveSession('session-1')
+    controller.select('session-1', 'browser')
+    controller.close('session-1')
+    controller.request({ sessionId: 'session-1', panel: 'browser', tabId: 'xiaohongshu', turn: 1, revision: 1, cwd: '/workspace' }, false)
+    const view = render(<WorkbenchLauncher {...{ controller, sessionId: 'session-1', t: translate } as unknown as WorkbenchLauncherProps} />)
+    expect(controller.getSession('session-1').open).toBe(false)
+    fireEvent.click(view.getByRole('button', { name: workbenchEn.open }))
+    expect(controller.getSession('session-1')).toMatchObject({ open: true, tab: 'files', pending: { panel: 'browser' } })
+    expect(controller.memory('session-1', 'workspace:/workspace').get('browser.active', null)).toBeNull()
   })
 
   it('uses the official Harness reference source and file mention grammar', () => {
@@ -96,11 +110,12 @@ it('opens a wider workbench, remembers manual width and hides on a blank session
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 1800 } as DOMRect)
   const controller = new WorkbenchController()
-  controller.toggle()
+  controller.toggle('session-1')
   let state = { current: 'session-1', byId: { 'session-1': { blank: false, cwd: '/workspace' } } }
   const props = {
     controller,
     openDetails: vi.fn(),
+    closeDetails: vi.fn(),
     useSessions: (selector: (value: typeof state) => unknown) => selector(state),
     gitActions: () => ({ snapshot: () => new Promise(() => {}) }),
     t: translate,

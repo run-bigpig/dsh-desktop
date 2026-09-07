@@ -1,6 +1,12 @@
 import { lstat, mkdir, readdir, readFile, realpath, stat, writeFile } from 'node:fs/promises'
 import { basename, dirname, extname, isAbsolute, relative, resolve, sep } from 'node:path'
-import type { Context } from '@deepseek-ai/cordis'
+import { Service, type Context } from '@deepseek-ai/cordis'
+import { randomUUID } from 'node:crypto'
+import { defineTool } from '@deepseek-ai/dsh-tools'
+import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
+import type {} from '@deepseek-ai/dsh-api-session-controller/types'
+import { desktopRequest } from '../desktop/index.ts'
+import type { BrowserCommand, BrowserTab, WorkspaceRequest, WorkspacePresentationSnapshot } from '../shared/types.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
@@ -23,8 +29,123 @@ const TEXT_CHARACTER_CAP = 80_000
 const BINARY_BYTE_CAP = 8 * 1024 * 1024
 const DESIGN_BINARY_BYTE_CAP = 64 * 1024 * 1024
 
-/** Human-only file browser and preview gateway for the active Session workspace. */
+declare module '@deepseek-ai/cordis' {
+  interface Context { desktopWorkspace: WorkspaceGateway }
+}
+
+/** Session-owned resources and explicit presentation requests. */
 export class WorkspaceGateway extends TypertRemoteService {
+  static inject = ['tools', 'attachments', 'sessions']
+  private readonly requests = new Map<string, WorkspaceRequest>()
+  private revision = 0
+  private readonly epoch = randomUUID()
+  private readonly turns = new Map<string, number>()
+
+  protected [Service.init](): void {
+    this.ctx.effect(() => this.ctx.root.on('session/event', (session, event) => {
+      if (event.type !== 'turn/start') return
+      const id = String(session.id)
+      this.turns.set(id, event.data.turn)
+      this.requests.delete(id)
+      this.changed()
+    }), 'desktop-workspace: presentation task boundary')
+    this.ctx.effect(() => this.ctx.tools.register(defineTool({
+      name: 'open_workspace_panel',
+      description: '请求向用户展示当前会话的资源。用户要求打开、需要查看结果或接管操作时调用；后台查询和普通工具操作无需展示。用户关闭后同一展示步骤不得反复唤起，新的明确展示步骤可以唤起。后台会话仅提供待查看入口。画布先调用 open_canvas；浏览器先用 workspace_browser 创建或查询真实 tabId。',
+      parameters: {
+        presentation: { type: 'string', description: '同一展示步骤使用相同标识。仅真正开始新的展示步骤时更换；读取、自动保存、完成原步骤不得更换以反复弹窗。' },
+        panel: { type: 'string', enum: ['files', 'git', 'browser', 'canvas'], required: true },
+        tabId: { type: 'string', description: '展示浏览器时必填，使用当前会话的真实标签 ID' },
+        path: { type: 'string', description: 'files 或 canvas 使用，工作区内文件的相对路径' },
+      },
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute: async (args, exec) => {
+        if (!exec.agent) throw new Error('Workspace requires an owning agent session')
+        if (args.panel === 'browser') {
+          const tabs = JSON.parse(await this.browserCommand(exec.agent, { op: 'list' }, exec.signal)) as BrowserTab[]
+          if (!args.tabId || !tabs.some(tab => tab.id === args.tabId)) throw new Error('请使用当前会话的真实浏览器 tabId')
+        }
+        let path = args.path
+        if (args.panel === 'canvas') {
+          const design = this.ctx.get('starweaveDesign')
+          if (!design) throw new Error('画布服务尚未就绪')
+          await design.openFile(exec.agent, args.path ? { path: args.path } : {}, exec.signal)
+          path = await design.canvasPath(String(exec.agent.session.id))
+        }
+        if (args.path !== undefined && args.panel !== 'canvas') {
+          if (args.panel !== 'files') throw new Error('path 仅适用于 files')
+          await readWorkspaceFile(workspaceRoot(exec.agent), args.path, exec.signal)
+        }
+        exec.signal.throwIfAborted()
+        this.request(exec.agent, args.panel, args.tabId, path, args.presentation)
+        return '已请求展示当前会话工作区。'
+      },
+    })), 'desktop-workspace: reveal session panel')
+    this.ctx.effect(() => this.ctx.tools.register(defineTool({
+      name: 'workspace_browser',
+      description: '操作当前会话的隔离浏览器。create 创建标签页，list 获取真实 tabId，navigate/back/forward/reload/close 导航，screenshot 截图，cdp 调用此标签页的 DOM、Accessibility、Runtime、Input 方法。用户明确要求打开网页时，create 或 navigate 必须设置 reveal=true，以便展示对应标签；后台查资料不设置 reveal。已有标签也可通过 open_workspace_panel(panel=browser, tabId=真实标签ID) 展示。会话身份由 Host 绑定，禁止猜测其他会话或标签 ID。',
+      parameters: {
+        action: { type: 'string', enum: ['create', 'list', 'navigate', 'back', 'forward', 'reload', 'close', 'screenshot', 'cdp'], required: true },
+        tabId: { type: 'string', description: 'list/create 返回的当前会话标签 ID' },
+        url: { type: 'string', description: 'http/https 地址' },
+        presentation: { type: 'string', description: '可选展示步骤标识；重复请求复用，仅真正的新展示步骤更换' },
+        reveal: { type: 'boolean', description: '仅 create/navigate 使用；用户要求打开网页时设为 true，成功后请求展示目标标签。后台操作默认不展示。' },
+        method: { type: 'string', description: 'CDP 方法，如 Runtime.evaluate、DOM.getDocument、Input.dispatchMouseEvent' },
+        params: { type: 'string', description: 'CDP 参数 JSON 对象；Runtime.evaluate 可设置 awaitPromise 与 returnByValue' },
+      },
+      output: { schema: { type: 'string' }, render: (args, value) => args.action === 'screenshot'
+        ? [{ type: 'image', attachment: JSON.parse(value) as ImageAttachmentRef }]
+        : [{ type: 'text', text: value }] },
+      execute: async (args, exec) => {
+        if (!exec.agent) throw new Error('Browser requires an owning agent session')
+        if (args.reveal && args.action !== 'create' && args.action !== 'navigate') throw new Error('reveal 仅适用于 create/navigate')
+        const tabId = args.action === 'create' ? randomUUID() : args.tabId
+        if (args.action === 'screenshot') {
+          const result = JSON.parse(await this.browserCommand(exec.agent, { op: 'cdp', ...(tabId ? { tabId } : {}), method: 'Page.captureScreenshot', params: '{"format":"png"}' }, exec.signal)) as { data: string }
+          const attachment = await this.ctx.attachments.saveImage({ data: Buffer.from(result.data, 'base64'), mediaType: 'image/png', name: 'browser.png' })
+          return JSON.stringify(attachment)
+        }
+        const result = await this.browserCommand(exec.agent, { op: args.action, ...(tabId ? { tabId } : {}), ...(args.url ? { url: args.url } : args.action === 'create' ? { url: 'about:blank' } : {}), ...(args.method ? { method: args.method } : {}), ...(args.params ? { params: args.params } : {}) }, exec.signal)
+        exec.signal.throwIfAborted()
+        if (args.reveal) this.request(exec.agent, 'browser', tabId, undefined, args.presentation)
+        return result
+      },
+    })), 'desktop-workspace: session browser tools')
+    this.ctx.effect(() => this.ctx.root.on('api-session/removed', id => {
+      this.requests.delete(String(id))
+      this.turns.delete(String(id))
+      this.changed()
+      void desktopRequest('/v1/browser/command', { method: 'POST', body: JSON.stringify({ op: 'remove-session', sessionId: String(id) }) }).catch(error => this.ctx.logger.warn('Browser session cleanup failed: %s', String(error)))
+    }), 'desktop-workspace: remove browser session')
+  }
+
+  request(agent: Agent, panel: WorkspaceRequest['panel'], tabId?: string, path?: string, presentation?: string): void {
+    const sessionId = String(agent.session.id)
+    const turn = this.turns.get(sessionId) ?? 0
+    this.turns.set(sessionId, turn)
+    this.requests.set(sessionId, { sessionId, panel, turn, ...(presentation ? { presentation } : {}), cwd: agent.session.header.cwd ?? '', revision: this.revision + 1, ...(panel === 'browser' && tabId ? { tabId } : {}), ...(path ? { path } : {}) })
+    this.changed()
+  }
+
+  @Remote('requests')
+  pendingRequests(): WorkspacePresentationSnapshot {
+    return { epoch: this.epoch, revision: this.revision, sessions: [...this.turns].map(([sessionId, turn]) => ({ sessionId, turn, request: this.requests.get(sessionId) ?? null })) }
+  }
+
+  private changed(): void {
+    this.revision++
+  }
+
+  @Remote('browserCommand')
+  async browserCommand(agent: Agent, request: BrowserCommand, signal: AbortSignal): Promise<string> {
+    // Construct explicitly so a remote caller cannot smuggle a sessionId/Profile.
+    const result = await desktopRequest<BrowserTab[] | BrowserTab | unknown>('/v1/browser/command', {
+      method: 'POST', signal,
+      body: JSON.stringify({ op: request.op, sessionId: String(agent.session.id), tabId: request.tabId, sequence: request.sequence, url: request.url, method: request.method, params: request.params ? JSON.parse(request.params) : undefined, visible: request.visible, bounds: request.bounds }),
+    })
+    return JSON.stringify(result)
+  }
+
   constructor(ctx: Context) {
     super(ctx, 'desktopWorkspace')
   }
@@ -52,6 +173,13 @@ export class WorkspaceGateway extends TypertRemoteService {
 
 export function workspaceRoot(agent: Agent): string {
   return resolve(agent.session.header.cwd ?? process.cwd())
+}
+
+export async function resolveWorkspaceFilePath(root: string, path: string): Promise<{ path: string; absolute: string }> {
+  const canonical = await canonicalWorkspaceRoot(root)
+  const normalized = normalizeWorkspaceInputPath(canonical, path)
+  assertNotGitPath(normalized)
+  return { path: normalized, absolute: await resolveInsideWorkspace(canonical, normalized, true) }
 }
 
 export async function readWorkspaceBinaryFile(

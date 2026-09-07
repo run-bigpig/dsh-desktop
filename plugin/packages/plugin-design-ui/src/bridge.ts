@@ -4,7 +4,7 @@ import { computeAllLayouts } from '@open-pencil/core/layout'
 import { ALL_TOOLS } from '@open-pencil/core/tools'
 import type { Editor } from '@open-pencil/core/editor'
 
-import type { DesignSession } from './runtime.ts'
+import { createBlankDocument, type DesignSession } from './runtime.ts'
 import { encodeSessionDocument } from './session-document.ts'
 import { restoreDocumentSnapshot, snapshotDocument } from './document-history.ts'
 import { finishVectorEdit } from './vector-edit/adapter.ts'
@@ -34,39 +34,49 @@ export function startBridge(session: DesignSession): () => void {
     persistTimer = undefined
     if (!persistenceEnabled) return Promise.resolve()
     const operation = persistence.catch(() => undefined).then(async () => {
-      const current = socket
       const document = session.document
-      if (!current || current.readyState !== WebSocket.OPEN || !document) {
-        throw new Error('设计会话未连接，无法保存会话快照')
-      }
-      const id = crypto.randomUUID()
-      const data = await encodeSessionDocument(document.editor)
-      const saved = new Promise<void>((resolve, reject) => {
-        const timer = setTimeout(() => {
-          pendingPersistence.delete(id)
-          reject(new Error('设计会话快照保存超时'))
-        }, PERSISTENCE_TIMEOUT_MS)
-        pendingPersistence.set(id, { resolve, reject, timer })
-      })
-      current.send(JSON.stringify({
-        type: 'persist_document',
-        id,
-        document: { name: document.name, data }
-      }))
-      await saved
-      session.persistenceError = ''
+      if (!document) throw new Error('当前会话没有可保存的画布')
+      document.saving = true
+      try {
+        const current = socket
+        if (!current || current.readyState !== WebSocket.OPEN) {
+          throw new Error('设计会话未连接，无法保存会话快照')
+        }
+        const generation = session.generation
+        const binding = session.binding ? { ...session.binding } : undefined
+        const version = document.editor.state.sceneVersion
+        const id = crypto.randomUUID()
+        const data = await encodeSessionDocument(document.editor)
+        if (generation !== session.generation) return
+        const saved = new Promise<void>((resolve, reject) => {
+          const timer = setTimeout(() => {
+            pendingPersistence.delete(id)
+            reject(new Error('设计会话快照保存超时'))
+          }, PERSISTENCE_TIMEOUT_MS)
+          pendingPersistence.set(id, { resolve, reject, timer })
+        })
+        current.send(JSON.stringify({
+          type: 'persist_document',
+          id,
+          document: { name: document.name, data, binding }
+        }))
+        await saved
+        if (session.document === document && document.editor.state.sceneVersion === version) document.savedVersion = version
+        if (session.document === document) session.persistenceError = ''
+      } catch (error) {
+        if (session.document === document) session.persistenceError = `会话设计保存失败：${error instanceof Error ? error.message : String(error)}`
+        throw error
+      } finally { document.saving = false }
     })
     persistence = operation
     return operation
   }
 
   const schedulePersistence = (): void => {
-    if (!persistenceEnabled || stopped) return
+    if (!persistenceEnabled || stopped || session.document?.savedVersion === session.document?.editor.state.sceneVersion) return
     clearTimeout(persistTimer)
     persistTimer = setTimeout(() => {
-      void persistDocument().catch(error => {
-        session.persistenceError = `会话设计保存失败：${error instanceof Error ? error.message : String(error)}`
-      })
+      void persistDocument().catch(() => { /* Failure is retained on the owning document above. */ })
     }, PERSISTENCE_DELAY_MS)
   }
 
@@ -75,8 +85,10 @@ export function startBridge(session: DesignSession): () => void {
 
   const connect = (): void => {
     if (stopped || !session.document) return
-    session.bridgePhase = 'connecting'
-    session.bridgeDetail = '正在连接 Agent…'
+    if (session.bridgePhase !== 'standby') {
+      session.bridgePhase = 'connecting'
+      session.bridgeDetail = '正在连接 Agent…'
+    }
     const url = new URL('/bridge', session.connection.baseUrl)
     url.protocol = 'ws:'
     const current = new WebSocket(url)
@@ -102,12 +114,12 @@ export function startBridge(session: DesignSession): () => void {
       rejectPersistence(pendingPersistence, new Error('设计会话连接已断开'))
       if (stopped || event.code === 1000) return
       if (event.code === 4001) {
+        session.bridgePhase = 'standby'
+        session.bridgeDetail = '画布正在另一窗口中使用，关闭该窗口后将自动连接'
+      } else {
         session.bridgePhase = 'disconnected'
-        session.bridgeDetail = '当前设计已在另一个窗口中打开'
-        return
+        session.bridgeDetail = 'Agent 已断开，正在重连…'
       }
-      session.bridgePhase = 'disconnected'
-      session.bridgeDetail = 'Agent 已断开，正在重连…'
       retry = setTimeout(connect, 1500)
     })
     current.addEventListener('error', () => {
@@ -150,6 +162,7 @@ async function handleMessage(
       try {
         if (!session.restoreDocument) throw new Error('设计会话恢复器未初始化')
         await session.restoreDocument(saved.name, saved.data)
+        if (saved.unsaved === true && session.document) session.document.savedVersion = -1
       } catch (error) {
         session.persistenceError = `会话设计恢复失败：${error instanceof Error ? error.message : String(error)}`
         session.bridgePhase = 'error'
@@ -157,6 +170,8 @@ async function handleMessage(
         return
       }
     }
+    session.binding = record(message.binding).id ? message.binding as DesignSession['binding'] : undefined
+    if (session.binding && session.document) session.document.name = session.binding.path.split('/').pop()!
     setPersistenceEnabled(message.persistence === true)
     session.bridgePhase = 'connected'
     session.bridgeDetail = 'Agent 已连接当前文档'
@@ -179,9 +194,24 @@ async function handleMessage(
 
 async function execute(session: DesignSession, command: string, args: unknown): Promise<unknown> {
   const document = session.document
-  if (!document) throw new Error('请先在设计模式中创建或打开文档')
+  if (!document) throw new Error('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
   document.editor.flushNudge()
   finishVectorEdit(document.editor)
+  if (command === 'flush_document') {
+    if (record(args).onlyDirty === true && document.savedVersion === document.editor.state.sceneVersion) return { ok: true }
+    await session.persistNow?.()
+    return { ok: true }
+  }
+  if (command === 'switch_document') {
+    const next = record(args)
+    const saved = record(next.document)
+    if (typeof saved.data === 'string' && typeof saved.name === 'string') {
+      await session.restoreDocument!(saved.name, saved.data)
+    } else createBlankDocument(session)
+    session.binding = next.binding as DesignSession['binding']
+    if (session.document && session.binding) session.document.name = session.binding.path.split('/').pop()!
+    return { ok: true }
+  }
   if (command === 'shared_style') {
     const result = editSharedStyle(document.editor, args as SharedStyleOperation)
     await waitForRender(document.editor)
@@ -201,7 +231,7 @@ async function execute(session: DesignSession, command: string, args: unknown): 
       ok: true,
       result: {
         documents: [{
-          id: session.connection.sessionId,
+          id: documentId(session),
           name: document.name,
           active: true,
           current_page_id: document.editor.state.currentPageId,
@@ -213,7 +243,7 @@ async function execute(session: DesignSession, command: string, args: unknown): 
   }
   if (command !== 'tool') throw new Error(`Unsupported design command: ${command}`)
   const envelope = record(args)
-  if (envelope.document_id !== session.connection.sessionId) throw new Error('Agent 只能操作当前设计会话的文档')
+  if (envelope.document_id !== documentId(session)) throw new Error('画布文档已切换，请重新读取当前文档后操作')
   const name = typeof envelope.name === 'string' ? envelope.name : ''
   const definition = ALL_TOOLS.find(tool => tool.name === name)
   if (!definition) throw new Error(`Unknown StarWeave design tool: ${name}`)
@@ -334,7 +364,10 @@ function applyViewport(editor: Editor, viewport: FigmaAPI['viewport']): void {
 
 async function waitForRender(editor: Editor): Promise<void> {
   if (!editor.renderer) return
-  await new Promise<void>(resolve => requestAnimationFrame(() => resolve()))
+  await new Promise<void>(resolve => {
+    const timer = setTimeout(resolve, 50)
+    requestAnimationFrame(() => { clearTimeout(timer); resolve() })
+  })
 }
 
 function asResponse(value: unknown): Record<string, unknown> {
@@ -384,4 +417,8 @@ function rejectPersistence(pending: Map<string, PendingPersistence>, error: Erro
     operation.reject(error)
   }
   pending.clear()
+}
+
+function documentId(session: DesignSession): string {
+  return session.binding ? `${session.connection.sessionId}:${session.binding.id}` : session.connection.sessionId
 }

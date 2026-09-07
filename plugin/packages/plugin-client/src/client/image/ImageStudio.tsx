@@ -1,5 +1,5 @@
 import {
-  useCallback, useEffect, useRef, useState, type KeyboardEvent as ReactKeyboardEvent,
+  useCallback, useEffect, useRef, type KeyboardEvent as ReactKeyboardEvent,
   type PointerEvent as ReactPointerEvent, type ReactNode,
 } from 'react'
 import {
@@ -10,6 +10,7 @@ import type {
   ImageAnnotation, ImageAnnotationPoint, ImageCanvasGeometry,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import type { ImageStudioIntent, WorkbenchDrawerProps } from '../workbench/SessionWorkbench.tsx'
+import { useSessionState, type SessionMemory } from '../workbench/session-memory.ts'
 import css from './ImageStudio.module.css'
 
 type Translate = WorkbenchDrawerProps['t']
@@ -41,6 +42,7 @@ const RESIZE_HANDLES: readonly ResizeHandle[] = [
 const MARK_COLOR = '#ff3b30'
 
 export interface ImageStudioProps {
+  readonly memory?: SessionMemory
   readonly sessionId: string
   readonly intent: ImageStudioIntent
   readonly submitImage: (sessionId: string, instruction: string, file: File) => boolean
@@ -49,17 +51,17 @@ export interface ImageStudioProps {
 }
 
 export function ImageStudio({
-  sessionId, intent, submitImage, onReturn, t,
+  sessionId, intent, submitImage, onReturn, t, memory,
 }: ImageStudioProps): ReactNode {
-  const [load, setLoad] = useState<LoadState>({ phase: 'loading' })
-  const [mode, setMode] = useState<StudioMode>('outpaint')
-  const [paintTool, setPaintTool] = useState<PaintTool>('brush')
-  const [canvas, setCanvas] = useState<ImageCanvasGeometry>(() => initialCanvas(intent))
-  const [annotations, setAnnotations] = useState<readonly ImageAnnotation[]>([])
-  const [instruction, setInstruction] = useState('')
-  const [strokeWidth, setStrokeWidth] = useState(32)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
+  const [load, setLoad] = useSessionState<LoadState>(memory, 'load', { phase: 'loading' })
+  const [mode, setMode] = useSessionState<StudioMode>(memory, 'mode', 'outpaint')
+  const [paintTool, setPaintTool] = useSessionState<PaintTool>(memory, 'paintTool', 'brush')
+  const [canvas, setCanvas] = useSessionState<ImageCanvasGeometry>(memory, 'canvas', () => initialCanvas(intent))
+  const [annotations, setAnnotations] = useSessionState<readonly ImageAnnotation[]>(memory, 'annotations', [])
+  const [instruction, setInstruction] = useSessionState(memory, 'instruction', '')
+  const [strokeWidth, setStrokeWidth] = useSessionState(memory, 'strokeWidth', 32)
+  const [saving, setSaving] = useSessionState(memory, 'saving', false)
+  const [saveError, setSaveError] = useSessionState<string | null>(memory, 'saveError', null)
   const svgRef = useRef<SVGSVGElement | null>(null)
   const gesture = useRef<Gesture | null>(null)
 
@@ -76,7 +78,9 @@ export function ImageStudio({
     })
   }, [intent])
 
-  useEffect(() => { start() }, [start])
+  useEffect(() => {
+    if (load.phase !== 'ready') start()
+  }, [start])
 
   const pointOf = (event: ReactPointerEvent<SVGElement>): ImageAnnotationPoint | undefined => {
     const matrix = svgRef.current?.getScreenCTM()?.inverse()

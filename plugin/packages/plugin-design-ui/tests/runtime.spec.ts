@@ -8,13 +8,36 @@ const { startBridge, stopBridge } = vi.hoisted(() => {
 
 vi.mock('../src/bridge.ts', () => ({ startBridge }))
 
-import { acquireSession, isDirty, releaseSession } from '../src/runtime.ts'
-import { createSessionEditor } from '../src/session-document.ts'
+import { acquireSession, isDirty, releaseSession, saveDocument, saveState } from '../src/runtime.ts'
+import { createSessionEditor, documentIO } from '../src/session-document.ts'
 import { restoreDocumentSnapshot, snapshotDocument } from '../src/document-history.ts'
 
 beforeEach(() => vi.clearAllMocks())
 
 describe('design session runtime', () => {
+  it('reactively marks a saved document dirty again and preserves edits made during a local save', async () => {
+    const session = acquireSession({ baseUrl: 'http://127.0.0.1:7600/', sessionId: 'save-status', token: 'test-token' })
+    const document = session.document!
+    document.savedVersion = document.editor.state.sceneVersion
+    const status = computed(() => saveState(session))
+    let finishWrite!: () => void
+    const write = vi.fn(() => new Promise<void>(resolve => { finishWrite = resolve }))
+    document.handle = { getFile: async () => ({ name: 'saved.fig' } as File), createWritable: async () => ({ write, close: async () => {} }) }
+    const encode = vi.spyOn(documentIO, 'writeDocument').mockResolvedValue({ data: new Uint8Array([1]), mimeType: 'application/octet-stream' } as never)
+    try {
+      expect(status.value).toBe('saved')
+      document.editor.graph.createNode('RECTANGLE', document.editor.state.currentPageId, { width: 100 })
+      expect(status.value).toBe('unsaved')
+      const pending = saveDocument(session)
+      await vi.waitFor(() => expect(write).toHaveBeenCalledOnce())
+      expect(status.value).toBe('saving')
+      document.editor.graph.createNode('ELLIPSE', document.editor.state.currentPageId, { width: 80 })
+      finishWrite()
+      await pending
+      expect(status.value).toBe('unsaved')
+    } finally { encode.mockRestore(); releaseSession(session) }
+  })
+
   it('flushes the last manual edit before disconnecting and preserves a remounted bridge', async () => {
     const connection = { baseUrl: 'http://127.0.0.1:7600/', sessionId: 'flush-on-switch', token: 'test-token' }
     const session = acquireSession(connection)

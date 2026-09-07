@@ -67,6 +67,8 @@ function Test-VerifiedSeedLayout([string]$Root) {
   ) { return $false }
   if (Test-Path -LiteralPath (Join-Path $Root "resources/openpencil")) { return $false }
   foreach ($required in @(
+    "resources/browser/WebView2Loader.dll",
+    "resources/browser/LICENSE.txt",
     "resources/toolchain/node/node.exe",
     "resources/toolchain/node/LICENSE",
     "resources/toolchain/pnpm/pnpm.exe",
@@ -101,7 +103,7 @@ function Restore-VerifiedSeedCache([string]$Cache) {
   $stageResources = Join-Path $stage "resources"
   New-Item -ItemType Directory -Force $stageResources | Out-Null
   Remove-DirectoryTree (Join-Path $stageResources "openpencil")
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","browser") {
     Remove-DirectoryTree (Join-Path $stageResources $directory)
     Copy-DirectoryTree `
       -Source (Join-Path $Cache ("resources/" + $directory)) `
@@ -116,7 +118,7 @@ function Publish-VerifiedSeedCache {
   $temporaryCache = Join-Path $seedCacheRoot ("seed-cache-tmp-" + [Guid]::NewGuid().ToString("N"))
   $temporaryResources = Join-Path $temporaryCache "resources"
   New-Item -ItemType Directory -Force $temporaryResources | Out-Null
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","browser") {
     Copy-DirectoryTree `
       -Source (Join-Path $stage ("resources/" + $directory)) `
       -Destination (Join-Path $temporaryResources $directory)
@@ -563,6 +565,7 @@ foreach ($license in "LICENSE-MIT","LICENSE-APACHE") {
   Copy-Item -Force (Join-Path $repoRoot "build/licenses/uv/$license") (Join-Path $runtimeTools "uv/$license")
 }
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
+& (Join-Path $PSScriptRoot "prepare-browser-runtime.ps1") -Stage $stage
 $finalSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
 if ($finalSeedFingerprint -ne $sourceSeedFingerprint) {
   throw "Seed or plugin sources changed during the Windows build; retry from a stable worktree"

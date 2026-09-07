@@ -11,8 +11,10 @@ button:disabled { opacity: .5; cursor: default; }
 .document-state { min-width: 0; color: #aaaab3; }
 .document-state strong { max-width: 240px; overflow: hidden; color: #e8e8ed; text-overflow: ellipsis; white-space: nowrap; }
 .saved { color: #72c997; }.unsaved { color: #f0b96a; }
-.bridge-state { padding-left: 8px; border-left: 1px solid #44444b; }
-.bridge-state[data-phase="connected"] { color: #72c997; }.bridge-state[data-phase="error"] { color: #ff8a8a; }
+.bridge-state { display: inline-block; flex: none; width: 8px; height: 8px; border-radius: 50%; background: #888891; }
+.bridge-state[data-phase="connected"] { background: #72c997; }
+.bridge-state[data-phase="connecting"], .bridge-state[data-phase="standby"] { background: #f0b96a; }
+.bridge-state[data-phase="error"] { background: #ff8a8a; }
 .error-banner { flex: none; padding: 7px 12px; background: #5e262b; color: #ffd9dc; }
 .empty-state { display: grid; flex: 1; place-items: center; padding: 24px; background: radial-gradient(circle at 50% 35%, #2c303d 0, #1d1d21 48%); }
 .empty-card { width: min(460px, 100%); padding: 28px; border: 1px solid #3b3b43; border-radius: 12px; background: #25252b; box-shadow: 0 18px 50px #0005; text-align: center; }

@@ -15,9 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
 	"github.com/run-bigpig/dsh-desktop/internal/backup"
+	"github.com/run-bigpig/dsh-desktop/internal/browser"
 	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
 	"github.com/run-bigpig/dsh-desktop/internal/plugin"
 	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
@@ -41,6 +43,7 @@ type Coordinator struct {
 	plugins      *plugin.Manager
 	pluginBridge *plugin.Bridge
 	window       *windowController
+	browser      *browser.Manager
 	tools        update.Toolchain
 	log          io.Writer
 	process      *harnessruntime.Process
@@ -95,6 +98,15 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	}
 	c.plugins, c.pluginBridge = plugins, bridge
 	bridge.SetDesktopController(c.window)
+	executable, _ := os.Executable()
+	c.browser = browser.New(filepath.Join(paths.Root, "browser"), filepath.Join(filepath.Dir(executable), "resources", "browser", "WebView2Loader.dll"), func() unsafe.Pointer {
+		window, err := c.window.current()
+		if err != nil {
+			return nil
+		}
+		return window.NativeWindow()
+	})
+	bridge.SetBrowserController(c.browser)
 	plugins.SetControl(bridge.URL(), bridge.Token())
 	plugins.SetLifecycle(plugin.Lifecycle{Stop: c.Stop, Start: c.Start})
 	return c, nil
@@ -354,6 +366,9 @@ func (c *Coordinator) harnessEnvironment() []string {
 }
 
 func (c *Coordinator) Stop(ctx context.Context) error {
+	if c.browser != nil {
+		c.browser.Reset()
+	}
 	c.mu.Lock()
 	p := c.process
 	c.process = nil

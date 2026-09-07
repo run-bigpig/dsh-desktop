@@ -20,13 +20,21 @@ export type BrowserDesignSession = {
   socket: WebSocket | null
   pending: Map<string, PendingRPC>
   ready: boolean
+  restoreError?: string | undefined
   store: DesignDocumentStore | undefined
   resolveStore: DesignDocumentStoreResolver | undefined
   saves: Promise<void>
 }
 
 export function createBrowserSessions() {
+  const operations = new Map<string, Promise<unknown>>()
   const sessions = new Map<string, BrowserDesignSession>()
+
+  async function exclusive<T>(sessionId: string, action: () => Promise<T>): Promise<T> {
+    const operation = (operations.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(action)
+    operations.set(sessionId, operation)
+    try { return await operation } finally { if (operations.get(sessionId) === operation) operations.delete(sessionId) }
+  }
 
   function prepare(sessionId: string, resolveStore?: DesignDocumentStoreResolver): BrowserDesignSession {
     const existing = sessions.get(sessionId)
@@ -51,7 +59,7 @@ export function createBrowserSessions() {
   async function sendRPC(sessionId: string, command: string, args: unknown): Promise<unknown> {
     const session = sessions.get(sessionId)
     const socket = session?.socket
-    if (!session || !session.ready || !isOpen(socket)) throw new Error('请先在设计模式中创建或打开文档')
+    if (!session || !session.ready || !isOpen(socket)) throw new Error('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
     return await new Promise((resolve, reject) => {
       const id = randomUUID()
       const timer = setTimeout(() => {
@@ -68,9 +76,14 @@ export function createBrowserSessions() {
     const token = typeof message.token === 'string' ? message.token : ''
     const session = sessions.get(sessionId)
     if (!session || !safeEqual(token, session.token)) return false
-    session.socket?.close(4001, 'session opened in another view')
+    // A background page must not evict the editor that already owns this document.
+    if (session.socket !== socket && isOpen(session.socket)) {
+      socket.close(4001, 'session already open in another view')
+      return true
+    }
     session.socket = socket
     session.ready = false
+    session.restoreError = undefined
     let document
     let restoreError: string | undefined
     try {
@@ -84,11 +97,13 @@ export function createBrowserSessions() {
       restoreError = error instanceof Error ? error.message : String(error)
     }
     if (session.socket !== socket) return false
+    session.restoreError = restoreError
     socket.send(JSON.stringify({
       type: 'registered',
       sessionId,
       persistence: session.store !== undefined,
       document,
+      binding: session.store?.currentBinding?.(),
       restoreError
     }))
     session.ready = restoreError === undefined
@@ -138,6 +153,7 @@ export function createBrowserSessions() {
     if (!session) return
     session.socket = null
     session.ready = false
+    session.restoreError = undefined
     for (const pending of session.pending.values()) {
       clearTimeout(pending.timer)
       pending.reject(new Error('StarWeave Design canvas disconnected'))
@@ -156,7 +172,12 @@ export function createBrowserSessions() {
     sessions.clear()
   }
 
-  return { close, disconnect, handleMessage, prepare, sendRPC }
+  const isReady = (sessionId: string): boolean => {
+    const session = sessions.get(sessionId)
+    return session?.ready === true && isOpen(session.socket)
+  }
+  const restoreError = (sessionId: string): string | undefined => sessions.get(sessionId)?.restoreError
+  return { close, disconnect, handleMessage, prepare, sendRPC, isReady, restoreError, exclusive }
 }
 
 function isOpen(socket: WebSocket | null | undefined): socket is WebSocket {

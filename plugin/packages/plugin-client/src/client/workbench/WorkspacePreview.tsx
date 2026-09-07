@@ -6,6 +6,7 @@ import {
 import type { MarkdownLabels } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { WorkspaceFileSnapshot, WorkspaceFileWriteResult } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import { HarnessImage } from '../image/ImagePreview.tsx'
+import { useSessionScroll, useSessionState, type SessionMemory } from './session-memory.ts'
 import css from './WorkspacePreview.module.css'
 
 export type PreviewKind = 'markdown' | 'html' | 'code' | 'csv' | 'image' | 'pdf' | 'office' | 'text' | 'diff'
@@ -59,6 +60,8 @@ export interface WorkspacePreviewCopy {
 }
 
 export interface WorkspacePreviewProps {
+  readonly memory?: SessionMemory
+  readonly visible?: boolean
   readonly tabs: readonly PreviewTab[]
   readonly activeId: string | null
   readonly copy: WorkspacePreviewCopy
@@ -70,24 +73,29 @@ export interface WorkspacePreviewProps {
 }
 
 export function WorkspacePreview({
-  tabs, activeId, copy, onActivate, onClose, onChange, onRefresh, onSave,
+  tabs, activeId, copy, onActivate, onClose, onChange, onRefresh, onSave, visible = true, memory,
 }: WorkspacePreviewProps): ReactNode {
   const active = tabs.find(tab => tab.id === activeId) ?? null
+  const scrollRef = useSessionScroll(memory, `preview.scroll:${activeId}`, visible)
   const tabElements = useRef(new Map<string, HTMLButtonElement>())
-  const [sourceMode, setSourceMode] = useState(false)
-  const [split, setSplit] = useState(false)
+  const [sourceMode, setSourceMode] = useSessionState(memory, `preview.source:${activeId}:${active?.kind}`, active?.kind === 'code' || active?.kind === 'text')
+  const [split, setSplit] = useSessionState(memory, `preview.split:${activeId}`, false)
   const [closing, setClosing] = useState<readonly string[] | null>(null)
   const [context, setContext] = useState<{ id: string; x: number; y: number } | null>(null)
   const [tabsMenuOpen, setTabsMenuOpen] = useState(false)
-  const [saving, setSaving] = useState(false)
-  const [saveError, setSaveError] = useState<string | null>(null)
-  const splitRatio = usePersistentRatio()
-  const [ratio, setRatio] = splitRatio
+  const [saving, setSaving] = useSessionState(memory, `preview.saving:${activeId}`, false)
+  const [saveError, setSaveError] = useSessionState<string | null>(memory, `preview.error:${activeId}`, null)
+  const [ratio, setRatio] = useSessionState(memory, 'preview.ratio', 50)
   const tabMenuItems = useMemo(() => tabs.map(tab => ({ id: tab.id, label: tab.title })), [tabs])
 
   useEffect(() => {
-    setSourceMode(active?.kind === 'code' || active?.kind === 'text')
-    setSplit(false)
+    if (visible) return
+    setClosing(null)
+    setContext(null)
+    setTabsMenuOpen(false)
+  }, [visible])
+
+  useEffect(() => {
     setSaveError(null)
   }, [active?.id, active?.kind])
 
@@ -124,18 +132,17 @@ export function WorkspacePreview({
   }
 
   return (
-    <section className={css.panel} aria-label={copy.preview}>
+    <section ref={scrollRef} className={css.panel} aria-label={copy.preview}>
       <div className={css.tabsRow}>
-        <div className={css.tabs} role="tablist" aria-label={copy.preview}>
-          {tabs.map(tab => (
+        <div className={css.tabs} aria-label={copy.preview}>
+          {tabs.filter(tab => tab.id === activeId).map(tab => (
             <button
               ref={element => { if (element === null) tabElements.current.delete(tab.id); else tabElements.current.set(tab.id, element) }}
               className={css.tab}
               data-active={tab.id === activeId || undefined}
               data-dirty={tab.dirty || undefined}
               type="button"
-              role="tab"
-              aria-selected={tab.id === activeId}
+              aria-label={`${copy.preview}: ${tab.title}`}
               title={tab.path}
               key={tab.id}
               onClick={() => { onActivate(tab.id) }}
@@ -192,7 +199,7 @@ export function WorkspacePreview({
           </div>
           {saveError !== null && <div className={css.error} role="alert">{saveError}</div>}
           {active.truncated && <div className={css.notice}>{copy.truncated}</div>}
-          <div className={css.previewViewport} role="region" aria-label={active.title}>
+          <div data-workspace-scroll="viewport" className={css.previewViewport} role="region" aria-label={active.title}>
             <PreviewContent
               tab={active}
               sourceMode={sourceMode}
@@ -254,7 +261,7 @@ function PreviewContent({ tab, sourceMode, split, ratio, onRatio, onChange, onSa
 }
 
 function Editor({ value, onChange, onSave }: { value: string; onChange: (value: string) => void; onSave: () => void }): ReactNode {
-  return <textarea className={css.editor} value={value} spellCheck={false} onChange={event => { onChange(event.currentTarget.value) }} onKeyDown={event => {
+  return <textarea data-workspace-scroll="editor" className={css.editor} value={value} spellCheck={false} onChange={event => { onChange(event.currentTarget.value) }} onKeyDown={event => {
     if ((event.ctrlKey || event.metaKey) && event.key.toLocaleLowerCase() === 's') { event.preventDefault(); onSave() }
   }} />
 }
@@ -264,7 +271,7 @@ function Rendered({ tab, content, copy }: { tab: PreviewTab; content: string; co
     code: { copyLabel: copy.markdownCopy, copiedLabel: copy.markdownCopied },
     footnotes: copy.markdownFootnotes,
   }), [copy.markdownCopied, copy.markdownCopy, copy.markdownFootnotes])
-  if (tab.kind === 'markdown') return <div className={css.markdown}><MarkdownText text={content} labels={labels} /></div>
+  if (tab.kind === 'markdown') return <div data-workspace-scroll="markdown" className={css.markdown}><MarkdownText text={content} labels={labels} /></div>
   if (tab.kind === 'html') return <iframe className={css.frame} srcDoc={content} sandbox="" title={tab.title} />
   if (tab.kind === 'csv') return <CsvPreview content={content} />
   if (tab.kind === 'diff') return <DiffPreview content={content} />
@@ -280,16 +287,16 @@ function Rendered({ tab, content, copy }: { tab: PreviewTab; content: string; co
     </div>
   )
   if (tab.kind === 'pdf') return <iframe className={css.frame} src={content} title={tab.title} />
-  return <pre className={css.code}><code>{content}</code></pre>
+  return <pre data-workspace-scroll="code" className={css.code}><code>{content}</code></pre>
 }
 
 function CsvPreview({ content }: { content: string }): ReactNode {
   const rows = useMemo(() => parseCsv(content), [content])
-  return <div className={css.csv}><table><tbody>{rows.map((row, rowIndex) => <tr key={`${String(rowIndex)}:${row.join('\u0000')}`}>{row.map((cell, cellIndex) => rowIndex === 0 ? <th key={cellIndex}>{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>
+  return <div data-workspace-scroll="csv" className={css.csv}><table><tbody>{rows.map((row, rowIndex) => <tr key={`${String(rowIndex)}:${row.join('\u0000')}`}>{row.map((cell, cellIndex) => rowIndex === 0 ? <th key={cellIndex}>{cell}</th> : <td key={cellIndex}>{cell}</td>)}</tr>)}</tbody></table></div>
 }
 
 function DiffPreview({ content }: { content: string }): ReactNode {
-  return <div className={css.diff}>{content.split('\n').map((line, index) => <div key={index} data-kind={diffKind(line)}>{line || ' '}</div>)}</div>
+  return <div data-workspace-scroll="diff" className={css.diff}>{content.split('\n').map((line, index) => <div key={index} data-kind={diffKind(line)}>{line || ' '}</div>)}</div>
 }
 
 function ResizeHandle({ ratio, onRatio }: { ratio: number; onRatio: (ratio: number) => void }): ReactNode {
@@ -311,16 +318,7 @@ function ResizeHandle({ ratio, onRatio }: { ratio: number; onRatio: (ratio: numb
   }} style={{ left: `${ratio}%` }} />
 }
 
-function usePersistentRatio(): [number, (ratio: number) => void] {
-  const [ratio, setRatioState] = useState(() => {
-    try { return Math.min(80, Math.max(20, Number(localStorage.getItem('dsh-workbench-preview-split')) || 50)) } catch { return 50 }
-  })
-  const setRatio = (next: number): void => {
-    setRatioState(next)
-    try { localStorage.setItem('dsh-workbench-preview-split', String(Math.round(next))) } catch { /* best effort */ }
-  }
-  return [ratio, setRatio]
-}
+
 
 export function previewKind(path: string): PreviewKind {
   const extension = path.slice(path.lastIndexOf('.')).toLocaleLowerCase()

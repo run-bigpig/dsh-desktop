@@ -3,13 +3,14 @@ import { randomBytes } from 'node:crypto'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, stat } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
 import { WebSocketServer } from 'ws'
 
 import { createBrowserSessions } from './browser-sessions.ts'
 import { createDesignMCPSessions } from './mcp-sessions.ts'
-import { createDesignDocumentStore, MAX_DESIGN_DOCUMENT_BASE64_LENGTH } from './storage.ts'
+import { createDesignDocumentStore, MAX_DESIGN_DOCUMENT_BASE64_LENGTH, type DesignDocumentStore } from './storage.ts'
 import { registerDesignTools } from './tools.ts'
 import type { DesignConnection } from '../shared/types.ts'
 
@@ -22,22 +23,28 @@ const UI_ROOT = resolve(
 export type DesignOwner = { id: string }
 
 export type DesignServer = {
+  exclusive: <T>(sessionId: string, action: () => Promise<T>) => Promise<T>
+  sendRPC: (sessionId: string, command: string, args: unknown) => Promise<unknown>
   port: number
   authToken: string
   connection: (sessionId: string) => DesignConnection
   registerOwner: (owner: DesignOwner) => { token: string; dispose: () => void }
+  waitForReady: (sessionId: string, signal: AbortSignal) => Promise<void>
   close: () => Promise<void>
 }
 
 export async function startDesignServer(
   authToken: string,
-  documentPath?: (sessionId: string) => Promise<string | undefined>
+  documentPath?: (sessionId: string) => Promise<string | undefined>,
+  documentStore?: (sessionId: string) => Promise<DesignDocumentStore | undefined>,
 ): Promise<DesignServer> {
   let port = 0
   const browsers = createBrowserSessions()
   const owners = new Map<string, DesignOwner>()
   const mcpSessions = createDesignMCPSessions((server: McpServer, ownerToken?: string) => {
-    registerDesignTools(server, browsers.sendRPC, ownerToken ? owners.get(ownerToken)?.id : undefined)
+    registerDesignTools(server, async (sessionId, command, args) => {
+      return browsers.exclusive(sessionId, () => browsers.sendRPC(sessionId, command, args))
+    }, ownerToken ? owners.get(ownerToken)?.id : undefined)
   })
   const designSockets = new WebSocketServer({
     noServer: true,
@@ -93,8 +100,20 @@ export async function startDesignServer(
   return {
     port,
     authToken,
+    sendRPC: browsers.sendRPC,
+    exclusive: browsers.exclusive,
+    waitForReady: async (sessionId, signal) => {
+      const deadline = Date.now() + 30_000
+      while (!browsers.isReady(sessionId)) {
+        const error = browsers.restoreError(sessionId)
+        if (error) throw new Error(`当前会话画布恢复失败：${error}`)
+        if (Date.now() >= deadline) throw new Error('当前会话画布初始化超时，请在侧栏查看连接状态后重试')
+        await delay(100, undefined, { signal })
+      }
+      signal.throwIfAborted()
+    },
     connection: sessionId => {
-      const session = browsers.prepare(sessionId, documentPath
+      const session = browsers.prepare(sessionId, documentStore ? () => documentStore(sessionId) : documentPath
         ? async () => {
             const filename = await documentPath(sessionId)
             return filename ? createDesignDocumentStore(filename) : undefined
@@ -109,7 +128,7 @@ export async function startDesignServer(
       }
     },
     registerOwner: owner => {
-      browsers.prepare(owner.id, documentPath
+      browsers.prepare(owner.id, documentStore ? () => documentStore(owner.id) : documentPath
         ? async () => {
             const filename = await documentPath(owner.id)
             return filename ? createDesignDocumentStore(filename) : undefined

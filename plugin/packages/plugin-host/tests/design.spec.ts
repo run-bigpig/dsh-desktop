@@ -19,11 +19,41 @@ afterEach(async () => {
 })
 
 describe('StarWeave Design browser sessions', () => {
+  it('keeps the current owner connected and lets a waiting window restore after it exits', async () => {
+    const sessions = createBrowserSessions()
+    const load = vi.fn(async () => ({ name: 'Saved.fig', data: 'AQIDBA==' }))
+    const session = sessions.prepare('session-a', async () => ({ load, save: vi.fn() }))
+    const owner = mockSocket()
+    const waiting = mockSocket()
+    const registration = { type: 'register', sessionId: session.id, token: session.token }
+    try {
+      await sessions.handleMessage(owner.socket, registration)
+      await sessions.handleMessage(waiting.socket, registration)
+      expect(owner.socket.close).not.toHaveBeenCalled()
+      expect(waiting.socket.close).toHaveBeenCalledWith(4001, 'session already open in another view')
+      expect(sessions.isReady(session.id)).toBe(true)
+      expect(load).toHaveBeenCalledTimes(1)
+      sessions.disconnect(waiting.socket)
+      const pending = sessions.sendRPC(session.id, 'get_selection', {})
+      const request = JSON.parse(String(owner.send.mock.calls.at(-1)?.[0]))
+      await sessions.handleMessage(owner.socket, { type: 'response', id: request.id, ok: true })
+      await expect(pending).resolves.toMatchObject({ ok: true })
+      sessions.disconnect(owner.socket)
+      const next = mockSocket()
+      await sessions.handleMessage(next.socket, registration)
+      expect(load).toHaveBeenCalledTimes(2)
+      expect(sessions.isReady(session.id)).toBe(true)
+      expect(JSON.parse(String(next.send.mock.calls[0]?.[0]))).toMatchObject({
+        type: 'registered', document: { name: 'Saved.fig', data: 'AQIDBA==' }
+      })
+    } finally { sessions.close() }
+  })
+
   it('requires the user canvas to connect before an Agent can call it', async () => {
     const sessions = createBrowserSessions()
     sessions.prepare('session-a')
     await expect(sessions.sendRPC('session-a', 'list_documents', {}))
-      .rejects.toThrow('请先在设计模式中创建或打开文档')
+      .rejects.toThrow('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
     sessions.close()
   })
 
@@ -44,7 +74,7 @@ describe('StarWeave Design browser sessions', () => {
     const request = JSON.parse(String(send.mock.calls[1]?.[0])) as { id: string; sessionId: string }
     expect(request.sessionId).toBe('session-a')
     await expect(sessions.sendRPC('session-b', 'list_documents', {}))
-      .rejects.toThrow('请先在设计模式中创建或打开文档')
+      .rejects.toThrow('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
 
     await sessions.handleMessage(socket, { type: 'response', id: request.id, ok: true, result: { selection: [] } })
     await expect(pending).resolves.toMatchObject({ ok: true, result: { selection: [] } })
@@ -178,7 +208,7 @@ describe('StarWeave Design MCP tools', () => {
 
     const result = await callbacks.get('get_selection')?.({}) as { isError?: boolean; content?: Array<{ text?: string }> }
     expect(result.isError).toBe(true)
-    expect(result.content?.[0]?.text).toContain('请先在设计模式中创建或打开文档')
+    expect(result.content?.[0]?.text).toContain('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
   })
 })
 
@@ -200,6 +230,25 @@ describe('StarWeave Design MCP sessions', () => {
 })
 
 describe('StarWeave Design local server', () => {
+  it('reports a persistence restore failure immediately instead of waiting for initialization timeout', async () => {
+    const server = await startDesignServer('test-token', undefined, async () => ({
+      load: async () => { throw new Error('Saved design is unavailable') }, save: vi.fn()
+    }))
+    activeServers.push(server)
+    const connection = server.connection('restore-error')
+    const socket = new WebSocket(`ws://127.0.0.1:${server.port}/bridge`, { origin: connection.baseUrl })
+    const registered = new Promise<void>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'register', sessionId: connection.sessionId, token: connection.token })))
+      socket.once('message', () => resolve())
+    })
+    try {
+      await registered
+      await expect(server.waitForReady(connection.sessionId, AbortSignal.timeout(1000)))
+        .rejects.toThrow('当前会话画布恢复失败：Saved design is unavailable')
+    } finally { socket.close() }
+  })
+
   it('publishes session-scoped canvas credentials on loopback only', async () => {
     const server = await startDesignServer('test-token')
     activeServers.push(server)
