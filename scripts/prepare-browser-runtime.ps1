@@ -1,13 +1,14 @@
 param([string]$Stage = '')
 $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
+. (Join-Path $PSScriptRoot 'windows-build-common.ps1')
 if (-not $Stage) { $Stage = Join-Path $repoRoot 'dist/windows/stage' }
 $lock = Get-Content (Join-Path $repoRoot 'release/browser.lock.json') -Raw | ConvertFrom-Json
 $cache = Join-Path $repoRoot 'dist/windows/browser-runtime'
 New-Item -ItemType Directory -Force $cache | Out-Null
 $archive = Join-Path $cache ('webview2-' + $lock.version + '.zip')
 if (-not (Test-Path -LiteralPath $archive)) { Invoke-WebRequest -UseBasicParsing $lock.url -OutFile $archive }
-if ((Get-FileHash -LiteralPath $archive -Algorithm SHA256).Hash.ToLowerInvariant() -ne $lock.sha256) { throw 'Packaged WebView2 SDK checksum mismatch' }
+if ((Get-SHA256File $archive) -ne $lock.sha256) { throw 'Packaged WebView2 SDK checksum mismatch' }
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $zip = [IO.Compression.ZipFile]::OpenRead($archive)
 try {
