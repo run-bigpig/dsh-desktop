@@ -105,7 +105,7 @@ describe('session workbench file references', () => {
 
 vi.mock('../src/client/workbench/WorkspaceWorkbench.tsx', () => ({ WorkspaceWorkbench: () => <div>Document preview</div> }))
 
-it('opens a wider workbench, remembers manual width and hides on a blank session', () => {
+it('opens at 520px, remembers manual width between 360px and 800px and hides on a blank session', () => {
   localStorage.clear()
   vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
   vi.spyOn(HTMLElement.prototype, 'getBoundingClientRect').mockReturnValue({ width: 1800 } as DOMRect)
@@ -123,17 +123,20 @@ it('opens a wider workbench, remembers manual width and hides on a blank session
   const frame = () => <div data-testid="frame" style={{ gridTemplateColumns: '280px minmax(0, 1fr) 360px' }}><div /><div /><div data-slot="details"><WorkbenchDrawer {...props} /></div><div data-shell-overlay /></div>
   const view = render(frame())
   const root = view.getByTestId('frame')
-  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('800px')
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('520px')
   expect(view.getByRole('complementary').closest('[data-slot="details"]')).not.toBeNull()
   const separator = view.getByRole('separator', { name: workbenchEn.resizeWorkbench })
+  expect(separator.getAttribute('aria-valuemax')).toBe('800')
   fireEvent.keyDown(separator, { key: 'ArrowLeft' })
-  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('840px')
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('560px')
+  for (let step = 0; step < 7; step++) fireEvent.keyDown(separator, { key: 'ArrowLeft' })
+  expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('800px')
   view.unmount()
   expect(root.style.getPropertyValue('--starweave-workbench-width')).toBe('')
   const reopened = render(frame())
-  expect(reopened.getByTestId('frame').style.getPropertyValue('--starweave-workbench-width')).toBe('840px')
-  fireEvent.doubleClick(reopened.getByRole('separator'))
   expect(reopened.getByTestId('frame').style.getPropertyValue('--starweave-workbench-width')).toBe('800px')
+  fireEvent.doubleClick(reopened.getByRole('separator'))
+  expect(reopened.getByTestId('frame').style.getPropertyValue('--starweave-workbench-width')).toBe('520px')
   state = { ...state, byId: { 'session-1': { blank: true, cwd: '/workspace' } } }
   reopened.rerender(frame())
   expect(reopened.queryByRole('complementary')).toBeNull()

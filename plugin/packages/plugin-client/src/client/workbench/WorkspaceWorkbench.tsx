@@ -6,7 +6,7 @@ import {
   IconRefreshOutline14, IconSearchOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  WorkspaceRequest, GitSnapshot, WorkspaceDirectorySnapshot, WorkspaceEntry, WorkspaceFileSnapshot, WorkspaceFileWriteRequest,
+  WorkspacePanelRequest, GitSnapshot, WorkspaceDirectorySnapshot, WorkspaceEntry, WorkspaceFileSnapshot, WorkspaceFileWriteRequest,
   WorkspaceFileWriteResult, WorkspaceSearchSnapshot,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import type { WorkbenchLocaleKey } from '../locales.ts'
@@ -54,7 +54,7 @@ export function WorkspaceWorkbench({
   const tabsRef = useRef<readonly PreviewTab[]>([])
   tabsRef.current = tabs
   const [activeId, setActiveId] = useSessionState<string | null>(memory, 'active', null)
-  const [requestedFile, setRequestedFile] = useSessionState<WorkspaceRequest | null>(memory, 'requestedFile', null)
+  const [requestedFile, setRequestedFile] = useSessionState<WorkspacePanelRequest | null>(memory, 'requestedFile', null)
   const hydrated = useRef(false)
   const requests = useRef(new Map<string, AbortController>())
   const activeRef = useRef<string | null>(null)

@@ -47,6 +47,17 @@ it('uses real turn boundaries, coalesces presentation, and does not treat ordina
   expect(gateway.pendingRequests().sessions).toEqual([{ sessionId: 'a', turn: 2, request: null }])
 })
 
+it('lets the Agent close the current session panel without destroying its resources', async () => {
+  const { gateway, tool, exec } = await fixture()
+  await expect(tool('close_workspace_panel').execute({}, exec)).resolves.toBe('已请求关闭当前会话侧边栏。')
+  expect(gateway.pendingRequests().sessions).toEqual([{
+    sessionId: 'a',
+    turn: 0,
+    request: expect.objectContaining({ action: 'close', sessionId: 'a', turn: 0 }),
+  }])
+  expect(desktopRequest).not.toHaveBeenCalled()
+})
+
 it('rejects foreign browser targets and failed or cancelled navigation without revealing', async () => {
   const { gateway, tool, exec } = await fixture()
   vi.mocked(desktopRequest).mockResolvedValueOnce([{ id: 'owned' }])

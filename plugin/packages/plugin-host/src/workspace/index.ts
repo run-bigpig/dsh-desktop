@@ -6,7 +6,7 @@ import { defineTool } from '@deepseek-ai/dsh-tools'
 import type { ImageAttachmentRef } from '@deepseek-ai/dsh-attachment'
 import type {} from '@deepseek-ai/dsh-api-session-controller/types'
 import { desktopRequest } from '../desktop/index.ts'
-import type { BrowserCommand, BrowserTab, WorkspaceRequest, WorkspacePresentationSnapshot } from '../shared/types.ts'
+import type { BrowserCommand, BrowserTab, WorkspacePanelRequest, WorkspaceRequest, WorkspacePresentationSnapshot } from '../shared/types.ts'
 import type { Agent } from '@deepseek-ai/dsh-agent'
 import { Remote, TypertRemoteService } from '@deepseek-ai/dsh-typert-protocol'
 import type {
@@ -82,6 +82,18 @@ export class WorkspaceGateway extends TypertRemoteService {
       },
     })), 'desktop-workspace: reveal session panel')
     this.ctx.effect(() => this.ctx.tools.register(defineTool({
+      name: 'close_workspace_panel',
+      description: '关闭当前会话右侧的 details 工作台。用户说关闭浏览器、关闭画布、关闭文件/Git 侧栏、收起右侧面板或不再展示时，必须调用本工具。只关闭侧边栏并保留浏览器标签、画布和文件状态；如果用户明确要关闭浏览器标签本身，另用 workspace_browser(action=close)。',
+      parameters: {},
+      output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
+      execute: async (_args, exec) => {
+        if (!exec.agent) throw new Error('Workspace requires an owning agent session')
+        exec.signal.throwIfAborted()
+        this.requestClose(exec.agent)
+        return '已请求关闭当前会话侧边栏。'
+      },
+    })), 'desktop-workspace: close session panel')
+    this.ctx.effect(() => this.ctx.tools.register(defineTool({
       name: 'workspace_browser',
       description: '操作当前会话的隔离浏览器。create 创建标签页，list 获取真实 tabId，navigate/back/forward/reload/close 导航，screenshot 截图，cdp 调用此标签页的 DOM、Accessibility、Runtime、Input 方法。用户明确要求打开网页时，create 或 navigate 必须设置 reveal=true，以便展示对应标签；后台查资料不设置 reveal。已有标签也可通过 open_workspace_panel(panel=browser, tabId=真实标签ID) 展示。会话身份由 Host 绑定，禁止猜测其他会话或标签 ID。',
       parameters: {
@@ -119,11 +131,19 @@ export class WorkspaceGateway extends TypertRemoteService {
     }), 'desktop-workspace: remove browser session')
   }
 
-  request(agent: Agent, panel: WorkspaceRequest['panel'], tabId?: string, path?: string, presentation?: string): void {
+  request(agent: Agent, panel: WorkspacePanelRequest['panel'], tabId?: string, path?: string, presentation?: string): void {
     const sessionId = String(agent.session.id)
     const turn = this.turns.get(sessionId) ?? 0
     this.turns.set(sessionId, turn)
     this.requests.set(sessionId, { sessionId, panel, turn, ...(presentation ? { presentation } : {}), cwd: agent.session.header.cwd ?? '', revision: this.revision + 1, ...(panel === 'browser' && tabId ? { tabId } : {}), ...(path ? { path } : {}) })
+    this.changed()
+  }
+
+  requestClose(agent: Agent): void {
+    const sessionId = String(agent.session.id)
+    const turn = this.turns.get(sessionId) ?? 0
+    this.turns.set(sessionId, turn)
+    this.requests.set(sessionId, { action: 'close', sessionId, turn, cwd: agent.session.header.cwd ?? '', revision: this.revision + 1 })
     this.changed()
   }
 

@@ -12,7 +12,7 @@
  */
 import type { WebToolsContext } from "./context-types.ts";
 import { Config as PluginConfig, installConfig, type WebToolsSettings } from "./config.ts";
-import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID, WebToolsWebError } from "./registry.ts";
+import { createSearchProvider, createFetchProvider, createPoolStore, PROVIDER_ID } from "./registry.ts";
 import { registerRoutes } from "./routes.ts";
 import { Stats } from "./stats.ts";
 import { CURRENT_VERSION } from "../shared/version.ts";
@@ -29,14 +29,6 @@ import { installSearchModeRuntime, SearchModeRuntime, createSearchModeMessages }
 import { createUserMessage } from "@deepseek-ai/dsh-llm";
 import { createProviderHealthStore } from "./provider-health.ts";
 
-import { SpecializedSourceRegistry } from "./sources/registry.ts";
-import { XiaohongshuSource } from "./sources/xiaohongshu.ts";
-import { XSource } from "./sources/x.ts";
-import { createNativeBrowserRuntime } from "./browser/index.ts";
-import { extractSearchHints } from "./search-hints.ts";
-import type { SourceFetchOutcome } from "./sources/types.ts";
-import path from "node:path";
-
 /** Cordis plugin name used by loader diagnostics. */
 export const name = "dsh-web-tools";
 
@@ -49,50 +41,6 @@ export const inject = ["webServer", "webRuntime", "settings", "credentials", "we
  * resolving plugin config); an empty object would crash at load.
  */
 export const Config = PluginConfig;
-
-export function toRoutedFetchResponse(url: string, outcome: SourceFetchOutcome) {
-  if (outcome.error) {
-    const error = new WebToolsWebError(
-      `platform fetch failed (${outcome.error.code}): ${outcome.error.message}`,
-    );
-    if (outcome.error.code === "aborted") error.code = "WEB_ABORTED";
-    throw error;
-  }
-
-  const item = outcome.item;
-  const rawContent = item?.text?.trim();
-  if (!item || !rawContent) {
-    throw new WebToolsWebError(`platform fetch returned empty content for ${url}`);
-  }
-
-  const sections: string[] = [];
-  if (item.title?.trim() && !rawContent.startsWith(item.title.trim())) {
-    sections.push(`# ${item.title.trim()}`);
-  }
-
-  const metadata: string[] = [];
-  const author = item.author?.handle || item.author?.name;
-  if (author) metadata.push(`Author: ${author}`);
-  if (item.publishedAt) metadata.push(`Published: ${item.publishedAt}`);
-  const engagement = [
-    typeof item.likes === "number" ? `likes ${item.likes}` : undefined,
-    typeof item.collects === "number" ? `collects ${item.collects}` : undefined,
-    typeof item.retweets === "number" ? `retweets ${item.retweets}` : undefined,
-    typeof item.replies === "number" ? `comments/replies ${item.replies}` : undefined,
-  ].filter(Boolean);
-  if (engagement.length > 0) metadata.push(`Engagement: ${engagement.join(", ")}`);
-  if (metadata.length > 0) sections.push(metadata.join("\n"));
-  sections.push(rawContent);
-  if (item.images?.length) sections.push(`Images: ${item.images.length} attached`);
-  const content = sections.join("\n\n");
-
-  return {
-    url,
-    statusCode: 200,
-    body: { kind: "text" as const, content },
-    truncated: false,
-  };
-}
 
 /** Built-in updates are delivered only with a verified StarWeave release. */
 async function checkVersion(): Promise<VersionCheckView> {
@@ -164,79 +112,14 @@ export function apply(ctx: WebToolsContext) {
   // ONE shared health store so search + fetch respect the same cooldowns.
   const healthStore = createProviderHealthStore();
 
-  const sourceRegistry = new SpecializedSourceRegistry();
-
   const generalSearchProvider = createSearchProvider(resolveRuntimeConfig, resolveKeys, {
     record: (e) => stats.record({ ...e, at: Date.now() }),
   }, undefined, poolStore, healthStore);
 
   const generalFetchProvider = createFetchProvider(resolveRuntimeConfig, resolveKeys, undefined, poolStore, healthStore);
 
-  sourceRegistry.setFallbackProviders(generalSearchProvider, generalFetchProvider);
-
-  // Sync platformEnabled from config on boot and live updates
-  configHandle.onMounted(() => {
-    const cfg = readConfig();
-    if (cfg.platformEnabled) {
-      sourceRegistry.setPlatformEnabled(cfg.platformEnabled);
-    }
-  });
-
-  // Wrap search provider with SpecializedSourceRouter for XHS / X transparent platform handling
-  const routedSearchProvider = {
-    id: PROVIDER_ID,
-    available: () => generalSearchProvider.available(),
-    search: async (request: { query: string; maxResults?: number }, signal?: AbortSignal) => {
-      const outcome = await sourceRegistry.search(
-        request.query,
-        { maxResults: request.maxResults, hints: extractSearchHints(request.query) },
-        signal,
-      );
-      if (outcome.error) {
-        throw new Error(`[${outcome.error.code}] ${outcome.error.message}`);
-      }
-      return {
-        sources: outcome.items.map((item) => ({
-          url: item.url,
-          title: item.title,
-          snippet: item.snippet,
-          publishedAt: item.publishedAt,
-        })),
-        truncated: false,
-      };
-    },
-  };
-  ctx.web.registerSearchProvider(routedSearchProvider as never);
-
-  // Wrap fetch provider with SpecializedSourceRouter
-  const routedFetchProvider = {
-    id: `${PROVIDER_ID}-fetch`,
-    available: () => generalFetchProvider.available(),
-    fetch: async (request: { url: string }, signal?: AbortSignal) => {
-      const outcome = await sourceRegistry.fetch(request.url, signal);
-      return toRoutedFetchResponse(request.url, outcome);
-    },
-  };
-  ctx.web.registerFetchProvider(routedFetchProvider as never);
-
-  // Specialized Sources: Register Xiaohongshu and Twitter/X with NativeBrowserRuntime
-  const harnessHome = process.env.DSH_HOME?.trim();
-  const desktopDataRoot = harnessHome ? path.dirname(harnessHome) : undefined;
-  const nativeRuntime = createNativeBrowserRuntime("auto", desktopDataRoot);
-  const xhsSource = new XiaohongshuSource(nativeRuntime);
-  const xSource = new XSource(nativeRuntime);
-  sourceRegistry.registerSource(xhsSource);
-  sourceRegistry.registerSource(xSource);
-
-  // Hook NativeBrowserRuntime lifecycle into Cordis effect
-  ctx.effect(
-    () => {
-      return () => {
-        nativeRuntime.dispose().catch(() => {});
-      };
-    },
-    "dsh-web-tools: native browser runtime",
-  );
+  ctx.web.registerSearchProvider(generalSearchProvider as never);
+  ctx.web.registerFetchProvider(generalFetchProvider as never);
 
   /** Run one real minimal search through a single provider (test connection). */
   async function testProviderSearch(providerName: string, query: string) {
@@ -296,7 +179,7 @@ export function apply(ctx: WebToolsContext) {
   async function testFullSearch(query: string) {
     const started = Date.now();
     try {
-      const result = await routedSearchProvider.search(
+      const result = await generalSearchProvider.search(
         { query, maxResults: 5 },
         undefined, // no caller signal for a manual card test
       );
@@ -424,12 +307,12 @@ export function apply(ctx: WebToolsContext) {
   // OFFICIAL @deepseek-ai/dsh-llm createUserMessage ({ content, source }):
   // required = durable snapshot section, correction = one-shot notice.
   const searchModeMessages = createSearchModeMessages((input) => createUserMessage(input as never));
-  const searchModeRuntime = new SearchModeRuntime(() => routedSearchProvider.available());
+  const searchModeRuntime = new SearchModeRuntime(() => generalSearchProvider.available());
   ctx.effect(
     () =>
       installSearchModeRuntime(
         ctx,
-        { searchAvailable: () => routedSearchProvider.available() },
+        { searchAvailable: () => generalSearchProvider.available() },
         searchModeRuntime,
         searchModeMessages,
       ),
@@ -456,8 +339,6 @@ export function apply(ctx: WebToolsContext) {
         testProviderSearch,
         testFullSearch,
         describeQuotas,
-        nativeRuntime,
-        sourceRegistry,
         checkVersion,
         poolEntries: (providerName) => poolStore.poolOf(providerName),
         proxyStatus,

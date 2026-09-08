@@ -60,11 +60,6 @@ import type {
   SearchRoutingPolicy,
   VersionCheckView,
 } from "../shared/api-types.ts";
-import type {
-  BrowserPlatform,
-  PlatformStatusResponse,
-} from "../shared/platform-types.ts";
-
 export type {
   ConfigView,
   CredentialsView,
@@ -78,11 +73,6 @@ export type {
   SearchRoutingPolicy,
   VersionCheckView,
 } from "../shared/api-types.ts";
-export type {
-  BrowserPlatform,
-  PlatformStatusResponse,
-} from "../shared/platform-types.ts";
-
 export const api = {
   configGet: () => call<ConfigView>("config/get"),
   configSave: (payload: Record<string, unknown>) => call<{ saved: true }>("config/save", payload),
@@ -104,12 +94,4 @@ export const api = {
     call<Record<string, any>>("provider-options/batch", { providers }),
   routingSet: (policy: SearchRoutingPolicy, orderedProviders: string[]) =>
     call<{ saved: true; policy: SearchRoutingPolicy; defaultProvider: string; fallbackOrder: string[] }>("routing/set", { policy, orderedProviders }),
-  platformStatus: () =>
-    call<PlatformStatusResponse>("platform/status"),
-  platformLogin: (platform: BrowserPlatform) =>
-    call<{ status: string }>("platform/login", { platform }),
-  platformStop: (platform: BrowserPlatform) =>
-    call<{ ok: boolean }>("platform/stop", { platform }),
-  platformReset: (platform: BrowserPlatform) =>
-    call<{ ok: boolean }>("platform/reset", { platform }),
 };

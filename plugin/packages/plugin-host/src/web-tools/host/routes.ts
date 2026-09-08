@@ -19,91 +19,6 @@ import type { ConfigView, ProviderView, SearchMode, SearchModeView, SearchRoutin
 import { buildProviderOptionView, sanitizeProviderOptions } from "./provider-options.ts";
 import { createHash } from "node:crypto";
 
-import type { BrowserPlatform } from "./browser/types.ts";
-import type { SpecializedSourceRegistry } from "./sources/registry.ts";
-
-import type { PlatformStatusResponse, BrowserPlatformStatusView } from "../shared/platform-types.ts";
-
-async function handlePlatformStatus(deps: RouteDeps): Promise<PlatformStatusResponse> {
-  let statuses = await deps.sourceRegistry.getPlatformStatuses();
-
-  // A persisted dedicated profile means the user has completed login before,
-  // but cold-start metadata is not authentication proof. Verify it in the
-  // background runtime before returning status so the UI never asks the user
-  // to manually validate an existing session.
-  const needsVerification = statuses.filter(
-    (status) => status.sessionEstablished && !status.authenticated,
-  );
-  if (needsVerification.length > 0) {
-    const results = await Promise.allSettled(
-      needsVerification.map(async (status) => {
-        const isAuth = await deps.nativeRuntime.verifyAuthenticationForOperation(
-          status.id,
-          undefined,
-          status.id === "xiaohongshu" ? "interactive" : "headless",
-        );
-        return { id: status.id, isAuth };
-      }),
-    );
-    // Reload statuses after verification
-    statuses = await deps.sourceRegistry.getPlatformStatuses();
-    // For any platform that was verified true in this flight, ensure status reflects authenticated
-    for (const res of results) {
-      if (res.status === "fulfilled" && res.value.isAuth) {
-        const target = statuses.find((s) => s.id === res.value.id);
-        if (target) {
-          target.authenticated = true;
-        }
-      }
-    }
-  }
-  const platforms = {} as Record<BrowserPlatform, BrowserPlatformStatusView>;
-  for (const s of statuses) {
-    platforms[s.id] = {
-      id: s.id,
-      name: s.name,
-      enabled: s.enabled,
-      runtimeAvailable: s.runtimeAvailable,
-      runtimeState: s.runtimeState,
-      authenticated: s.authenticated,
-      sessionEstablished: s.sessionEstablished,
-      capabilities: s.capabilities,
-      account: s.account,
-      lastError: s.lastError,
-      lastCheckedAt: s.lastCheckedAt,
-    };
-  }
-  return { platforms };
-}
-
-async function handlePlatformLogin(deps: RouteDeps, payload: unknown): Promise<{ status: string }> {
-  const platform = (payload as any)?.platform as BrowserPlatform;
-  if (platform === "xiaohongshu" || platform === "x") {
-    // Run login flow asynchronously, client polls status
-    deps.nativeRuntime.login(platform).catch(() => {});
-    return { status: "login-pending" };
-  }
-  return { status: "unknown_platform" };
-}
-
-async function handlePlatformStop(deps: RouteDeps, payload: unknown): Promise<{ ok: boolean }> {
-  const platform = (payload as any)?.platform as BrowserPlatform;
-  if (platform === "xiaohongshu" || platform === "x") {
-    await deps.nativeRuntime.stop(platform);
-    return { ok: true };
-  }
-  return { ok: false };
-}
-
-async function handlePlatformReset(deps: RouteDeps, payload: unknown): Promise<{ ok: boolean }> {
-  const platform = (payload as any)?.platform as BrowserPlatform;
-  if (platform === "xiaohongshu" || platform === "x") {
-    await deps.nativeRuntime.resetSession(platform);
-    return { ok: true };
-  }
-  return { ok: false };
-}
-
 /** Opaque per-key id for the remove-key endpoint (sha1 of the key, 8 hex). */
 export function keyIdOf(key: string): string {
   return createHash("sha1").update(key).digest("hex").slice(0, 8);
@@ -121,8 +36,6 @@ export interface RouteDeps {
   testProviderSearch: (provider: string, query: string) => Promise<Record<string, unknown>>;
   testFullSearch: (query: string) => Promise<Record<string, unknown>>;
   describeQuotas: (force?: boolean) => Promise<Record<string, QuotaSnapshot>>;
-  nativeRuntime: import("./browser/types.ts").NativeBrowserRuntime;
-  sourceRegistry: SpecializedSourceRegistry;
   /**
    * Live pool entries for one provider (real key health from the executor),
    * so the card's per-key state matches what search actually uses.
@@ -240,7 +153,6 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
   const enabledMap = (cfg.providerEnabled as Record<string, boolean>) ?? {};
   const baseUrls = (cfg.providerBaseUrls as Record<string, string>) ?? {};
   const providerOpts = (cfg.providerOptions as Record<string, Record<string, unknown>>) ?? {};
-  const platformEnabled = (cfg.platformEnabled as Record<string, boolean>) ?? { xiaohongshu: true, x: true };
 
   const credentialsSnapshots = await Promise.all(
     PROVIDER_LIST.map(async (meta) => {
@@ -277,7 +189,6 @@ async function handleConfigGet(deps: RouteDeps): Promise<ConfigView> {
     fallbackOrder: (cfg.fallbackOrder as string[]) ?? [],
     proxy: deps.proxyStatus ? await deps.proxyStatus() : undefined,
     searchRoutingPolicy: (cfg.searchRoutingPolicy as SearchRoutingPolicy) ?? "ordered",
-    platformEnabled,
     providers,
   };
 }
@@ -291,10 +202,6 @@ async function handleConfigSave(deps: RouteDeps, payload: unknown) {
   if (Array.isArray(p.fallbackOrder)) patch.fallbackOrder = p.fallbackOrder;
   if (p.providerBaseUrls && typeof p.providerBaseUrls === "object") patch.providerBaseUrls = p.providerBaseUrls;
   if (p.providerEnabled && typeof p.providerEnabled === "object") patch.providerEnabled = p.providerEnabled;
-  if (p.platformEnabled && typeof p.platformEnabled === "object") {
-    patch.platformEnabled = p.platformEnabled;
-    deps.sourceRegistry.setPlatformEnabled(p.platformEnabled as Record<string, boolean>);
-  }
   if (p.providerOptions && typeof p.providerOptions === "object") patch.providerOptions = p.providerOptions;
   await deps.writeConfig(patch); // persist BEFORE reporting success
   return { saved: true };
@@ -517,10 +424,6 @@ const ENDPOINTS: Record<string, (deps: RouteDeps, payload: unknown) => Promise<u
   "provider-options/reset": (deps, payload) => handleProviderOptionsReset(deps, payload),
   "provider-options/batch": (deps, payload) => handleProviderOptionsBatchSet(deps, payload),
   "routing/set": (deps, payload) => handleRoutingSet(deps, payload),
-  "platform/status": (deps) => handlePlatformStatus(deps),
-  "platform/login": (deps, payload) => handlePlatformLogin(deps, payload),
-  "platform/stop": (deps, payload) => handlePlatformStop(deps, payload),
-  "platform/reset": (deps, payload) => handlePlatformReset(deps, payload),
 };
 
 /** Register the fenced `/web-tools/api` prefix. Returns the disposer. */

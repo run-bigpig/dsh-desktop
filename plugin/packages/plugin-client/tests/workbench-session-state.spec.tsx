@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { act, cleanup, fireEvent, render } from '@testing-library/react'
 import { afterEach, expect, it } from 'vitest'
+import type { WorkspaceRequest } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import { WorkbenchController } from '../src/client/workbench/session-state.ts'
 import { useSessionState } from '../src/client/workbench/session-memory.ts'
 
@@ -9,7 +10,7 @@ afterEach(() => { cleanup(); localStorage.clear() })
 function presentation(revision: number, panel: 'canvas' | 'browser' | 'git' = 'canvas', sessionId = 'a', turn = 1) {
   return { sessionId, revision, panel, turn, cwd: '/workspace', ...(panel === 'browser' ? { tabId: 'browser-2' } : {}) }
 }
-function snapshot(revision: number, request: ReturnType<typeof presentation> | null, turn = 1) {
+function snapshot(revision: number, request: WorkspaceRequest | null, turn = 1) {
   return { epoch: 'host-1', revision, sessions: [{ sessionId: 'a', turn, request }] }
 }
 function controllerForTask() {
@@ -24,8 +25,21 @@ it('switches explicit Agent targets without requiring a manual follow toggle', (
   controller.receive(snapshot(1, presentation(1)))
   controller.resize('a', 960)
   controller.receive(snapshot(2, presentation(2, 'browser')))
-  expect(controller.getSession('a')).toMatchObject({ tab: 'browser', width: 960, open: true })
+  expect(controller.getSession('a')).toMatchObject({ tab: 'browser', width: 800, open: true })
   expect(controller.memory('a', 'workspace:/workspace').get('browser.active', null)).toBe('browser-2')
+})
+
+it('lets the foreground Agent close details without queuing a background close', () => {
+  const controller = controllerForTask()
+  controller.receive(snapshot(1, presentation(1, 'browser')))
+  controller.receive(snapshot(2, { action: 'close', sessionId: 'a', cwd: '/workspace', turn: 1, revision: 2 }))
+  expect(controller.getSession('a')).toMatchObject({ open: false, pending: null, presentation: null })
+
+  const background = controllerForTask()
+  background.receive(snapshot(1, presentation(1, 'canvas')))
+  background.setActiveSession('b')
+  background.receive(snapshot(2, { action: 'close', sessionId: 'a', cwd: '/workspace', turn: 1, revision: 2 }))
+  expect(background.getSession('a')).toMatchObject({ open: true, pending: null })
 })
 
 it('shows Xiaohongshu in the next task after Baidu, even after the user interacted with Baidu', () => {

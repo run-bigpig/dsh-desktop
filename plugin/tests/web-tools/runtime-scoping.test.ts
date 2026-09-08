@@ -1,48 +1,8 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { SpecializedSourceRegistry } from "../../packages/plugin-host/src/web-tools/host/sources/registry.ts";
-import { BraveQuotaManager, braveQuotaFromHeaders } from "../../packages/plugin-host/src/web-tools/host/providers/brave.ts";
-import type { SpecializedSource, SourceStatus, SourceSearchOutcome, SourceFetchOutcome } from "../../packages/plugin-host/src/web-tools/host/sources/types.ts";
+import { BraveQuotaManager } from "../../packages/plugin-host/src/web-tools/host/providers/brave.ts";
 
-test("Phase 3: 1. two independent SpecializedSourceRegistries operate in isolation", async () => {
-  const reg1 = new SpecializedSourceRegistry();
-  const reg2 = new SpecializedSourceRegistry();
-
-  const source1: SpecializedSource = {
-    id: "x",
-    name: "Twitter / X (1)",
-    async status(): Promise<SourceStatus> {
-      return {
-        id: "x",
-        name: "Twitter / X (1)",
-        enabled: true,
-        runtimeAvailable: true,
-        runtimeState: "ready",
-        authenticated: true,
-      };
-    },
-    async search(): Promise<SourceSearchOutcome> {
-      return { items: [{ id: "1", title: "Reg 1", url: "https://x.com/1", platform: "x" }] };
-    },
-    async fetch(): Promise<SourceFetchOutcome> {
-      return { item: { id: "1", title: "Reg 1", url: "https://x.com/1", text: "Reg 1", platform: "x" } };
-    },
-  };
-
-  reg1.registerSource(source1);
-  reg1.setPlatformEnabled({ x: true });
-
-  assert.equal(reg1.getSource("x")?.name, "Twitter / X (1)");
-  assert.equal(reg2.getSource("x"), undefined);
-
-  const stat1 = await reg1.getPlatformStatuses();
-  const stat2 = await reg2.getPlatformStatuses();
-  assert.equal(stat1.find((s) => s.id === "x")?.name, "Twitter / X (1)");
-  assert.equal(stat2.find((s) => s.id === "x")?.name, "Twitter / X");
-  assert.equal(stat2.find((s) => s.id === "x")?.runtimeState, "unavailable");
-});
-
-test("Phase 3: 2. BraveQuotaManager scopes cache and persist callbacks per instance and releases on dispose", async () => {
+test("BraveQuotaManager scopes cache and persist callbacks per instance and releases on dispose", async () => {
   let persistWrites: Array<{ key: string; limit?: number }> = [];
   const manager1 = new BraveQuotaManager((key, snapshot) => {
     persistWrites.push({ key, limit: snapshot.limit });

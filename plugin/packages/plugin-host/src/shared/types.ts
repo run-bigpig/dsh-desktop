@@ -508,16 +508,23 @@ export interface BrowserCommand {
   readonly visible?: boolean
   readonly bounds?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }
 }
-export interface WorkspaceRequest {
+interface WorkspaceRequestBase {
   readonly presentation?: string
   readonly sessionId: string
   readonly revision: number
-  readonly panel: 'files' | 'git' | 'browser' | 'canvas'
   readonly turn: number
   readonly cwd: string
+}
+export interface WorkspacePanelRequest extends WorkspaceRequestBase {
+  readonly action?: 'open'
+  readonly panel: 'files' | 'git' | 'browser' | 'canvas'
   readonly tabId?: string
   readonly path?: string
 }
+export interface WorkspaceCloseRequest extends WorkspaceRequestBase {
+  readonly action: 'close'
+}
+export type WorkspaceRequest = WorkspacePanelRequest | WorkspaceCloseRequest
 
 export interface WorkspacePresentationSnapshot {
   readonly epoch: string

@@ -320,6 +320,13 @@ test("extractSearchHints extracts code topic, domains, freshness, and cleanQuery
   assert.equal(hints.cleanQuery, "Gemini CLI this week bug");
 });
 
+test("extractSearchHints leaves platform names in general web queries", () => {
+  const hints = extractSearchHints("小红书上搜索 DeepSeek Harness");
+  assert.equal(hints.cleanQuery, "小红书上搜索 DeepSeek Harness");
+  assert.equal("platform" in hints, false);
+  assert.equal("platformExplicit" in hints, false);
+});
+
 test("extractSearchHints extracts news and day freshness", () => {
   const hints = extractSearchHints("今天 OpenAI 有什么重大新闻 breaking news");
   assert.equal(hints.topic, "news");

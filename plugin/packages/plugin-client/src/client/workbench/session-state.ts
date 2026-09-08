@@ -1,4 +1,4 @@
-import type { StoredImageView, WorkspaceRequest, WorkspacePresentationSnapshot } from '@run-bigpig/dsh-desktop-plugin-host/types'
+import type { StoredImageView, WorkspacePanelRequest, WorkspaceRequest, WorkspacePresentationSnapshot } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import { SessionMemory } from './session-memory.ts'
 
 export type WorkbenchTab = 'files' | 'git' | 'image' | 'browser' | 'canvas'
@@ -23,13 +23,17 @@ export interface WorkbenchSession {
   readonly manualSelection: boolean
   readonly manualCollapse: boolean
   readonly task: string | null
-  readonly pending: WorkspaceRequest | null
+  readonly pending: WorkspacePanelRequest | null
   readonly imageIntent: ImageStudioIntent | null
 }
 
 type Listener = () => void
+export const WORKBENCH_WIDTH_MIN = 360
+export const WORKBENCH_WIDTH_DEFAULT = 520
+export const WORKBENCH_WIDTH_MAX = 800
+
 const EMPTY: WorkbenchSession = Object.freeze({
-  presentation: null, dismissed: [], open: false, tab: 'files', width: 800, followAgent: true,
+  presentation: null, dismissed: [], open: false, tab: 'files', width: WORKBENCH_WIDTH_DEFAULT, followAgent: true,
   manualSelection: false, manualCollapse: false, task: null, pending: null, imageIntent: null,
 })
 const STORAGE_PREFIX = 'starweave-workbench-session-v1:'
@@ -126,6 +130,13 @@ export class WorkbenchController {
   }
 
   request(request: WorkspaceRequest, foreground = true): boolean {
+    if (request.action === 'close') {
+      if (request.sessionId !== this.activeSession || !foreground) return false
+      this.update(request.sessionId, {
+        open: false, pending: null, manualCollapse: false, presentation: null,
+      })
+      return true
+    }
     const session = this.getSession(request.sessionId)
     const cycle = presentationOf(request)
     if (request.sessionId !== this.activeSession || !foreground || session.dismissed.includes(cycle) || (session.presentation === cycle && (session.manualCollapse || session.manualSelection || !session.followAgent))) {
@@ -141,7 +152,7 @@ export class WorkbenchController {
     if (request && sessionId === this.activeSession) { this.present(request); this.takeOver(sessionId) }
   }
 
-  private present(request: WorkspaceRequest): void {
+  private present(request: WorkspacePanelRequest): void {
     const memory = this.memory(request.sessionId, `workspace:${request.cwd}`)
     if (request.panel === 'browser' && request.tabId) memory.set('browser.active', request.tabId, null)
     if (request.panel === 'files' && request.path) this.memory(request.sessionId, `workspace:${request.sessionId}:${request.cwd}`).set('requestedFile', request, null)
@@ -160,7 +171,7 @@ export class WorkbenchController {
   }
 
   resize(sessionId: string, width: number): void {
-    if (Number.isFinite(width)) this.update(sessionId, { width: Math.min(1200, Math.max(360, width)) })
+    if (Number.isFinite(width)) this.update(sessionId, { width: Math.min(WORKBENCH_WIDTH_MAX, Math.max(WORKBENCH_WIDTH_MIN, width)) })
   }
 
   openImage(intent: ImageStudioIntent): void {
@@ -226,7 +237,9 @@ export class WorkbenchController {
         dismissed: Array.isArray(value.dismissed) ? value.dismissed.filter((item): item is string => typeof item === 'string') : [],
         open: value.open === true,
         tab: value.tab !== undefined && value.tab !== 'image' && TABS.has(value.tab) ? value.tab : 'files',
-        width: typeof value.width === 'number' && Number.isFinite(value.width) ? Math.min(1200, Math.max(360, value.width)) : 800,
+        width: typeof value.width === 'number' && Number.isFinite(value.width)
+          ? Math.min(WORKBENCH_WIDTH_MAX, Math.max(WORKBENCH_WIDTH_MIN, value.width))
+          : WORKBENCH_WIDTH_DEFAULT,
         followAgent: typeof value.task === 'string' ? value.followAgent === true : true,
         manualSelection: typeof value.task === 'string' && value.manualSelection === true,
         manualCollapse: typeof value.task === 'string' && value.manualCollapse === true,
@@ -238,6 +251,6 @@ export class WorkbenchController {
   }
 }
 
-function presentationOf(request: WorkspaceRequest): string {
+function presentationOf(request: WorkspacePanelRequest): string {
   return JSON.stringify([request.turn, request.panel, request.tabId ?? request.path ?? '', request.presentation ?? ''])
 }

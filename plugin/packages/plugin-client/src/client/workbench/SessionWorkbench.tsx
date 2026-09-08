@@ -26,7 +26,12 @@ export const HARNESS_FILE_REFERENCE_SOURCE = 'reference'
 
 export { WorkbenchController } from './session-state.ts'
 export type { ImageStudioIntent, WorkspaceDragPayload } from './session-state.ts'
-import { WorkbenchController } from './session-state.ts'
+import {
+  WORKBENCH_WIDTH_DEFAULT,
+  WORKBENCH_WIDTH_MAX,
+  WORKBENCH_WIDTH_MIN,
+  WorkbenchController,
+} from './session-state.ts'
 import { useSessionState } from './session-memory.ts'
 
 export interface WorkbenchLauncherInjected {
@@ -155,15 +160,15 @@ export function WorkbenchDrawer({
         role="separator"
         aria-label={t('resizeWorkbench')}
         aria-orientation="vertical"
-        aria-valuemin={360}
-        aria-valuemax={1200}
+        aria-valuemin={WORKBENCH_WIDTH_MIN}
+        aria-valuemax={WORKBENCH_WIDTH_MAX}
         aria-valuenow={width}
         tabIndex={0}
-        onDoubleClick={() => { changeWidth(800) }}
+        onDoubleClick={() => { changeWidth(WORKBENCH_WIDTH_DEFAULT) }}
         onKeyDown={event => {
           if (event.key !== 'ArrowLeft' && event.key !== 'ArrowRight' && event.key !== 'Home') return
           event.preventDefault()
-          changeWidth(event.key === 'Home' ? 800 : width + (event.key === 'ArrowLeft' ? 40 : -40))
+          changeWidth(event.key === 'Home' ? WORKBENCH_WIDTH_DEFAULT : width + (event.key === 'ArrowLeft' ? 40 : -40))
         }}
         onPointerDown={event => {
           if (event.button !== 0) return
