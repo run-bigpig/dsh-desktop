@@ -1,43 +1,66 @@
-import { once } from 'node:events'
-
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
+import { ALL_TOOLS } from '@open-pencil/core/tools'
+import { mkdtemp, rm } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
+import { join } from 'node:path'
 import { WebSocket } from 'ws'
 
 import { createBrowserSessions } from '../src/design/browser-sessions.ts'
 import { createDesignMCPSessions } from '../src/design/mcp-sessions.ts'
 import { startDesignServer, type DesignServer } from '../src/design/server.ts'
-import { registerStarWeaveDesignSkill } from '../src/design/skill.ts'
+import { createDesignDocumentStore } from '../src/design/storage.ts'
 import { registerDesignTools } from '../src/design/tools.ts'
 
 const activeServers: DesignServer[] = []
 
-function documentListing(id: string) {
-  return {
-    ok: true,
-    result: {
-      documents: [
-        { id: 'other-document', name: 'Other', active: false },
-        { id, name: 'Untitled', active: true, current_page_id: 'page-1', current_page_name: 'Page 1' }
-      ]
-    }
-  }
-}
-
 afterEach(async () => {
   await Promise.all(activeServers.splice(0).map(server => server.close()))
-  vi.unstubAllEnvs()
 })
 
 describe('StarWeave Design browser sessions', () => {
-  it('routes an RPC response through the authenticated design session', async () => {
-    const opened: Array<{ id: string; token: string; navigate: boolean }> = []
-    const sessions = createBrowserSessions(async (session, navigate) => {
-      opened.push({ id: session.id, token: session.token, navigate })
-    })
-    const session = await sessions.ensureOpen()
-    expect(opened).toEqual([{ id: session.id, token: session.token, navigate: true }])
+  it('keeps the current owner connected and lets a waiting window restore after it exits', async () => {
+    const sessions = createBrowserSessions()
+    const load = vi.fn(async () => ({ name: 'Saved.fig', data: 'AQIDBA==' }))
+    const session = sessions.prepare('session-a', async () => ({ load, save: vi.fn() }))
+    const owner = mockSocket()
+    const waiting = mockSocket()
+    const registration = { type: 'register', sessionId: session.id, token: session.token }
+    try {
+      await sessions.handleMessage(owner.socket, registration)
+      await sessions.handleMessage(waiting.socket, registration)
+      expect(owner.socket.close).not.toHaveBeenCalled()
+      expect(waiting.socket.close).toHaveBeenCalledWith(4001, 'session already open in another view')
+      expect(sessions.isReady(session.id)).toBe(true)
+      expect(load).toHaveBeenCalledTimes(1)
+      sessions.disconnect(waiting.socket)
+      const pending = sessions.sendRPC(session.id, 'get_selection', {})
+      const request = JSON.parse(String(owner.send.mock.calls.at(-1)?.[0]))
+      await sessions.handleMessage(owner.socket, { type: 'response', id: request.id, ok: true })
+      await expect(pending).resolves.toMatchObject({ ok: true })
+      sessions.disconnect(owner.socket)
+      const next = mockSocket()
+      await sessions.handleMessage(next.socket, registration)
+      expect(load).toHaveBeenCalledTimes(2)
+      expect(sessions.isReady(session.id)).toBe(true)
+      expect(JSON.parse(String(next.send.mock.calls[0]?.[0]))).toMatchObject({
+        type: 'registered', document: { name: 'Saved.fig', data: 'AQIDBA==' }
+      })
+    } finally { sessions.close() }
+  })
 
+  it('requires the user canvas to connect before an Agent can call it', async () => {
+    const sessions = createBrowserSessions()
+    sessions.prepare('session-a')
+    await expect(sessions.sendRPC('session-a', 'list_documents', {}))
+      .rejects.toThrow('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
+    sessions.close()
+  })
+
+  it('routes requests only to the matching authenticated session', async () => {
+    const sessions = createBrowserSessions()
+    const first = sessions.prepare('session-a')
+    sessions.prepare('session-b')
     const send = vi.fn()
     const socket = {
       OPEN: WebSocket.OPEN,
@@ -45,325 +68,245 @@ describe('StarWeave Design browser sessions', () => {
       send,
       close: vi.fn()
     } as unknown as WebSocket
-    sessions.handleMessage(socket, {
-      type: 'register',
-      sessionId: session.id,
-      token: session.token
-    })
 
-    const pending = sessions.sendRPC(session.id, 'tool', { name: 'get_selection' })
-    await vi.waitFor(() => expect(send).toHaveBeenCalledTimes(2))
-    const request = JSON.parse(String(send.mock.calls[1]?.[0])) as { id: string }
-    sessions.handleMessage(socket, {
-      type: 'response',
-      id: request.id,
-      ok: true,
-      result: { selection: [] }
-    })
+    await sessions.handleMessage(socket, { type: 'register', sessionId: first.id, token: first.token })
+    const pending = sessions.sendRPC(first.id, 'tool', { name: 'get_selection' })
+    const request = JSON.parse(String(send.mock.calls[1]?.[0])) as { id: string; sessionId: string }
+    expect(request.sessionId).toBe('session-a')
+    await expect(sessions.sendRPC('session-b', 'list_documents', {}))
+      .rejects.toThrow('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
+
+    await sessions.handleMessage(socket, { type: 'response', id: request.id, ok: true, result: { selection: [] } })
     await expect(pending).resolves.toMatchObject({ ok: true, result: { selection: [] } })
-
-    await sessions.ensureOpen(session.id, true)
-    expect(opened).toHaveLength(2)
-    expect(opened[1]).toMatchObject({ id: session.id, navigate: false })
-
-    const secondSessionId = '223e4567-e89b-42d3-a456-426614174000'
-    await sessions.ensureOpen(secondSessionId, true)
-    expect(opened[2]).toMatchObject({ id: secondSessionId, navigate: false })
-    expect(send).toHaveBeenCalledWith(expect.stringContaining(`"type":"open-session","sessionId":"${secondSessionId}"`))
     sessions.close()
+  })
+
+  it('restores only the matching session document after the browser session is recreated', async () => {
+    const root = await mkdtemp(join(tmpdir(), 'starweave-design-'))
+    try {
+      const filename = join(root, 'session-a', 'starweave-design.json')
+      const firstSessions = createBrowserSessions()
+      const first = firstSessions.prepare('session-a', async () => createDesignDocumentStore(filename))
+      const firstSocket = mockSocket()
+      await firstSessions.handleMessage(firstSocket.socket, {
+        type: 'register', sessionId: first.id, token: first.token
+      })
+      await firstSessions.handleMessage(firstSocket.socket, {
+        type: 'persist_document',
+        id: 'save-1',
+        document: { name: 'Landing.fig', data: 'AQIDBA==' }
+      })
+      expect(JSON.parse(String(firstSocket.send.mock.calls.at(-1)?.[0])))
+        .toMatchObject({ type: 'persisted', id: 'save-1' })
+      firstSessions.close()
+
+      const restoredSessions = createBrowserSessions()
+      const resolveStore = vi.fn(async () => createDesignDocumentStore(filename))
+      const restored = restoredSessions.prepare('session-a', resolveStore)
+      expect(resolveStore).not.toHaveBeenCalled()
+      const restoredSocket = mockSocket()
+      await restoredSessions.handleMessage(restoredSocket.socket, {
+        type: 'register', sessionId: restored.id, token: restored.token
+      })
+      expect(JSON.parse(String(restoredSocket.send.mock.calls[0]?.[0]))).toMatchObject({
+        type: 'registered',
+        sessionId: 'session-a',
+        persistence: true,
+        document: { name: 'Landing.fig', data: 'AQIDBA==' }
+      })
+      expect(resolveStore).toHaveBeenCalledOnce()
+
+      const otherSessions = createBrowserSessions()
+      const other = otherSessions.prepare(
+        'session-b',
+        async () => createDesignDocumentStore(join(root, 'session-b', 'starweave-design.json'))
+      )
+      const otherSocket = mockSocket()
+      await otherSessions.handleMessage(otherSocket.socket, {
+        type: 'register', sessionId: other.id, token: other.token
+      })
+      expect(JSON.parse(String(otherSocket.send.mock.calls[0]?.[0]))).not.toHaveProperty('document')
+      restoredSessions.close()
+      otherSessions.close()
+    } finally {
+      await rm(root, { recursive: true, force: true })
+    }
   })
 })
 
 describe('StarWeave Design MCP tools', () => {
-  it('binds each new session to its pre-created document without creating an extra tab', async () => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const openWorkspace = vi.fn(async (id: string) => ({ id, connected: true }))
-    const sendRPC = vi.fn(async (id: string) => documentListing(`document-${id}`))
-    const saveFile = vi.fn().mockResolvedValue({ ok: true })
-    registerDesignTools(server, sendRPC, openWorkspace, saveFile, vi.fn())
-
-    await callbacks.get('new_document')?.({})
-    const firstId = openWorkspace.mock.calls[0]![0]
-    await callbacks.get('save_file')?.({})
-    expect(saveFile).toHaveBeenLastCalledWith(firstId, { document_id: `document-${firstId}` })
-    await callbacks.get('new_document')?.({})
-    const secondId = openWorkspace.mock.calls[2]![0]
-    expect(secondId).not.toBe(firstId)
-    await callbacks.get('save_file')?.({})
-    expect(saveFile).toHaveBeenLastCalledWith(secondId, { document_id: `document-${secondId}` })
-    expect(sendRPC.mock.calls).toEqual([[firstId, 'list_documents', {}], [secondId, 'list_documents', {}]])
-  })
-
-  it.each([
-    { documents: [] },
-    { documents: [{ id: 'unrelated', active: false }] },
-    { documents: [{ id: 'one', active: true }, { id: 'two', active: true }] }
-  ])('rejects an unidentified session document without creating or modifying documents ($documents)', async ({ documents }) => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const sendRPC = vi.fn().mockResolvedValue({ ok: true, result: { documents } })
-    registerDesignTools(server, sendRPC, vi.fn().mockResolvedValue({ id: 'session', connected: true }), vi.fn(), vi.fn())
-    await expect(callbacks.get('new_document')?.({})).rejects.toThrow('did not identify its session document')
-    expect(sendRPC).toHaveBeenCalledExactlyOnceWith('session', 'list_documents', {})
-  })
-
-  it('adds workspace opening and delegates save_file to the official OpenPencil registry', async () => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const sendRPC = vi.fn().mockResolvedValue(documentListing('document-1'))
-    const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
-    const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: true })
-    const saveFile = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'document-1' } })
-
-    registerDesignTools(server, sendRPC, openWorkspace, saveFile, vi.fn())
-
-    expect(callbacks.has('list_documents')).toBe(true)
-    expect(callbacks.has('open_file')).toBe(true)
-    expect(callbacks.has('new_document')).toBe(true)
-    const save = callbacks.get('save_file')
-    expect(save).toBeDefined()
-    expect(callbacks.has('get_codegen_prompt')).toBe(true)
-    expect(callbacks.has('list_design_documents')).toBe(false)
-    expect(callbacks.has('eval')).toBe(false)
-    expect(callbacks.size).toBe(110)
-
-    await callbacks.get('open_design_workspace')?.({ design_session_id: designSessionId })
-    const result = await save?.({
-      document_id: 'document-1'
-    })
-    expect(openWorkspace).toHaveBeenCalledWith(designSessionId, true)
-    expect(sendRPC).toHaveBeenCalledExactlyOnceWith(designSessionId, 'list_documents', {})
-    expect(saveFile).toHaveBeenCalledWith(
-      designSessionId,
-      { document_id: 'document-1' }
-    )
-    expect(result).toEqual({
-      content: [
-        {
-          type: 'text',
-          text: JSON.stringify({ saved: true, target: { documentId: 'document-1' } }, null, 2)
-        }
-      ]
-    })
-  })
-
-  it('opens a StarWeave canvas lazily when an official tool is called first', async () => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
-    const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: false })
+  it('routes shared style operations through the current session', async () => {
+    const callbacks = toolCallbacks()
     const sendRPC = vi.fn()
-      .mockResolvedValueOnce(documentListing('document-1'))
-      .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
-
-    registerDesignTools(server, sendRPC, openWorkspace, vi.fn(), vi.fn())
-    await callbacks.get('list_documents')?.({})
-
-    const generatedSessionId = openWorkspace.mock.calls[0]?.[0]
-    expect(generatedSessionId).toMatch(/^[0-9a-f-]{36}$/u)
-    expect(openWorkspace).toHaveBeenCalledWith(generatedSessionId, false)
-    expect(sendRPC).toHaveBeenNthCalledWith(1, designSessionId, 'list_documents', {})
-    expect(sendRPC).toHaveBeenNthCalledWith(2, designSessionId, 'list_documents', {
-      document_id: 'document-1'
-    })
+      .mockResolvedValueOnce({ ok: true, result: { documents: [{ id: 'design-session', active: true }] } })
+      .mockResolvedValueOnce({ ok: true, result: { style_id: '0:10' } })
+    registerDesignTools(callbacks.server, sendRPC, 'design-session')
+    const args = { action: 'create', kind: 'fill', node_id: '0:3', name: 'Brand' }
+    await callbacks.get('shared_style')?.(args)
+    expect(sendRPC).toHaveBeenLastCalledWith('design-session', 'shared_style', args)
   })
 
-  it('opens and creates documents in new isolated design sessions', async () => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const openWorkspace = vi.fn(async (sessionId?: string) => ({ id: sessionId ?? '', connected: true }))
-    const openFile = vi.fn().mockResolvedValue({ ok: true, target: { documentId: 'opened-document' } })
-    const sendRPC = vi.fn().mockResolvedValue(documentListing('new-document'))
-
-    registerDesignTools(server, sendRPC, openWorkspace, vi.fn(), openFile)
-    await callbacks.get('open_file')?.({})
-    await callbacks.get('new_document')?.({})
-
-    const openSessionId = openWorkspace.mock.calls[0]?.[0]
-    const newSessionId = openWorkspace.mock.calls[1]?.[0]
-    expect(openSessionId).toMatch(/^[0-9a-f-]{36}$/u)
-    expect(newSessionId).toMatch(/^[0-9a-f-]{36}$/u)
-    expect(newSessionId).not.toBe(openSessionId)
-    expect(openFile).toHaveBeenCalledWith(openSessionId)
-    expect(sendRPC).toHaveBeenCalledExactlyOnceWith(newSessionId, 'list_documents', {})
+  it('returns PDF exports as MCP resources while preserving image exports', async () => {
+    const callbacks = toolCallbacks()
+    const sendRPC = vi.fn(async (_session: string, command: string, args: any) => command === 'list_documents'
+      ? { ok: true, result: { documents: [{ id: 'design-session', active: true }] } }
+      : { ok: true, result: { base64: 'AQIDBA==', mimeType: args.name === 'export_pdf' ? 'application/pdf' : 'image/png' } })
+    registerDesignTools(callbacks.server, sendRPC, 'design-session')
+    expect(await callbacks.get('export_pdf')?.({})).toMatchObject({ content: [{
+      type: 'resource', resource: { mimeType: 'application/pdf', blob: 'AQIDBA==' }
+    }] })
+    expect(await callbacks.get('export_image')?.({})).toMatchObject({ content: [{
+      type: 'image', mimeType: 'image/png', data: 'AQIDBA=='
+    }] })
   })
 
-  it('restores the saved document after the canvas connection is recreated', async () => {
-    const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>()
-    const server = {
-      registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
-        callbacks.set(name, callback)
-      }
-    } as unknown as McpServer
-    const designSessionId = '123e4567-e89b-42d3-a456-426614174000'
-    const openWorkspace = vi.fn().mockResolvedValue({ id: designSessionId, connected: false })
-    const restoreDocument = vi.fn()
-      .mockResolvedValueOnce(undefined)
-      .mockResolvedValueOnce('restored-document')
+  it('exposes every official non-eval canvas tool and session-scoped history commands', () => {
+    const callbacks = toolCallbacks()
+    registerDesignTools(callbacks.server, vi.fn(), 'design-session')
+    expect([...callbacks.keys()].sort()).toEqual([
+      ...ALL_TOOLS.filter(tool => tool.name !== 'eval').map(tool => tool.name),
+      'list_documents', 'get_codegen_prompt', 'undo', 'redo', 'shared_style'
+    ].sort())
+  })
+
+  it('does not expose file lifecycle or eval tools to the Agent', () => {
+    const callbacks = toolCallbacks()
+    registerDesignTools(callbacks.server, vi.fn(), 'design-session')
+
+    expect([...callbacks.keys()]).toContain('list_documents')
+    expect([...callbacks.keys()]).toContain('get_selection')
+    expect([...callbacks.keys()]).not.toContain('open_file')
+    expect([...callbacks.keys()]).not.toContain('new_document')
+    expect([...callbacks.keys()]).not.toContain('save_file')
+    expect([...callbacks.keys()]).not.toContain('eval')
+  })
+
+  it('overrides a requested document id with the current Harness session document', async () => {
+    const callbacks = toolCallbacks()
     const sendRPC = vi.fn()
-      .mockResolvedValueOnce(documentListing('initial-document'))
-      .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
-      .mockResolvedValueOnce({ ok: true, result: { documents: [] } })
+      .mockResolvedValueOnce({
+        ok: true,
+        result: { documents: [{ id: 'design-session', name: 'Current.fig', active: true }] }
+      })
+      .mockResolvedValueOnce({ ok: true, result: { selection: [] } })
+    registerDesignTools(callbacks.server, sendRPC, 'design-session')
 
-    registerDesignTools(server, sendRPC, openWorkspace, vi.fn(), vi.fn(), restoreDocument)
-    await callbacks.get('list_documents')?.({})
-    await callbacks.get('list_documents')?.({})
+    await callbacks.get('get_selection')?.({ document_id: 'another-session', page_id: 'page-1' })
 
-    expect(restoreDocument).toHaveBeenCalledTimes(2)
-    expect(sendRPC).toHaveBeenLastCalledWith(designSessionId, 'list_documents', {
-      document_id: 'restored-document'
+    expect(sendRPC).toHaveBeenNthCalledWith(1, 'design-session', 'list_documents', {})
+    expect(sendRPC).toHaveBeenNthCalledWith(2, 'design-session', 'tool', {
+      document_id: 'design-session',
+      page_id: 'page-1',
+      name: 'get_selection',
+      args: {}
     })
+  })
+
+  it('returns a useful error until exactly one current document is available', async () => {
+    const callbacks = toolCallbacks()
+    registerDesignTools(callbacks.server, vi.fn().mockResolvedValue({ ok: true, result: { documents: [] } }), 'design-session')
+
+    const result = await callbacks.get('get_selection')?.({}) as { isError?: boolean; content?: Array<{ text?: string }> }
+    expect(result.isError).toBe(true)
+    expect(result.content?.[0]?.text).toContain('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
   })
 })
 
 describe('StarWeave Design MCP sessions', () => {
-  it('does not allow a different owner to reuse an initialized MCP session', async () => {
+  it('does not allow a different Agent owner to reuse an initialized MCP session', async () => {
     const sessions = createDesignMCPSessions(() => undefined)
     try {
       const transport = await sessions.resolve(undefined, 'owner-a')
-      const response = await transport.handleRequest(new Request('http://127.0.0.1/mcp', {
-        method: 'POST',
-        headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json' },
-        body: JSON.stringify({ jsonrpc: '2.0', id: 1, method: 'initialize', params: {
-          protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' }
-        } })
-      }))
-      const id = response.headers.get('mcp-session-id')!
-      expect(await sessions.resolve(id, 'owner-a')).toBe(transport)
-      await expect(sessions.resolve(id, 'owner-b')).rejects.toThrow('not found')
-      await expect(sessions.resolve(id)).rejects.toThrow('not found')
-    } finally { await sessions.clear() }
-  })
-
-  it('keeps an initialized session alive while the desktop host is running', async () => {
-    const sessions = createDesignMCPSessions(() => undefined)
-    const transport = await sessions.resolve()
-    const initialized = await transport.handleRequest(new Request('http://127.0.0.1/mcp', {
-      method: 'POST',
-      headers: {
-        accept: 'application/json, text/event-stream',
-        'content-type': 'application/json'
-      },
-      body: JSON.stringify({
-        jsonrpc: '2.0',
-        id: 1,
-        method: 'initialize',
-        params: {
-          protocolVersion: '2025-06-18',
-          capabilities: {},
-          clientInfo: { name: 'test', version: '1.0.0' }
-        }
-      })
-    }))
-    const sessionId = initialized.headers.get('mcp-session-id')
-    expect(sessionId).toBeTruthy()
-
-    const now = Date.now()
-    const clock = vi.spyOn(Date, 'now').mockReturnValue(now + 24 * 60 * 60_000)
-    try {
-      await expect(sessions.resolve(sessionId ?? undefined)).resolves.toBe(transport)
+      const response = await transport.handleRequest(initializeRequest())
+      const id = response.headers.get('mcp-session-id')
+      expect(id).toBeTruthy()
+      await expect(sessions.resolve(id ?? undefined, 'owner-a')).resolves.toBe(transport)
+      await expect(sessions.resolve(id ?? undefined, 'owner-b')).rejects.toThrow('not found')
+      await expect(sessions.resolve(id ?? undefined)).rejects.toThrow('not found')
     } finally {
-      clock.mockRestore()
       await sessions.clear()
     }
   })
 })
 
-describe('StarWeave Design skill', () => {
-  it('loads the bundled real-time spatial design workflow', async () => {
-    const register = vi.fn(() => () => {})
-    await registerStarWeaveDesignSkill({ skills: { register } } as never)
-
-    expect(register).toHaveBeenCalledOnce()
-    const skill = register.mock.calls[0]?.[0]
-    expect(skill?.name).toBe('starweave-design')
-    expect(skill?.content).toContain('open_design_workspace')
-    expect(skill?.content).toContain('不同 Agent/MCP 会话必须使用不同设计文件')
-    expect(skill?.content).toContain('跨会话隔离的边界是 Document/文件，而不是 Page')
-    expect(skill?.content).toContain('list_documents')
-    expect(skill?.content).toContain('render(parent_id=区域ID)')
-    expect(skill?.content).toContain('不同 `parent_id`')
-    expect(skill?.content).toContain('get_selection')
-    expect(skill?.content).toContain('[Image: 文件名]')
-    expect(skill?.content).toContain('save_file')
-    expect(skill?.content).not.toContain('禁止并行发起会修改画布的工具调用')
-    expect(skill?.resourceBase.path).toMatch(/starweave-design[/\\]$/)
+describe('StarWeave Design local server', () => {
+  it('reports a persistence restore failure immediately instead of waiting for initialization timeout', async () => {
+    const server = await startDesignServer('test-token', undefined, async () => ({
+      load: async () => { throw new Error('Saved design is unavailable') }, save: vi.fn()
+    }))
+    activeServers.push(server)
+    const connection = server.connection('restore-error')
+    const socket = new WebSocket(`ws://127.0.0.1:${server.port}/bridge`, { origin: connection.baseUrl })
+    const registered = new Promise<void>((resolve, reject) => {
+      socket.once('error', reject)
+      socket.once('open', () => socket.send(JSON.stringify({ type: 'register', sessionId: connection.sessionId, token: connection.token })))
+      socket.once('message', () => resolve())
+    })
+    try {
+      await registered
+      await expect(server.waitForReady(connection.sessionId, AbortSignal.timeout(1000)))
+        .rejects.toThrow('当前会话画布恢复失败：Saved design is unavailable')
+    } finally { socket.close() }
   })
-})
 
-describe('StarWeave Design LAN server', () => {
-  it('serves only the local gateway and relays broadcast and targeted room messages', async () => {
-    vi.stubEnv('DSH_HOME', process.cwd())
+  it('publishes session-scoped canvas credentials on loopback only', async () => {
     const server = await startDesignServer('test-token')
     activeServers.push(server)
     const origin = `http://127.0.0.1:${server.port}`
+    const first = server.connection('session-a')
+    const second = server.connection('session-b')
 
-    await expect(fetch(`${origin}/`)).resolves.toMatchObject({ status: 200 })
+    expect(first).toMatchObject({
+      baseUrl: `${origin}/`,
+      sessionId: 'session-a',
+      scriptPath: 'starweave-design-embed.js',
+      stylePath: 'starweave-design-embed.css'
+    })
+    expect(second.token).not.toBe(first.token)
+    await expect(fetch(`${origin}/health`)).resolves.toMatchObject({ status: 200 })
     await expect(fetch(`${origin}/mcp`)).resolves.toMatchObject({ status: 401 })
-
-    const room = 'abcdefghijklmnopqrstuvwx'
-    await expect(rejectedUpgrade(
-      `${origin.replace('http:', 'ws:')}/collaboration/${room}`,
-      'https://openpencil.dev'
-    )).resolves.toBe(403)
-
-    const first = new WebSocket(`${origin.replace('http:', 'ws:')}/collaboration/${room}`, {
-      origin
-    })
-    const firstWelcomeMessage = nextText(first)
-    await once(first, 'open')
-    const firstWelcome = JSON.parse(await firstWelcomeMessage) as { peerId: string }
-
-    const firstJoin = nextText(first)
-    const second = new WebSocket(`${origin.replace('http:', 'ws:')}/collaboration/${room}`, {
-      origin
-    })
-    const secondWelcomeMessage = nextText(second)
-    await once(second, 'open')
-    const secondWelcome = JSON.parse(await secondWelcomeMessage) as { peerId: string }
-    await firstJoin
-
-    const broadcast = nextBinary(second)
-    first.send(actionFrame('sync', '', new Uint8Array([1, 2, 3])))
-    expect(decodeActionFrame(await broadcast)).toEqual({
-      namespace: 'sync',
-      peerId: firstWelcome.peerId,
-      payload: [1, 2, 3]
-    })
-
-    const targeted = nextBinary(first)
-    second.send(actionFrame('awareness', firstWelcome.peerId, new Uint8Array([9, 8])))
-    expect(decodeActionFrame(await targeted)).toEqual({
-      namespace: 'awareness',
-      peerId: secondWelcome.peerId,
-      payload: [9, 8]
-    })
-
-    first.close()
-    second.close()
+    await expect(fetch(`${origin}/mcp`, { headers: { Authorization: 'Bearer test-token' } }))
+      .resolves.toMatchObject({ status: 403 })
+    await expect(rejectedUpgrade(`${origin.replace('http:', 'ws:')}/bridge`, 'https://example.com'))
+      .resolves.toBe(403)
   })
 })
+
+function toolCallbacks(): Map<string, (args: Record<string, unknown>) => Promise<unknown>> & { server: McpServer } {
+  const callbacks = new Map<string, (args: Record<string, unknown>) => Promise<unknown>>() as Map<string, (args: Record<string, unknown>) => Promise<unknown>> & { server: McpServer }
+  callbacks.server = {
+    registerTool(name: string, _options: unknown, callback: (args: Record<string, unknown>) => Promise<unknown>) {
+      callbacks.set(name, callback)
+    }
+  } as unknown as McpServer
+  return callbacks
+}
+
+function initializeRequest(): Request {
+  return new Request('http://127.0.0.1/mcp', {
+    method: 'POST',
+    headers: { accept: 'application/json, text/event-stream', 'content-type': 'application/json' },
+    body: JSON.stringify({
+      jsonrpc: '2.0',
+      id: 1,
+      method: 'initialize',
+      params: { protocolVersion: '2025-06-18', capabilities: {}, clientInfo: { name: 'test', version: '1' } }
+    })
+  })
+}
+
+function mockSocket(): { socket: WebSocket; send: ReturnType<typeof vi.fn> } {
+  const send = vi.fn()
+  return {
+    send,
+    socket: {
+      OPEN: WebSocket.OPEN,
+      readyState: WebSocket.OPEN,
+      send,
+      close: vi.fn()
+    } as unknown as WebSocket
+  }
+}
 
 function rejectedUpgrade(url: string, origin: string): Promise<number> {
   return new Promise((resolveStatus, reject) => {
@@ -378,41 +321,4 @@ function rejectedUpgrade(url: string, origin: string): Promise<number> {
     })
     socket.once('error', reject)
   })
-}
-
-function nextText(socket: WebSocket): Promise<string> {
-  return new Promise((resolveMessage, reject) => {
-    socket.once('error', reject)
-    socket.once('message', data => resolveMessage(data.toString()))
-  })
-}
-
-function nextBinary(socket: WebSocket): Promise<Buffer> {
-  return new Promise((resolveMessage, reject) => {
-    socket.once('error', reject)
-    socket.once('message', data => resolveMessage(Buffer.from(data as ArrayBuffer)))
-  })
-}
-
-function actionFrame(namespace: string, target: string, payload: Uint8Array): Buffer {
-  const namespaceBytes = Buffer.from(namespace)
-  const targetBytes = Buffer.from(target)
-  return Buffer.concat([
-    Buffer.from([1, namespaceBytes.length, targetBytes.length]),
-    namespaceBytes,
-    targetBytes,
-    payload
-  ])
-}
-
-function decodeActionFrame(frame: Buffer) {
-  const namespaceLength = frame[1] ?? 0
-  const peerLength = frame[2] ?? 0
-  const peerStart = 3 + namespaceLength
-  const payloadStart = peerStart + peerLength
-  return {
-    namespace: frame.subarray(3, peerStart).toString(),
-    peerId: frame.subarray(peerStart, payloadStart).toString(),
-    payload: [...frame.subarray(payloadStart)]
-  }
 }

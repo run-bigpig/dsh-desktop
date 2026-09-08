@@ -41,7 +41,6 @@ export const DEFAULT_SETTINGS = {
   fallbackOrder: [] as string[],
   providerBaseUrls: {} as Record<string, string>,
   providerEnabled: {} as Record<string, boolean>,
-  platformEnabled: { xiaohongshu: true, x: true } as Record<string, boolean>,
   providerOptions: {} as StoredProviderOptions,
   // Brave has NO quota endpoint — its only quota signal is the X-RateLimit-*
   // response header captured during a real search. Persisted here so a
@@ -61,7 +60,6 @@ export interface WebToolsSettings {
   fallbackOrder: string[];
   providerBaseUrls: Record<string, string>;
   providerEnabled: Record<string, boolean>;
-  platformEnabled: Record<string, boolean>;
   providerOptions: StoredProviderOptions;
   /** Brave per-key quota snapshots captured from search response headers. */
   braveQuotaCache: Record<string, QuotaSnapshot>;
@@ -77,7 +75,6 @@ export const Config: z<WebToolsSettings> = z.object({
   fallbackOrder: z.array(z.string()),
   providerBaseUrls: z.dict(z.string()),
   providerEnabled: z.dict(z.boolean()),
-  platformEnabled: z.dict(z.boolean()),
   providerOptions: z.dict(z.any()),
   braveQuotaCache: z.dict(z.any()),
   searchRoutingPolicy: z.union([z.const("ordered"), z.const("round-robin"), z.const("random")]),

@@ -17,6 +17,7 @@ type Manifest struct {
 	CLIEntry          string `json:"cliEntry"`
 	Node              string `json:"node"`
 	PNPM              string `json:"pnpm"`
+	UV                string `json:"uv"`
 	SignatureVerified bool   `json:"signatureVerified"`
 }
 

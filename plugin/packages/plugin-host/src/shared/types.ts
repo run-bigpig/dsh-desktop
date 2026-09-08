@@ -58,6 +58,14 @@ export interface DesktopWindowState {
   fullscreen: boolean
 }
 
+export interface DesignConnection {
+  baseUrl: string
+  sessionId: string
+  token: string
+  scriptPath: string
+  stylePath: string
+}
+
 export type McpServerOrigin = 'settings' | 'system' | 'composition'
 export type McpServerFiberPhase = 'pending' | 'loading' | 'active' | 'failed' | 'unloading' | null
 export type McpServerTransport = 'stdio' | 'streamable-http'
@@ -121,6 +129,12 @@ export type McpServerUpsertRequest = McpStdioUpsertRequest | McpHttpUpsertReques
 
 export interface McpSystemUpdateRequest {
   readonly serverName: string
+  readonly transport?: 'stdio' | 'streamable-http'
+  readonly command?: string
+  readonly args?: readonly string[]
+  readonly env?: Readonly<Record<string, string>>
+  readonly cwd?: string
+  readonly enabled?: boolean
   readonly url?: string
   readonly headers?: Readonly<Record<string, string>>
   readonly toolCallTimeoutMs: number
@@ -475,4 +489,49 @@ export interface GitDiffRequest extends GitPathRequest {
 
 export interface GitCommitRequest {
   readonly message: string
+}
+
+export interface BrowserTab {
+  readonly id: string
+  readonly url: string
+  readonly title: string
+  readonly canGoBack: boolean
+  readonly canGoForward: boolean
+}
+export interface BrowserCommand {
+  readonly op: 'list' | 'create' | 'navigate' | 'back' | 'forward' | 'reload' | 'close' | 'layout' | 'cdp'
+  readonly tabId?: string
+  readonly sequence?: number
+  readonly url?: string
+  readonly method?: string
+  readonly params?: string
+  readonly visible?: boolean
+  readonly bounds?: { readonly x: number; readonly y: number; readonly width: number; readonly height: number; readonly scale: number }
+}
+interface WorkspaceRequestBase {
+  readonly presentation?: string
+  readonly sessionId: string
+  readonly revision: number
+  readonly turn: number
+  readonly cwd: string
+}
+export interface WorkspacePanelRequest extends WorkspaceRequestBase {
+  readonly action?: 'open'
+  readonly panel: 'files' | 'git' | 'browser' | 'canvas'
+  readonly tabId?: string
+  readonly path?: string
+}
+export interface WorkspaceCloseRequest extends WorkspaceRequestBase {
+  readonly action: 'close'
+}
+export type WorkspaceRequest = WorkspacePanelRequest | WorkspaceCloseRequest
+
+export interface WorkspacePresentationSnapshot {
+  readonly epoch: string
+  readonly revision: number
+  readonly sessions: readonly {
+    readonly sessionId: string
+    readonly turn: number
+    readonly request: WorkspaceRequest | null
+  }[]
 }

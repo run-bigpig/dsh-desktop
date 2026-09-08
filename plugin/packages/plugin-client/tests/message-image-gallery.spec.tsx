@@ -64,12 +64,12 @@ describe('message image gallery', () => {
     } as unknown as MessageImageGalleryProps
     const view = render(<MessageImageGallery {...props} />)
 
-    expect(controller.getImage()).toBeNull()
+    expect(controller.getSession('session-a').imageIntent).toBeNull()
     const edit = await view.findByRole('button', { name: 'Edit image pixel.png' })
     await waitFor(() => { expect((edit as HTMLButtonElement).disabled).toBe(false) })
     fireEvent.click(edit)
-    expect(controller.getImage()).toMatchObject({ sessionId: 'session-a', label: 'pixel.png' })
-    expect(controller.getOpen()).toBe(true)
+    expect(controller.getSession('session-a').imageIntent).toMatchObject({ sessionId: 'session-a', label: 'pixel.png' })
+    expect(controller.getSession('session-a').open).toBe(true)
   })
 
   it('uses the Ant Design image preview for message images', async () => {

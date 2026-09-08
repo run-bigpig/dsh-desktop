@@ -15,9 +15,11 @@ import (
 	"strings"
 	"sync"
 	"time"
+	"unsafe"
 
 	"github.com/run-bigpig/dsh-desktop/internal/appconfig"
 	"github.com/run-bigpig/dsh-desktop/internal/backup"
+	"github.com/run-bigpig/dsh-desktop/internal/browser"
 	"github.com/run-bigpig/dsh-desktop/internal/buildinfo"
 	"github.com/run-bigpig/dsh-desktop/internal/plugin"
 	harnessruntime "github.com/run-bigpig/dsh-desktop/internal/runtime"
@@ -41,12 +43,17 @@ type Coordinator struct {
 	plugins      *plugin.Manager
 	pluginBridge *plugin.Bridge
 	window       *windowController
+	browser      *browser.Manager
 	tools        update.Toolchain
 	log          io.Writer
 	process      *harnessruntime.Process
 	busy         bool
 	onReady      func(string)
 	onRecovery   func()
+}
+
+func (c *Coordinator) DesignFontScript() (string, error) {
+	return c.pluginBridge.DesignFontScript(c.store.Snapshot().HarnessURL)
 }
 
 func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
@@ -91,20 +98,44 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	}
 	c.plugins, c.pluginBridge = plugins, bridge
 	bridge.SetDesktopController(c.window)
+	executable, _ := os.Executable()
+	c.browser = browser.New(filepath.Join(paths.Root, "browser"), filepath.Join(filepath.Dir(executable), "resources", "browser", "WebView2Loader.dll"), func() unsafe.Pointer {
+		window, err := c.window.current()
+		if err != nil {
+			return nil
+		}
+		return window.NativeWindow()
+	})
+	bridge.SetBrowserController(c.browser)
 	plugins.SetControl(bridge.URL(), bridge.Token())
 	plugins.SetLifecycle(plugin.Lifecycle{Stop: c.Stop, Start: c.Start})
 	return c, nil
 }
 
-func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledToolchain(c.paths) }
+func (c *Coordinator) EnsurePrivateToolchain() error {
+	packagedRoot := ""
+	if executable, err := os.Executable(); err == nil {
+		packagedRoot = filepath.Join(filepath.Dir(executable), "resources", "toolchain")
+	}
+	return ensurePrivateToolchain(c.paths, c.tools, packagedRoot)
+}
 
 func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
 
-func (c *Coordinator) SetDesignWindow(window *application.WebviewWindow) {
-	c.window.SetDesignWindow(window)
+func ensurePrivateToolchain(paths appconfig.Paths, tools update.Toolchain, packagedRoot string) error {
+	removeLegacyToolchainGit(paths)
+	if packagedRoot != "" && appconfig.IsOwnedPath(packagedRoot, tools.Node) {
+		return nil
+	}
+	return installBundledToolchainFiles(paths)
 }
 
 func installBundledToolchain(paths appconfig.Paths) error {
+	removeLegacyToolchainGit(paths)
+	return installBundledToolchainFiles(paths)
+}
+
+func removeLegacyToolchainGit(paths appconfig.Paths) {
 	legacyGit := filepath.Join(paths.Toolchain, "git")
 	if _, err := os.Stat(legacyGit); err == nil {
 		cleanupRoot := filepath.Join(paths.Root, "cleanup")
@@ -117,6 +148,9 @@ func installBundledToolchain(paths appconfig.Paths) error {
 			}
 		}
 	}
+}
+
+func installBundledToolchainFiles(paths appconfig.Paths) error {
 	executableName := func(name string) string {
 		if runtime.GOOS == "windows" {
 			return name + ".exe"
@@ -126,6 +160,9 @@ func installBundledToolchain(paths appconfig.Paths) error {
 	required := []string{
 		filepath.Join(paths.Toolchain, "node", executableName("node")),
 		filepath.Join(paths.Toolchain, "pnpm", executableName("pnpm")),
+		filepath.Join(paths.Toolchain, "uv", executableName("uv")),
+		filepath.Join(paths.Toolchain, "uv", executableName("uvx")),
+		filepath.Join(paths.Toolchain, "uv", executableName("uvw")),
 	}
 	complete := true
 	for _, path := range required {
@@ -167,7 +204,7 @@ func (c *Coordinator) Store() *state.Store    { return c.store }
 func (c *Coordinator) Paths() appconfig.Paths { return c.paths }
 
 type dshTerminalConfig struct {
-	Node, PNPM, PNPMStore, CLI, HarnessHome, WorkingDirectory, StateDirectory string
+	Node, PNPM, UV, PNPMStore, CLI, HarnessHome, WorkingDirectory, StateDirectory string
 }
 
 func (c *Coordinator) OpenDSHTerminal() error {
@@ -201,6 +238,7 @@ func (c *Coordinator) dshTerminalConfig() (dshTerminalConfig, error) {
 	return dshTerminalConfig{
 		Node:             c.tools.Node,
 		PNPM:             c.tools.PNPM,
+		UV:               c.tools.UV,
 		PNPMStore:        c.paths.PNPMStore,
 		CLI:              cli,
 		HarnessHome:      c.paths.HarnessHome,
@@ -231,11 +269,12 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 		return update.Toolchain{
 			Node: filepath.Join(root, "node", exe("node")),
 			PNPM: filepath.Join(root, "pnpm", exe("pnpm")),
-			Git:  git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM,
+			UV:   filepath.Join(root, "uv", exe("uv")),
+			Git:  git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM, UVVersion: manifest.UV,
 		}
 	}
 	complete := func(tools update.Toolchain) bool {
-		for _, path := range []string{tools.Node, tools.PNPM} {
+		for _, path := range []string{tools.Node, tools.PNPM, tools.UV, filepath.Join(filepath.Dir(tools.UV), exe("uvx")), filepath.Join(filepath.Dir(tools.UV), exe("uvw"))} {
 			if _, err := os.Stat(path); err != nil {
 				return false
 			}
@@ -253,8 +292,9 @@ func ResolveToolchain(paths appconfig.Paths) (update.Toolchain, error) {
 	node, nodeErr := exec.LookPath("node")
 	pnpm, pnpmErr := exec.LookPath("pnpm")
 	git, _ := exec.LookPath("git")
-	tools := update.Toolchain{Node: node, PNPM: pnpm, Git: git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM}
-	if nodeErr != nil || pnpmErr != nil {
+	uv, uvErr := exec.LookPath("uv")
+	tools := update.Toolchain{Node: node, PNPM: pnpm, UV: uv, Git: git, NodeVersion: manifest.Node, PNPMVersion: manifest.PNPM, UVVersion: manifest.UV}
+	if nodeErr != nil || pnpmErr != nil || uvErr != nil {
 		return tools, fmt.Errorf("embedded toolchain is incomplete; reinstall the desktop package")
 	}
 	return tools, nil
@@ -267,6 +307,7 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		return nil
 	}
 	c.mu.Unlock()
+	c.store.SetRuntimeInfo(state.Deploying, "正在部署 Harness 运行时", "")
 	activation, switchedRuntime, err := c.activateBundledRuntime()
 	if err != nil {
 		c.store.SetRuntimeInfo(state.Failed, err.Error(), "")
@@ -280,6 +321,7 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		url, err = c.startActive(ctx)
 	}
 	if err != nil {
+		c.store.SetRuntimeInfo(state.Failed, err.Error(), "")
 		c.showRecovery()
 		return err
 	}
@@ -318,6 +360,7 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 		return "", err
 	}
 	c.plugins.SetRuntime(runtimeDir, snap.Active.Current.Commit)
+	c.store.SetRuntimeInfo(state.Plugins, "正在准备内置插件", "")
 	if err := c.plugins.EnsureDesktopPlugin(ctx); err != nil {
 		return "", err
 	}
@@ -335,16 +378,22 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 }
 
 func (c *Coordinator) harnessEnvironment() []string {
-	toolPath := strings.Join([]string{filepath.Dir(c.tools.Node), os.Getenv("PATH")}, string(os.PathListSeparator))
+	binDirs := []string{filepath.Dir(c.tools.Node)}
+	if c.tools.UV != "" {
+		binDirs = append(binDirs, filepath.Dir(c.tools.UV))
+	}
+	toolPath := strings.Join(append(binDirs, os.Getenv("PATH")), string(os.PathListSeparator))
 	return []string{
 		"PATH=" + toolPath,
 		"DSH_DESKTOP_CONTROL_URL=" + c.pluginBridge.URL(),
 		"DSH_DESKTOP_CONTROL_TOKEN=" + c.pluginBridge.Token(),
-		"STARWEAVE_DESIGN_STATE_DIR=" + c.paths.State,
 	}
 }
 
 func (c *Coordinator) Stop(ctx context.Context) error {
+	if c.browser != nil {
+		c.browser.Reset()
+	}
 	c.mu.Lock()
 	p := c.process
 	c.process = nil

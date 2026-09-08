@@ -2,8 +2,11 @@ import { randomBytes, randomUUID } from 'node:crypto'
 
 import type { WebSocket } from 'ws'
 
+import { isStoredDocument, type DesignDocumentStore } from './storage.ts'
+
 const RPC_TIMEOUT_MS = 120_000
-const BROWSER_WAIT_MS = 45_000
+
+export type DesignDocumentStoreResolver = () => Promise<DesignDocumentStore | undefined>
 
 type PendingRPC = {
   resolve: (value: unknown) => void
@@ -11,87 +14,52 @@ type PendingRPC = {
   timer: ReturnType<typeof setTimeout>
 }
 
-type PendingWaiter = {
-  resolve: () => void
-  reject: (error: Error) => void
-  timer: ReturnType<typeof setTimeout>
-}
-
-type DesignSession = {
+export type BrowserDesignSession = {
   id: string
   token: string
   socket: WebSocket | null
-  openedAt: number
   pending: Map<string, PendingRPC>
-  waiters: Set<PendingWaiter>
+  ready: boolean
+  restoreError?: string | undefined
+  store: DesignDocumentStore | undefined
+  resolveStore: DesignDocumentStoreResolver | undefined
+  saves: Promise<void>
 }
 
-export function createBrowserSessions(
-  openBrowser: (session: DesignSession, navigate: boolean) => Promise<void>
-) {
-  const sessions = new Map<string, DesignSession>()
-  let currentSessionId: string | undefined
+export function createBrowserSessions() {
+  const operations = new Map<string, Promise<unknown>>()
+  const sessions = new Map<string, BrowserDesignSession>()
 
-  function getOrCreate(requestedId?: string): DesignSession {
-    if (requestedId) {
-      const existing = sessions.get(requestedId)
-      if (existing) return existing
-      if (!isUUID(requestedId)) throw new Error('design_session_id must be a UUID')
+  async function exclusive<T>(sessionId: string, action: () => Promise<T>): Promise<T> {
+    const operation = (operations.get(sessionId) ?? Promise.resolve()).catch(() => undefined).then(action)
+    operations.set(sessionId, operation)
+    try { return await operation } finally { if (operations.get(sessionId) === operation) operations.delete(sessionId) }
+  }
+
+  function prepare(sessionId: string, resolveStore?: DesignDocumentStoreResolver): BrowserDesignSession {
+    const existing = sessions.get(sessionId)
+    if (existing) {
+      if (resolveStore) existing.resolveStore = resolveStore
+      return existing
     }
-    const id = requestedId ?? randomUUID()
-    const session: DesignSession = {
-      id,
+    const session = {
+      id: sessionId,
       token: randomBytes(32).toString('base64url'),
       socket: null,
-      openedAt: 0,
-      pending: new Map(),
-      waiters: new Set()
+      pending: new Map<string, PendingRPC>(),
+      ready: false,
+      store: undefined,
+      resolveStore,
+      saves: Promise.resolve()
     }
-    sessions.set(id, session)
-    currentSessionId = id
+    sessions.set(sessionId, session)
     return session
   }
 
-  function resolveSession(requestedId?: string): DesignSession {
-    if (requestedId) return getOrCreate(requestedId)
-    if (currentSessionId) {
-      const current = sessions.get(currentSessionId)
-      if (current) return current
-    }
-    if (sessions.size === 1) {
-      const only = sessions.values().next().value
-      if (only) return only
-    }
-    return getOrCreate()
-  }
-
-  async function ensureOpen(requestedId?: string, reveal = false): Promise<DesignSession> {
-    const session = resolveSession(requestedId)
-    currentSessionId = session.id
-    if (reveal || (!isOpen(session.socket) && Date.now() - session.openedAt > 3000)) {
-      session.openedAt = Date.now()
-      const pageSocket = isOpen(session.socket)
-        ? session.socket
-        : [...sessions.values()].find(candidate => isOpen(candidate.socket))?.socket
-      if (isOpen(session.socket)) {
-        session.socket.send(JSON.stringify({ type: 'reveal-session', sessionId: session.id }))
-      } else if (isOpen(pageSocket)) {
-        pageSocket.send(JSON.stringify({
-          type: 'open-session',
-          sessionId: session.id,
-          token: session.token
-        }))
-      }
-      await openBrowser(session, !isOpen(pageSocket))
-    }
-    return session
-  }
-
-  async function sendRPC(requestedId: string | undefined, command: string, args: unknown): Promise<unknown> {
-    const session = await ensureOpen(requestedId)
-    if (!isOpen(session.socket)) await waitForBrowser(session)
-    const socket = session.socket
-    if (!isOpen(socket)) throw new Error('StarWeave Design canvas did not connect')
+  async function sendRPC(sessionId: string, command: string, args: unknown): Promise<unknown> {
+    const session = sessions.get(sessionId)
+    const socket = session?.socket
+    if (!session || !session.ready || !isOpen(socket)) throw new Error('当前会话画布尚未连接，请调用 open_canvas 并等待初始化')
     return await new Promise((resolve, reject) => {
       const id = randomUUID()
       const timer = setTimeout(() => {
@@ -99,34 +67,80 @@ export function createBrowserSessions(
         reject(new Error(`Design RPC timed out after ${RPC_TIMEOUT_MS / 1000}s`))
       }, RPC_TIMEOUT_MS)
       session.pending.set(id, { resolve, reject, timer })
-      socket.send(JSON.stringify({ type: 'request', id, command, args, sessionId: session.id }))
+      socket.send(JSON.stringify({ type: 'request', id, command, args, sessionId }))
     })
   }
 
-  function register(socket: WebSocket, message: Record<string, unknown>): boolean {
+  async function register(socket: WebSocket, message: Record<string, unknown>): Promise<boolean> {
     const sessionId = typeof message.sessionId === 'string' ? message.sessionId : ''
     const token = typeof message.token === 'string' ? message.token : ''
     const session = sessions.get(sessionId)
     if (!session || !safeEqual(token, session.token)) return false
-    session.socket?.close(4001, 'session opened in another browser')
-    session.socket = socket
-    currentSessionId = session.id
-    socket.send(JSON.stringify({ type: 'registered', sessionId }))
-    for (const waiter of session.waiters) {
-      clearTimeout(waiter.timer)
-      waiter.resolve()
+    // A background page must not evict the editor that already owns this document.
+    if (session.socket !== socket && isOpen(session.socket)) {
+      socket.close(4001, 'session already open in another view')
+      return true
     }
-    session.waiters.clear()
+    session.socket = socket
+    session.ready = false
+    session.restoreError = undefined
+    let document
+    let restoreError: string | undefined
+    try {
+      await session.saves
+      session.store ??= await session.resolveStore?.()
+      if (!session.store && session.resolveStore) {
+        restoreError = 'StarWeave Design persistence directory is not available for this session'
+      }
+      document = await session.store?.load()
+    } catch (error) {
+      restoreError = error instanceof Error ? error.message : String(error)
+    }
+    if (session.socket !== socket) return false
+    session.restoreError = restoreError
+    socket.send(JSON.stringify({
+      type: 'registered',
+      sessionId,
+      persistence: session.store !== undefined,
+      document,
+      binding: session.store?.currentBinding?.(),
+      restoreError
+    }))
+    session.ready = restoreError === undefined
     return true
   }
 
-  function handleMessage(socket: WebSocket, message: Record<string, unknown>): void {
+  async function handleMessage(socket: WebSocket, message: Record<string, unknown>): Promise<void> {
     if (message.type === 'register') {
-      if (!register(socket, message)) socket.close(4003, 'invalid design session')
+      if (!await register(socket, message)) socket.close(4003, 'invalid design session')
+      return
+    }
+    const session = [...sessions.values()].find(candidate => candidate.socket === socket)
+    if (message.type === 'persist_document' && typeof message.id === 'string') {
+      if (!session?.store || !isStoredDocument(message.document)) {
+        socket.send(JSON.stringify({
+          type: 'persistence_error',
+          id: message.id,
+          error: 'Design session document is invalid or storage is unavailable'
+        }))
+        return
+      }
+      const document = message.document
+      session.saves = session.saves.then(() => session.store!.save(document))
+      try {
+        await session.saves
+        if (session.socket === socket) socket.send(JSON.stringify({ type: 'persisted', id: message.id }))
+      } catch (error) {
+        session.saves = Promise.resolve()
+        if (session.socket === socket) socket.send(JSON.stringify({
+          type: 'persistence_error',
+          id: message.id,
+          error: error instanceof Error ? error.message : String(error)
+        }))
+      }
       return
     }
     if (message.type !== 'response' || typeof message.id !== 'string') return
-    const session = [...sessions.values()].find(candidate => candidate.socket === socket)
     const pending = session?.pending.get(message.id)
     if (!session || !pending) return
     session.pending.delete(message.id)
@@ -138,9 +152,11 @@ export function createBrowserSessions(
     const session = [...sessions.values()].find(candidate => candidate.socket === socket)
     if (!session) return
     session.socket = null
+    session.ready = false
+    session.restoreError = undefined
     for (const pending of session.pending.values()) {
       clearTimeout(pending.timer)
-      pending.reject(new Error('StarWeave Design browser disconnected'))
+      pending.reject(new Error('StarWeave Design canvas disconnected'))
     }
     session.pending.clear()
   }
@@ -152,39 +168,20 @@ export function createBrowserSessions(
         clearTimeout(pending.timer)
         pending.reject(new Error('StarWeave Design is shutting down'))
       }
-      for (const pending of session.waiters) {
-        clearTimeout(pending.timer)
-        pending.reject(new Error('StarWeave Design is shutting down'))
-      }
     }
     sessions.clear()
   }
 
-  return { close, disconnect, ensureOpen, handleMessage, sendRPC, prepare: getOrCreate }
-}
-
-async function waitForBrowser(session: DesignSession): Promise<void> {
-  await new Promise<void>((resolve, reject) => {
-    const timer = setTimeout(() => {
-      session.waiters.delete(waiter)
-      reject(new Error('Timed out waiting for the StarWeave Design canvas window'))
-    }, BROWSER_WAIT_MS)
-    const waiter: PendingWaiter = { resolve, reject, timer }
-    session.waiters.add(waiter)
-    if (isOpen(session.socket)) {
-      session.waiters.delete(waiter)
-      clearTimeout(timer)
-      resolve()
-    }
-  })
+  const isReady = (sessionId: string): boolean => {
+    const session = sessions.get(sessionId)
+    return session?.ready === true && isOpen(session.socket)
+  }
+  const restoreError = (sessionId: string): string | undefined => sessions.get(sessionId)?.restoreError
+  return { close, disconnect, handleMessage, prepare, sendRPC, isReady, restoreError, exclusive }
 }
 
 function isOpen(socket: WebSocket | null | undefined): socket is WebSocket {
   return socket !== null && socket !== undefined && socket.readyState === socket.OPEN
-}
-
-function isUUID(value: string): boolean {
-  return /^[0-9a-f]{8}-[0-9a-f]{4}-4[0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/u.test(value)
 }
 
 function safeEqual(left: string, right: string): boolean {
@@ -193,5 +190,3 @@ function safeEqual(left: string, right: string): boolean {
   for (let index = 0; index < left.length; index++) result |= left.charCodeAt(index) ^ right.charCodeAt(index)
   return result === 0
 }
-
-export type BrowserDesignSession = DesignSession

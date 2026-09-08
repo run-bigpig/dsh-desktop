@@ -22,13 +22,19 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 	if !strings.Contains(text, "starweave-logo.png") || strings.Contains(text, "avilo-bird.png") {
 		t.Fatal("frontend does not reference the StarWeave startup logo")
 	}
-	if !strings.Contains(text, "星织启动中") || !strings.Contains(text, "star-particle") {
+	if !strings.Contains(text, "星织启动中") || !strings.Contains(text, "star-particle") || !strings.Contains(text, `id="particleField"`) {
 		t.Fatal("frontend does not contain the StarWeave convergence splash")
 	}
-	for _, marker := range []string{"core-network", "agent-nodes", "AUTONOMOUS AGENT FABRIC"} {
+	if !strings.Contains(text, `src="particles.js"`) {
+		t.Fatal("frontend does not load its local Three.js particle field")
+	}
+	for _, marker := range []string{"core-network", "agent-nodes"} {
 		if !strings.Contains(text, marker) {
 			t.Fatalf("frontend splash is missing StarWeave Core marker %q", marker)
 		}
+	}
+	if strings.Contains(text, "core-signature") || strings.Contains(text, "AUTONOMOUS AGENT FABRIC") {
+		t.Fatal("frontend splash still contains the removed StarWeave Core signature")
 	}
 	for _, expected := range []string{"downloadProgress", "downloadPercent", "cancelUpdate", "retryUpdate", "SHA-256"} {
 		if !strings.Contains(text, expected) {
@@ -44,6 +50,11 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 			t.Fatalf("frontend update logic is missing %q", expected)
 		}
 	}
+	for _, expected := range []string{"preparing", "deploying", "plugins", "verifying", "正在准备内置插件", "正在验证服务页面"} {
+		if !strings.Contains(string(script), expected) {
+			t.Fatalf("frontend startup stages are missing %q", expected)
+		}
+	}
 	if _, err := Frontend.ReadFile("frontend/starweave-logo.png"); err != nil {
 		t.Fatal(err)
 	}
@@ -56,6 +67,23 @@ func TestOfflineFrontendEmbedded(t *testing.T) {
 	}
 	if !strings.Contains(string(styles), "@keyframes starConverge") || !strings.Contains(string(styles), "@keyframes agentPulse") || !strings.Contains(string(styles), "body[data-phase=\"ready\"] .logo-core") {
 		t.Fatal("frontend splash is missing rotating convergence or success logo reveal")
+	}
+	if !strings.Contains(string(styles), ".particle-field") || !strings.Contains(string(styles), ".core-shell") || !strings.Contains(string(styles), "background: transparent") {
+		t.Fatal("frontend splash is missing its Three.js layer or transparent logo treatment")
+	}
+	particles, err := Frontend.ReadFile("frontend/particles.js")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, expected := range []string{`from "./vendor/three.module.min.js"`, "THREE.Points", "ResizeObserver", "prefers-reduced-motion"} {
+		if !strings.Contains(string(particles), expected) {
+			t.Fatalf("frontend particle field is missing %q", expected)
+		}
+	}
+	for _, path := range []string{"frontend/vendor/three.module.min.js", "frontend/vendor/three.core.min.js", "frontend/vendor/three-LICENSE.txt"} {
+		if _, err := Frontend.ReadFile(path); err != nil {
+			t.Fatal(err)
+		}
 	}
 }
 

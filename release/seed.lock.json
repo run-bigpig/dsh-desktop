@@ -6,6 +6,7 @@
   "cliEntry": "apps/cli/lib/bin.js",
   "node": "24.12.0",
   "pnpm": "11.7.0",
+  "uv": "0.12.10",
   "compatibility": {
     "windows": "Windows 10 22H2 or newer, x64",
     "macos": "validation pending",

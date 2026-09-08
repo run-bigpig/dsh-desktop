@@ -6,7 +6,6 @@ $repoRoot = Split-Path -Parent $PSScriptRoot
 $buildLock = Enter-WindowsBuildLock $repoRoot
 $toolLock = Get-Content (Join-Path $repoRoot "release/toolchain.lock.json") -Raw | ConvertFrom-Json
 $seedLock = Get-Content (Join-Path $repoRoot "release/seed.lock.json") -Raw | ConvertFrom-Json
-$designReleaseConfig = Get-Content (Join-Path $repoRoot "release/starweave-ui.release.json") -Raw | ConvertFrom-Json
 $stage = Join-Path $repoRoot "dist/windows/stage"
 $downloads = Join-Path $repoRoot "dist/windows/downloads"
 $buildRoot = Join-Path $repoRoot "dist/windows/seed-build"
@@ -18,80 +17,15 @@ $seedSourceTarget = Join-Path $stage ("resources/seed/source/" + $seedLock.commi
 $seedManifestPath = Join-Path $stage "resources/seed/build-manifest.json"
 $seedCacheRoot = Join-Path $repoRoot "dist/windows/seed-cache"
 $sourceSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
-$designReleaseHeaders = @{
-  Accept = "application/vnd.github+json"
-  "X-GitHub-Api-Version" = "2022-11-28"
-  "User-Agent" = "StarWeave-Windows-Seed"
-}
-$githubToken = [Environment]::GetEnvironmentVariable("STARWEAVE_UI_GITHUB_TOKEN")
-if ([string]::IsNullOrWhiteSpace($githubToken)) {
-  $githubToken = [Environment]::GetEnvironmentVariable("GITHUB_TOKEN")
-}
-if (-not [string]::IsNullOrWhiteSpace($githubToken)) { $designReleaseHeaders.Authorization = "Bearer " + $githubToken }
-
-function Get-LatestStarWeaveUIRelease {
-  if (
-    $designReleaseConfig.schemaVersion -ne 1 -or
-    $designReleaseConfig.repository -notmatch '^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$' -or
-    $designReleaseConfig.releaseAPI -notmatch '^https://api\.github\.com/repos/' -or
-    $designReleaseConfig.archiveAsset -ne 'starweave-ui-dist.tar.gz' -or
-    $designReleaseConfig.checksumAsset -ne 'starweave-ui-dist.tar.gz.sha256'
-  ) {
-    throw "Invalid StarWeave UI release configuration"
-  }
-  try {
-    $release = Invoke-RestMethod -UseBasicParsing -Uri $designReleaseConfig.releaseAPI -Headers $designReleaseHeaders
-  } catch {
-    throw "Unable to resolve the latest StarWeave UI release. Push a stable vX.Y.Z tag first: $($_.Exception.Message)"
-  }
-  $tag = [string]$release.tag_name
-  if ($release.draft -or $release.prerelease -or $tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') {
-    throw "Latest StarWeave UI release is not a stable vX.Y.Z release: $tag"
-  }
-  $archiveAssets = @($release.assets | Where-Object { $_.name -ceq $designReleaseConfig.archiveAsset })
-  $checksumAssets = @($release.assets | Where-Object { $_.name -ceq $designReleaseConfig.checksumAsset })
-  if ($archiveAssets.Count -ne 1 -or $checksumAssets.Count -ne 1) {
-    throw "StarWeave UI release $tag must contain exactly one archive and checksum asset"
-  }
-  $releaseBase = "https://github.com/$($designReleaseConfig.repository)/releases/download/$tag/"
-  $archiveURL = [string]$archiveAssets[0].browser_download_url
-  $checksumURL = [string]$checksumAssets[0].browser_download_url
-  if ($archiveURL -cne ($releaseBase + $designReleaseConfig.archiveAsset) -or $checksumURL -cne ($releaseBase + $designReleaseConfig.checksumAsset)) {
-    throw "StarWeave UI release $tag contains an unexpected asset URL"
-  }
-  $checksumResponse = Invoke-WebRequest -UseBasicParsing -Uri $checksumURL -Headers $designReleaseHeaders
-  $checksumContent = if ($checksumResponse.Content -is [byte[]]) {
-    [Text.Encoding]::UTF8.GetString($checksumResponse.Content)
-  } else {
-    [string]$checksumResponse.Content
-  }
-  $checksumMatch = [Text.RegularExpressions.Regex]::Match(
-    $checksumContent,
-    '^[\s]*([0-9a-fA-F]{64})[\s]+\*?starweave-ui-dist\.tar\.gz[\s]*$',
-    [Text.RegularExpressions.RegexOptions]::CultureInvariant
-  )
-  if (-not $checksumMatch.Success) { throw "StarWeave UI release $tag has an invalid checksum asset" }
-  return [pscustomobject]@{
-    tag = $tag
-    repository = [string]$designReleaseConfig.repository
-    archiveURL = $archiveURL
-    archiveSHA256 = $checksumMatch.Groups[1].Value.ToLowerInvariant()
-  }
-}
-
-$designRelease = Get-LatestStarWeaveUIRelease
-$seedFingerprint = Get-SHA256Text ((@(
-  "source=$sourceSeedFingerprint",
-  "designTag=$($designRelease.tag)",
-  "designSHA256=$($designRelease.archiveSHA256)"
-) -join "`n"))
+$seedFingerprint = Get-SHA256Text ("source=" + $sourceSeedFingerprint)
 $seedCache = Join-Path $seedCacheRoot $seedFingerprint
 
 function Get-DesktopPluginVersion {
   $versions = @(
     "plugin/packages/plugin-host/package.json",
     "plugin/packages/plugin-client/package.json",
-    "plugin/packages/plugin-bundle/package.json"
+    "plugin/packages/plugin-bundle/package.json",
+    "plugin/packages/plugin-design-ui/package.json"
   ) | ForEach-Object {
     (Get-Content (Join-Path $repoRoot $_) -Raw | ConvertFrom-Json).version
   } | Select-Object -Unique
@@ -123,45 +57,38 @@ function Test-VerifiedSeedLayout([string]$Root) {
     return $false
   }
   if (
-    $manifest.schemaVersion -ne 2 -or
-    -not ($manifest.PSObject.Properties.Name -contains "sourceFingerprint") -or
-    -not ($manifest.PSObject.Properties.Name -contains "designRelease") -or
-    $null -eq $manifest.designRelease -or
-    -not ($manifest.designRelease.PSObject.Properties.Name -contains "tag") -or
-    -not ($manifest.designRelease.PSObject.Properties.Name -contains "sha256") -or
-    -not ($manifest.designRelease.PSObject.Properties.Name -contains "commit")
+    $manifest.schemaVersion -ne 3 -or
+    -not ($manifest.PSObject.Properties.Name -contains "sourceFingerprint")
   ) { return $false }
   if (
     $manifest.fingerprint -ne $seedFingerprint -or
     $manifest.sourceFingerprint -ne $sourceSeedFingerprint -or
-    $manifest.commit -ne $seedLock.commit -or
-    $manifest.designRelease.tag -ne $designRelease.tag -or
-    $manifest.designRelease.sha256 -ne $designRelease.archiveSHA256
-  ) { return $false }
-  try {
-    $designBuild = Get-Content (Join-Path $Root "resources/plugin/plugin-host/web/starweave-ui/starweave-ui-build.json") -Raw | ConvertFrom-Json
-  } catch {
-    return $false
-  }
-  if (
-    $designBuild.schemaVersion -ne 1 -or
-    $designBuild.tag -ne $manifest.designRelease.tag -or
-    $designBuild.commit -ne $manifest.designRelease.commit
+    $manifest.commit -ne $seedLock.commit
   ) { return $false }
   if (Test-Path -LiteralPath (Join-Path $Root "resources/openpencil")) { return $false }
   foreach ($required in @(
+    "resources/browser/WebView2Loader.dll",
+    "resources/browser/LICENSE.txt",
     "resources/toolchain/node/node.exe",
     "resources/toolchain/node/LICENSE",
     "resources/toolchain/pnpm/pnpm.exe",
     "resources/toolchain/pnpm/dist/pnpm.mjs",
     "resources/toolchain/pnpm/dist/pnpmrc",
     "resources/toolchain/pnpm/dist/worker.js",
+    "resources/toolchain/uv/uv.exe",
+    "resources/toolchain/uv/uvx.exe",
+    "resources/toolchain/uv/uvw.exe",
+    "resources/toolchain/uv/LICENSE-MIT",
+    "resources/toolchain/uv/LICENSE-APACHE",
     ("resources/seed/source/" + $seedLock.commit + "/" + $seedLock.cliEntry),
     "resources/plugin/plugin-host/package.json",
     "resources/plugin/plugin-host/lib/design.js",
-    "resources/plugin/plugin-host/web/starweave-ui/index.html",
-    "resources/plugin/plugin-host/web/starweave-ui/canvaskit.wasm",
-    "resources/plugin/plugin-host/web/starweave-ui/starweave-ui-build.json",
+    "resources/plugin/plugin-host/web/starweave-design/starweave-design-embed.js",
+    "resources/plugin/plugin-host/web/starweave-design/starweave-design-embed.css",
+    "resources/plugin/plugin-host/web/starweave-design/canvaskit.wasm",
+    "resources/plugin/plugin-host/web/starweave-design/Inter-Regular.ttf",
+    "resources/plugin/plugin-host/presets/design/skills/open-pencil/SKILL.md",
+    "resources/plugin/plugin-host/skills/thinkingdata-analysis-orchestrator/SKILL.md",
     "resources/plugin/plugin-client/package.json",
     "resources/plugin/plugin-bundle/package.json",
     "resources/marketplace/catalog.json",
@@ -176,7 +103,7 @@ function Restore-VerifiedSeedCache([string]$Cache) {
   $stageResources = Join-Path $stage "resources"
   New-Item -ItemType Directory -Force $stageResources | Out-Null
   Remove-DirectoryTree (Join-Path $stageResources "openpencil")
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","browser") {
     Remove-DirectoryTree (Join-Path $stageResources $directory)
     Copy-DirectoryTree `
       -Source (Join-Path $Cache ("resources/" + $directory)) `
@@ -191,7 +118,7 @@ function Publish-VerifiedSeedCache {
   $temporaryCache = Join-Path $seedCacheRoot ("seed-cache-tmp-" + [Guid]::NewGuid().ToString("N"))
   $temporaryResources = Join-Path $temporaryCache "resources"
   New-Item -ItemType Directory -Force $temporaryResources | Out-Null
-  foreach ($directory in "toolchain","seed","plugin","marketplace") {
+  foreach ($directory in "toolchain","seed","plugin","marketplace","browser") {
     Copy-DirectoryTree `
       -Source (Join-Path $stage ("resources/" + $directory)) `
       -Destination (Join-Path $temporaryResources $directory)
@@ -249,6 +176,14 @@ foreach ($artifact in $toolLock.artifacts) {
       if (-not $pnpmExe) { throw "pnpm.exe missing from locked archive" }
       if ($pnpmExe.DirectoryName -ne $pnpmDir) { Copy-Item -Force $pnpmExe.FullName (Join-Path $pnpmDir "pnpm.exe") }
     }
+    "uv" {
+      $uvDir = Join-Path $tools "uv"
+      New-Item -ItemType Directory -Force $uvDir | Out-Null
+      Expand-Archive -Force $archive $uvDir
+      foreach ($entry in "uv.exe","uvx.exe","uvw.exe") {
+        if (-not (Test-Path (Join-Path $uvDir $entry))) { throw "$entry missing from locked uv archive" }
+      }
+    }
     "git" {
       $gitDir = Join-Path $tools "git"
       $extractExitCode = -1
@@ -269,11 +204,13 @@ $node = Join-Path $tools "node/node.exe"
 $pnpm = Join-Path $tools "pnpm/pnpm.exe"
 $pnpmScript = Join-Path $tools "pnpm/dist/pnpm.mjs"
 $git = Join-Path $tools "git/cmd/git.exe"
-foreach ($required in $node,$pnpm,$pnpmScript,$git) {
+$uv = Join-Path $tools "uv/uv.exe"
+foreach ($required in $node,$pnpm,$pnpmScript,$git,$uv) {
   if (-not (Test-Path $required)) { throw "Missing embedded tool: $required" }
 }
 if ((& $node --version).TrimStart('v') -ne $seedLock.node) { throw "Embedded Node version mismatch" }
 if ((& $node $pnpmScript --version) -ne $seedLock.pnpm) { throw "Embedded pnpm version mismatch" }
+if ((& $uv --version).Split(' ')[1] -ne $seedLock.uv) { throw "Embedded uv version mismatch" }
 $lockedGit = $toolLock.artifacts | Where-Object { $_.name -eq "git" -and $_.platform -eq "windows" -and $_.architecture -eq "x64" } | Select-Object -First 1
 if (-not $lockedGit -or ((& $git --version).Trim() -ne ("git version " + $lockedGit.version))) { throw "Embedded Git version mismatch" }
 
@@ -335,8 +272,7 @@ if ($previousCommit -eq $seedLock.commit) {
   if ($LASTEXITCODE -ne 0) { throw "Unable to clean cached Harness checkout" }
   & $git -C $checkout fetch --force --no-tags --depth 1 origin $seedLock.commit
   if ($LASTEXITCODE -ne 0) {
-    Write-Warning "Cached Harness checkout fetch failed; replacing the generated checkout"
-    Initialize-FreshHarnessCheckout
+    Write-Warning "Cached Harness checkout fetch failed; continuing with the exact locally cached locked commit"
   } else {
     & $git -C $checkout checkout --detach $seedLock.commit
     if ($LASTEXITCODE -ne 0) { throw "Locked Harness commit checkout failed" }
@@ -567,40 +503,7 @@ foreach ($package in $pluginPackages) {
   if ($manifest.name -ne $package.name) { throw "Built-in Desktop Plugin package name mismatch: $manifestPath" }
   if ($manifest.version -ne $package.version) { throw "Built-in Desktop Plugin package version mismatch: $manifestPath" }
 }
-$designArchive = Join-Path $downloads ("starweave-ui-" + $designRelease.tag + ".tar.gz")
-if ((Test-Path -LiteralPath $designArchive) -and (Get-SHA256File $designArchive) -ne $designRelease.archiveSHA256) {
-  Remove-Item -LiteralPath $designArchive -Force
-}
-if (-not (Test-Path -LiteralPath $designArchive)) {
-  Invoke-WebRequest -UseBasicParsing -Uri $designRelease.archiveURL -Headers $designReleaseHeaders -OutFile $designArchive
-}
-$designArchiveHash = Get-SHA256File $designArchive
-if ($designArchiveHash -ne $designRelease.archiveSHA256) {
-  throw "SHA-256 mismatch for StarWeave UI $($designRelease.tag): expected $($designRelease.archiveSHA256), got $designArchiveHash"
-}
-$designWeb = Join-Path $buildRoot "starweave-ui"
-Remove-DirectoryTree $designWeb
-New-Item -ItemType Directory -Force $designWeb | Out-Null
-& tar.exe -xzf $designArchive -C $designWeb
-if ($LASTEXITCODE -ne 0) { throw "Unable to extract StarWeave UI $($designRelease.tag)" }
-foreach ($requiredDesignSource in "index.html","canvaskit.wasm","starweave-ui-build.json") {
-  if (-not (Test-Path -LiteralPath (Join-Path $designWeb $requiredDesignSource))) {
-    throw "StarWeave UI $($designRelease.tag) is missing $requiredDesignSource"
-  }
-}
-$designBuild = Get-Content (Join-Path $designWeb "starweave-ui-build.json") -Raw | ConvertFrom-Json
-if (-not ($designBuild.PSObject.Properties.Name -contains "workspaceFileProtocol") -or $designBuild.workspaceFileProtocol -ne 1) {
-  throw "StarWeave workspace autosave requires a UI release with workspaceFileProtocol=1 (v0.1.6 or newer). Publish the matching UI release and rerun task seed:windows."
-}
-if (
-  $designBuild.schemaVersion -ne 1 -or
-  $designBuild.tag -cne $designRelease.tag -or
-  ("v" + [string]$designBuild.version) -cne $designRelease.tag -or
-  $designBuild.commit -notmatch '^[0-9a-f]{40}$'
-) {
-  throw "StarWeave UI $($designRelease.tag) has an invalid build manifest"
-}
-& $node $pluginBuild --harness $checkout --out $pluginTarget --design-web $designWeb
+& $node $pluginBuild --harness $checkout --out $pluginTarget
 if ($LASTEXITCODE -ne 0) { throw "Desktop Plugin build failed" }
 foreach ($package in $pluginPackages) {
   $builtManifestPath = Join-Path $pluginTarget ($package.directory + "/package.json")
@@ -614,9 +517,12 @@ foreach ($package in $pluginPackages) {
 }
 foreach ($requiredDesignFile in @(
   "plugin-host/lib/design.js",
-  "plugin-host/web/starweave-ui/index.html",
-  "plugin-host/web/starweave-ui/canvaskit.wasm",
-  "plugin-host/web/starweave-ui/starweave-ui-build.json",
+  "plugin-host/web/starweave-design/starweave-design-embed.js",
+  "plugin-host/web/starweave-design/starweave-design-embed.css",
+  "plugin-host/web/starweave-design/canvaskit.wasm",
+  "plugin-host/web/starweave-design/Inter-Regular.ttf",
+  "plugin-host/presets/design/skills/open-pencil/SKILL.md",
+  "plugin-host/skills/thinkingdata-analysis-orchestrator/SKILL.md",
   "plugin-bundle/LICENSES/open-pencil-MIT.txt",
   "plugin-bundle/LICENSES/canvaskit-BSD-3-Clause.txt",
   "plugin-bundle/LICENSES/vue-MIT.txt",
@@ -654,26 +560,26 @@ New-Item -ItemType Directory -Force $runtimeNode | Out-Null
 Copy-Item -Force $node (Join-Path $runtimeNode "node.exe")
 Copy-Item -Force (Join-Path $tools "node/LICENSE") (Join-Path $runtimeNode "LICENSE")
 Copy-Item -Recurse -Force (Join-Path $tools "pnpm") (Join-Path $runtimeTools "pnpm")
+Copy-Item -Recurse -Force (Join-Path $tools "uv") (Join-Path $runtimeTools "uv")
+foreach ($license in "LICENSE-MIT","LICENSE-APACHE") {
+  Copy-Item -Force (Join-Path $repoRoot "build/licenses/uv/$license") (Join-Path $runtimeTools "uv/$license")
+}
 Copy-Item -Force (Join-Path $repoRoot "release/seed.lock.json") (Join-Path $stage "resources/seed/seed.lock.json")
+& (Join-Path $PSScriptRoot "prepare-browser-runtime.ps1") -Stage $stage
 $finalSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
 if ($finalSeedFingerprint -ne $sourceSeedFingerprint) {
   throw "Seed or plugin sources changed during the Windows build; retry from a stable worktree"
 }
 Write-JsonAtomic -Path $seedManifestPath -Value ([ordered]@{
-  schemaVersion = 2
+  schemaVersion = 3
   fingerprint = $seedFingerprint
   sourceFingerprint = $sourceSeedFingerprint
   commit = $seedLock.commit
   ref = $seedLock.ref
   node = $seedLock.node
   pnpm = $seedLock.pnpm
+  uv = $seedLock.uv
   pluginVersion = $pluginVersion
-  designRelease = [ordered]@{
-    repository = $designRelease.repository
-    tag = $designRelease.tag
-    sha256 = $designRelease.archiveSHA256
-    commit = [string]$designBuild.commit
-  }
   createdAtUTC = [DateTime]::UtcNow.ToString("o")
 })
 

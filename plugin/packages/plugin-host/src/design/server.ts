@@ -1,73 +1,57 @@
 import { createServer, type IncomingMessage, type ServerResponse } from 'node:http'
-import { randomBytes, randomUUID } from 'node:crypto'
-import { networkInterfaces } from 'node:os'
+import { randomBytes } from 'node:crypto'
 import { dirname, extname, resolve, sep } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { readFile, stat } from 'node:fs/promises'
+import { setTimeout as delay } from 'node:timers/promises'
 
 import type { McpServer } from '@modelcontextprotocol/sdk/server/mcp.js'
-import { WebSocket, WebSocketServer } from 'ws'
+import { WebSocketServer } from 'ws'
 
-import { desktopRequest } from '../desktop/index.ts'
-import { createBrowserSessions, type BrowserDesignSession } from './browser-sessions.ts'
+import { createBrowserSessions } from './browser-sessions.ts'
 import { createDesignMCPSessions } from './mcp-sessions.ts'
-import { createDesignSaveUploads } from './save-uploads.ts'
-import { createWorkspaceDesignGateway } from './workspace-gateway.ts'
-import type { DesignOwner } from './workspace-files.ts'
+import { createDesignDocumentStore, MAX_DESIGN_DOCUMENT_BASE64_LENGTH, type DesignDocumentStore } from './storage.ts'
 import { registerDesignTools } from './tools.ts'
+import type { DesignConnection } from '../shared/types.ts'
 
 const MAX_HTTP_BODY = 2 * 1024 * 1024
-const MAX_COLLAB_MESSAGE = 64 * 1024 * 1024
 const UI_ROOT = resolve(
   dirname(fileURLToPath(import.meta.url)),
-  import.meta.url.endsWith('.ts') ? '../../web/starweave-ui' : '../web/starweave-ui'
+  import.meta.url.endsWith('.ts') ? '../../web/starweave-design' : '../web/starweave-design'
 )
 
+export type DesignOwner = { id: string }
+
 export type DesignServer = {
+  exclusive: <T>(sessionId: string, action: () => Promise<T>) => Promise<T>
+  sendRPC: (sessionId: string, command: string, args: unknown) => Promise<unknown>
   port: number
   authToken: string
+  connection: (sessionId: string) => DesignConnection
   registerOwner: (owner: DesignOwner) => { token: string; dispose: () => void }
+  waitForReady: (sessionId: string, signal: AbortSignal) => Promise<void>
   close: () => Promise<void>
 }
 
-export async function startDesignServer(authToken: string): Promise<DesignServer> {
+export async function startDesignServer(
+  authToken: string,
+  documentPath?: (sessionId: string) => Promise<string | undefined>,
+  documentStore?: (sessionId: string) => Promise<DesignDocumentStore | undefined>,
+): Promise<DesignServer> {
   let port = 0
-  const lanAddresses = privateIPv4Addresses()
-  const openBrowser = async (session: BrowserDesignSession, navigate: boolean): Promise<void> => {
-    if (port < 1) throw new Error('StarWeave Design server is not ready')
-    const target = new URL(`http://127.0.0.1:${port}/`)
-    target.searchParams.set('session', session.id)
-    target.searchParams.set('token', session.token)
-    if (lanAddresses[0]) target.searchParams.set('lan', `http://${lanAddresses[0]}:${port}`)
-    await desktopRequest('/v1/design/open', {
-      method: 'POST',
-      body: JSON.stringify({ url: target.href, navigate })
-    })
-  }
-  const browsers = createBrowserSessions(openBrowser)
-  const uploads = createDesignSaveUploads()
-  const workspace = createWorkspaceDesignGateway(browsers, uploads)
+  const browsers = createBrowserSessions()
   const owners = new Map<string, DesignOwner>()
   const mcpSessions = createDesignMCPSessions((server: McpServer, ownerToken?: string) => {
-    registerDesignTools(
-      server,
-      browsers.sendRPC,
-      async (requestedId, reveal) => {
-        const session = await browsers.ensureOpen(requestedId, reveal)
-        return { id: session.id, connected: session.socket?.readyState === session.socket?.OPEN }
-      },
-      workspace.save,
-      workspace.open,
-      workspace.restore,
-      workspace.lifecycle(ownerToken ? owners.get(ownerToken) : undefined)
-    )
+    registerDesignTools(server, async (sessionId, command, args) => {
+      return browsers.exclusive(sessionId, () => browsers.sendRPC(sessionId, command, args))
+    }, ownerToken ? owners.get(ownerToken)?.id : undefined)
   })
-
-  const designSockets = new WebSocketServer({ noServer: true, maxPayload: 2 * 1024 * 1024 })
-  const collaborationSockets = new WebSocketServer({ noServer: true, maxPayload: MAX_COLLAB_MESSAGE })
-  const collaboration = createCollaborationRelay()
+  const designSockets = new WebSocketServer({
+    noServer: true,
+    maxPayload: MAX_DESIGN_DOCUMENT_BASE64_LENGTH + 64 * 1024
+  })
   const httpServer = createServer((request, response) => {
-    void handleHTTP(request, response, authToken, mcpSessions, uploads, port, owners, workspace).catch(error => {
+    void handleHTTP(request, response, authToken, mcpSessions, owners).catch(error => {
       if (!response.headersSent) writeJSON(response, 500, { error: describeError(error) })
       else response.destroy(error instanceof Error ? error : undefined)
     })
@@ -81,41 +65,29 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
       rejectUpgrade(socket)
       return
     }
-    if (target.pathname === '/bridge') {
-      if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
-        rejectUpgrade(socket)
-        return
-      }
-      designSockets.handleUpgrade(request, socket, head, client => {
-        client.on('message', raw => {
-          try {
-            const value = JSON.parse(Buffer.from(raw as Buffer).toString('utf8')) as unknown
-            if (isRecord(value)) browsers.handleMessage(client, value)
-          } catch {
-            client.close(1007, 'invalid JSON')
-          }
-        })
-        client.once('close', () => browsers.disconnect(client))
-      })
-      return
-    }
-
-    const roomId = collaborationRoom(target.pathname)
-    if (
-      !roomId ||
-      !isPrivateNetworkAddress(request.socket.remoteAddress ?? '') ||
-      !validCollaborationOrigin(request.headers.origin, port)
-    ) {
+    if (target.pathname !== '/bridge' || !isLoopback(request.socket.remoteAddress ?? '') || !isLoopbackOrigin(request.headers.origin)) {
       rejectUpgrade(socket)
       return
     }
-    collaborationSockets.handleUpgrade(request, socket, head, client => collaboration.accept(client, roomId))
+    designSockets.handleUpgrade(request, socket, head, client => {
+      client.on('message', raw => {
+        try {
+          const value = JSON.parse(Buffer.from(raw as Buffer).toString('utf8')) as unknown
+          if (isRecord(value)) void browsers.handleMessage(client, value).catch(() => {
+            client.close(1011, 'design session failed')
+          })
+        } catch {
+          client.close(1007, 'invalid JSON')
+        }
+      })
+      client.once('close', () => browsers.disconnect(client))
+    })
   })
 
   await new Promise<void>((accept, reject) => {
     const failed = (error: Error) => reject(error)
     httpServer.once('error', failed)
-    httpServer.listen(0, '0.0.0.0', () => {
+    httpServer.listen(0, '127.0.0.1', () => {
       httpServer.off('error', failed)
       accept()
     })
@@ -123,27 +95,56 @@ export async function startDesignServer(authToken: string): Promise<DesignServer
   const address = httpServer.address()
   if (!address || typeof address === 'string') throw new Error('StarWeave Design server has no TCP port')
   port = address.port
+  const baseUrl = `http://127.0.0.1:${port}/`
 
   return {
     port,
     authToken,
+    sendRPC: browsers.sendRPC,
+    exclusive: browsers.exclusive,
+    waitForReady: async (sessionId, signal) => {
+      const deadline = Date.now() + 30_000
+      while (!browsers.isReady(sessionId)) {
+        const error = browsers.restoreError(sessionId)
+        if (error) throw new Error(`当前会话画布恢复失败：${error}`)
+        if (Date.now() >= deadline) throw new Error('当前会话画布初始化超时，请在侧栏查看连接状态后重试')
+        await delay(100, undefined, { signal })
+      }
+      signal.throwIfAborted()
+    },
+    connection: sessionId => {
+      const session = browsers.prepare(sessionId, documentStore ? () => documentStore(sessionId) : documentPath
+        ? async () => {
+            const filename = await documentPath(sessionId)
+            return filename ? createDesignDocumentStore(filename) : undefined
+          }
+        : undefined)
+      return {
+        baseUrl,
+        sessionId: session.id,
+        token: session.token,
+        scriptPath: 'starweave-design-embed.js',
+        stylePath: 'starweave-design-embed.css'
+      }
+    },
     registerOwner: owner => {
+      browsers.prepare(owner.id, documentStore ? () => documentStore(owner.id) : documentPath
+        ? async () => {
+            const filename = await documentPath(owner.id)
+            return filename ? createDesignDocumentStore(filename) : undefined
+          }
+        : undefined)
       const token = randomBytes(32).toString('base64url')
       owners.set(token, owner)
       return { token, dispose: () => { owners.delete(token) } }
     },
     close: async () => {
       owners.clear()
-      workspace.clear()
       browsers.close()
-      uploads.clear()
-      collaboration.close()
       await mcpSessions.clear()
       for (const client of designSockets.clients) client.terminate()
-      for (const client of collaborationSockets.clients) client.terminate()
       await Promise.all([
         closeWebSocketServer(designSockets),
-        closeWebSocketServer(collaborationSockets),
         new Promise<void>(accept => httpServer.close(() => accept()))
       ])
     }
@@ -155,47 +156,16 @@ async function handleHTTP(
   response: ServerResponse,
   authToken: string,
   sessions: ReturnType<typeof createDesignMCPSessions>,
-  uploads: ReturnType<typeof createDesignSaveUploads>,
-  port: number,
-  owners: Map<string, DesignOwner>,
-  workspace: ReturnType<typeof createWorkspaceDesignGateway>
+  owners: Map<string, DesignOwner>
 ): Promise<void> {
   const target = new URL(request.url ?? '/', `http://${request.headers.host ?? '127.0.0.1'}`)
-  const workspaceToken = /^\/design-workspace\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
-  if (workspaceToken) {
-    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
-      return writeJSON(response, 403, { error: 'forbidden' })
-    }
-    await workspace.handle(request, response, workspaceToken)
-    return
-  }
-  const saveToken = /^\/design-save\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
-  if (saveToken) {
-    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
-      return writeJSON(response, 403, { error: 'forbidden' })
-    }
-    await uploads.handle(request, response, saveToken)
-    return
-  }
-  const openToken = /^\/design-open\/([-_A-Za-z0-9]{43})$/u.exec(target.pathname)?.[1]
-  if (openToken) {
-    if (!isLoopback(request.socket.remoteAddress ?? '') || !validBrowserOrigin(request.headers.origin, port)) {
-      return writeJSON(response, 403, { error: 'forbidden' })
-    }
-    await uploads.handleDownload(request, response, openToken)
-    return
-  }
-  if (target.pathname === '/health') {
-    if (!isLoopback(request.socket.remoteAddress ?? '')) return writeJSON(response, 403, { error: 'forbidden' })
-    return writeJSON(response, 200, { status: 'ok' })
-  }
+  if (!isLoopback(request.socket.remoteAddress ?? '')) return writeJSON(response, 403, { error: 'loopback only' })
+  if (target.pathname === '/health') return writeJSON(response, 200, { status: 'ok' })
   if (target.pathname === '/mcp') {
-    if (!isLoopback(request.socket.remoteAddress ?? '') || !authorized(request, authToken)) {
-      return writeJSON(response, 401, { error: 'unauthorized' })
-    }
+    if (!authorized(request, authToken)) return writeJSON(response, 401, { error: 'unauthorized' })
     const sessionId = header(request, 'mcp-session-id')
     const owner = header(request, 'x-starweave-owner')
-    if (owner && !owners.has(owner)) return writeJSON(response, 403, { error: 'design owner expired' })
+    if (!owner || !owners.has(owner)) return writeJSON(response, 403, { error: 'design owner expired' })
     if (request.method === 'DELETE' && !sessionId) return writeJSON(response, 400, { error: 'missing MCP session id' })
     let transport
     try {
@@ -203,14 +173,10 @@ async function handleHTTP(
     } catch (error) {
       return writeJSON(response, sessionId ? 404 : 503, { error: describeError(error) })
     }
-    const webRequest = await toWebRequest(request, target)
-    const webResponse = await transport.handleRequest(webRequest)
+    const webResponse = await transport.handleRequest(await toWebRequest(request, target))
     await writeWebResponse(response, webResponse)
     if (request.method === 'DELETE' && sessionId) await sessions.remove(sessionId)
     return
-  }
-  if (!isPrivateNetworkAddress(request.socket.remoteAddress ?? '')) {
-    return writeJSON(response, 403, { error: 'LAN access only' })
   }
   await serveStatic(target.pathname, request, response)
 }
@@ -218,12 +184,9 @@ async function handleHTTP(
 async function serveStatic(pathname: string, request: IncomingMessage, response: ServerResponse): Promise<void> {
   if (request.method !== 'GET' && request.method !== 'HEAD') return writeJSON(response, 405, { error: 'method not allowed' })
   let decoded: string
-  try {
-    decoded = decodeURIComponent(pathname)
-  } catch {
-    return writeJSON(response, 400, { error: 'invalid path' })
-  }
-  const relative = decoded === '/' || !extname(decoded) ? 'index.html' : decoded.replace(/^\/+/, '')
+  try { decoded = decodeURIComponent(pathname) } catch { return writeJSON(response, 400, { error: 'invalid path' }) }
+  const relative = decoded.replace(/^\/+/, '')
+  if (!relative || !extname(relative)) return writeJSON(response, 404, { error: 'not found' })
   const filename = resolve(UI_ROOT, relative)
   if (filename !== UI_ROOT && !filename.startsWith(`${UI_ROOT}${sep}`)) return writeJSON(response, 404, { error: 'not found' })
   let content: Buffer
@@ -231,63 +194,15 @@ async function serveStatic(pathname: string, request: IncomingMessage, response:
     if (!(await stat(filename)).isFile()) throw new Error('not a file')
     content = await readFile(filename)
   } catch {
-    if (relative !== 'index.html') return writeJSON(response, 404, { error: 'not found' })
-    content = await readFile(resolve(UI_ROOT, 'index.html'))
+    return writeJSON(response, 404, { error: 'not found' })
   }
   response.statusCode = 200
   response.setHeader('Content-Type', mimeType(filename))
+  response.setHeader('Access-Control-Allow-Origin', '*')
   response.setHeader('X-Content-Type-Options', 'nosniff')
   response.setHeader('Referrer-Policy', 'no-referrer')
-  response.setHeader('Cache-Control', relative === 'index.html' ? 'no-store' : 'public, max-age=31536000, immutable')
+  response.setHeader('Cache-Control', 'public, max-age=31536000, immutable')
   response.end(request.method === 'HEAD' ? undefined : content)
-}
-
-function createCollaborationRelay() {
-  const rooms = new Map<string, Map<WebSocket, string>>()
-  function accept(socket: WebSocket, roomId: string): void {
-    const room = rooms.get(roomId) ?? new Map<WebSocket, string>()
-    rooms.set(roomId, room)
-    const peerId = randomUUID()
-    const peers = [...room.values()]
-    room.set(socket, peerId)
-    socket.send(JSON.stringify({ type: 'welcome', peerId, peers }))
-    for (const peer of room.keys()) if (peer !== socket && peer.readyState === WebSocket.OPEN) peer.send(JSON.stringify({ type: 'peer-join', peerId }))
-
-    socket.on('message', (data, binary) => {
-      const source = Buffer.isBuffer(data) ? data : Buffer.from(data as ArrayBuffer)
-      if (!binary || source.length < 3 || source[0] !== 1) return socket.close(1008, 'binary collaboration messages only')
-      const namespaceLength = source[1] ?? 0
-      const targetLength = source[2] ?? 0
-      const targetStart = 3 + namespaceLength
-      const payloadStart = targetStart + targetLength
-      if (payloadStart > source.length) return socket.close(1007, 'invalid collaboration message')
-      const target = source.subarray(targetStart, payloadStart).toString('utf8')
-      const sender = Buffer.from(peerId, 'utf8')
-      const outgoing = Buffer.concat([
-        source.subarray(0, 2),
-        Buffer.from([sender.length]),
-        source.subarray(3, targetStart),
-        sender,
-        source.subarray(payloadStart)
-      ])
-      for (const [peer, id] of room) {
-        if (peer === socket || peer.readyState !== WebSocket.OPEN || (target && target !== id)) continue
-        peer.send(outgoing, { binary: true })
-      }
-    })
-    socket.once('close', () => {
-      room.delete(socket)
-      for (const peer of room.keys()) if (peer.readyState === WebSocket.OPEN) peer.send(JSON.stringify({ type: 'peer-leave', peerId }))
-      if (room.size === 0) rooms.delete(roomId)
-    })
-  }
-  return {
-    accept,
-    close: () => {
-      for (const room of rooms.values()) for (const socket of room.keys()) socket.terminate()
-      rooms.clear()
-    }
-  }
 }
 
 async function toWebRequest(request: IncomingMessage, target: URL): Promise<Request> {
@@ -298,9 +213,7 @@ async function toWebRequest(request: IncomingMessage, target: URL): Promise<Requ
   }
   const method = request.method ?? 'GET'
   const body = method === 'GET' || method === 'HEAD' ? undefined : await readBody(request)
-  const init: RequestInit = { method, headers }
-  if (body !== undefined) init.body = body
-  return new Request(target, init)
+  return new Request(target, { method, headers, ...(body === undefined ? {} : { body }) })
 }
 
 async function readBody(request: IncomingMessage): Promise<Uint8Array<ArrayBuffer>> {
@@ -341,23 +254,12 @@ function header(request: IncomingMessage, name: string): string | undefined {
   return Array.isArray(value) ? value[0] : value
 }
 
-function validBrowserOrigin(origin: string | undefined, port: number): boolean {
-  return origin === `http://127.0.0.1:${port}`
-}
-
-function validCollaborationOrigin(origin: string | undefined, port: number): boolean {
+function isLoopbackOrigin(origin: string | undefined): boolean {
   if (!origin) return false
   try {
-    const target = new URL(origin)
-    return target.protocol === 'http:' && target.port === String(port) && isPrivateNetworkAddress(target.hostname)
-  } catch {
-    return false
-  }
-}
-
-function collaborationRoom(pathname: string): string | null {
-  const match = /^\/collaboration\/([a-z0-9]{24})$/u.exec(pathname)
-  return match?.[1] ?? null
+    const url = new URL(origin)
+    return url.protocol === 'http:' && isLoopback(url.hostname)
+  } catch { return false }
 }
 
 function rejectUpgrade(socket: { write: (value: string) => unknown; destroy: () => unknown }): void {
@@ -365,28 +267,9 @@ function rejectUpgrade(socket: { write: (value: string) => unknown; destroy: () 
   socket.destroy()
 }
 
-function privateIPv4Addresses(): string[] {
-  const values: string[] = []
-  for (const entries of Object.values(networkInterfaces())) {
-    for (const entry of entries ?? []) {
-      if (!entry.internal && entry.family === 'IPv4' && isPrivateNetworkAddress(entry.address)) values.push(entry.address)
-    }
-  }
-  return [...new Set(values)].sort()
-}
-
-function isPrivateNetworkAddress(value: string): boolean {
-  const address = value.toLowerCase().replace(/^::ffff:/u, '')
-  if (isLoopback(address)) return true
-  const octets = address.split('.').map(Number)
-  if (octets.length !== 4 || octets.some(octet => !Number.isInteger(octet) || octet < 0 || octet > 255)) return false
-  const [first, second] = octets
-  return first === 10 || (first === 172 && second !== undefined && second >= 16 && second <= 31) || (first === 192 && second === 168) || (first === 169 && second === 254) || (first === 100 && second !== undefined && second >= 64 && second <= 127)
-}
-
 function isLoopback(value: string): boolean {
   const address = value.toLowerCase().replace(/^::ffff:/u, '')
-  return address === '::1' || address.startsWith('127.')
+  return address === 'localhost' || address === '::1' || address.startsWith('127.')
 }
 
 function mimeType(filename: string): string {
@@ -401,10 +284,5 @@ function closeWebSocketServer(server: WebSocketServer): Promise<void> {
   return new Promise(resolveClose => server.close(() => resolveClose()))
 }
 
-function describeError(error: unknown): string {
-  return error instanceof Error ? error.message : String(error)
-}
-
-function isRecord(value: unknown): value is Record<string, unknown> {
-  return typeof value === 'object' && value !== null && !Array.isArray(value)
-}
+function describeError(error: unknown): string { return error instanceof Error ? error.message : String(error) }
+function isRecord(value: unknown): value is Record<string, unknown> { return typeof value === 'object' && value !== null && !Array.isArray(value) }

@@ -1,8 +1,12 @@
 const service="github.com/run-bigpig/dsh-desktop/internal/desktop.RecoveryService.";
 const isUpdateView=new URLSearchParams(window.location.search).get("view")==="update";
 const phases={
-  idle:{text:"星织启动中",progress:8},
-  starting:{text:"星织启动中",progress:68},
+  idle:{text:"星织启动中",progress:8,ceiling:12},
+  preparing:{text:"正在准备运行环境",progress:16,ceiling:26},
+  deploying:{text:"正在部署 Harness",progress:32,ceiling:52},
+  plugins:{text:"正在准备内置插件",progress:58,ceiling:70},
+  starting:{text:"正在启动 Harness",progress:74,ceiling:88},
+  verifying:{text:"正在验证服务页面",progress:91,ceiling:97},
   checking:{text:"星织启动中",progress:82},
   building:{text:"星织启动中",progress:72},
   downloading:{text:"星织启动中",progress:88},
@@ -30,13 +34,17 @@ function render(state){
   const meta=phases[currentPhase]||phases.idle;
   targetProgress=Math.max(targetProgress,meta.progress);
   document.body.dataset.phase=currentPhase;
+  window.starweaveParticles?.setPhase(currentPhase);
 }
 
 function animateProgress(){
   if(!splashActive){requestAnimationFrame(animateProgress);return}
   const remaining=targetProgress-visibleProgress;
   if(Math.abs(remaining)>.05)visibleProgress+=remaining*(currentPhase==="ready"?.14:.035);
-  else if(currentPhase==="starting"&&visibleProgress<72)visibleProgress+=.006;
+  else{
+    const ceiling=(phases[currentPhase]||phases.idle).ceiling;
+    if(ceiling&&visibleProgress<ceiling)visibleProgress+=.01;
+  }
   const value=Math.max(0,Math.min(100,Math.round(visibleProgress)));
   const meta=phases[currentPhase]||phases.idle;
   $("progressText").textContent=`${meta.text} · ${String(value).padStart(2,"0")}%`;
@@ -56,6 +64,7 @@ function paintConvergence(progress){
   root.style.setProperty("--ambient-opacity",(.3+ratio*.18).toFixed(4));
   root.style.setProperty("--core-opacity",(.42+ratio*.58).toFixed(4));
   root.style.setProperty("--network-energy",(.24+ratio*.48).toFixed(4));
+  window.starweaveParticles?.setProgress(ratio);
 }
 
 async function refresh(){
@@ -126,6 +135,7 @@ function resetSplash(){
   targetProgress=8;
   currentPhase="idle";
   document.body.dataset.phase="idle";
+  window.starweaveParticles?.setPhase("idle");
   document.body.classList.remove("handoff");
   document.body.classList.add("instant");
   paintConvergence(6);
@@ -133,8 +143,8 @@ function resetSplash(){
   void document.body.offsetWidth;
   document.body.classList.remove("instant");
 }
-window.parkSplash=()=>{splashActive=false;resetSplash()};
-window.activateSplash=()=>{splashActive=true;resetSplash();refresh()};
+window.parkSplash=()=>{splashActive=false;window.starweaveParticles?.setActive(false);resetSplash()};
+window.activateSplash=()=>{splashActive=true;window.starweaveParticles?.setActive(true);resetSplash();refresh()};
 window.finishSplash=()=>document.body.classList.add("handoff");
 window.addEventListener("DOMContentLoaded",()=>{
   document.body.dataset.view=isUpdateView?"update":"boot";

@@ -34,7 +34,7 @@ afterEach(async () => {
 describe('ThinkingData settings document', () => {
   it('uses the built-in URL while preserving an empty stored override', () => {
     const document = emptyThinkingDataDocument()
-    expect(document).toEqual({ version: 1, enabled: true, url: '' })
+    expect(document).toEqual({ version: 1, enabled: false, url: '' })
     expect(effectiveThinkingDataUrl(document.url)).toBe(DEFAULT_THINKINGDATA_URL)
     expect(parseThinkingDataDocument(serializeThinkingDataDocument(document))).toEqual(document)
   })
@@ -48,6 +48,7 @@ describe('ThinkingData settings document', () => {
   it('reserves the internal server name from generic MCP settings', () => {
     expect(isReservedMcpServerName('ta-mcp-server')).toBe(true)
     expect(isReservedMcpServerName('starweave-design')).toBe(true)
+    expect(isReservedMcpServerName('blender')).toBe(true)
     expect(isReservedMcpServerName('openpencil-mcp')).toBe(false)
     expect(isReservedMcpServerName('other-server')).toBe(false)
   })
@@ -179,4 +180,19 @@ describe('ThinkingData settings document', () => {
       verification: 'The retry succeeded.',
     })).rejects.toThrow(/unsafe content/)
   })
+})
+
+it('preserves disabled settings and system overrides across serialization and later tuning', () => {
+  expect(parseThinkingDataDocument('{"version":1,"enabled":false,"url":""}').enabled).toBe(false)
+  const base = {
+    transport: 'streamable-http' as const, serverName: 'ta-mcp-server', enabled: true,
+    url: DEFAULT_THINKINGDATA_URL, headers: {}, toolCallTimeoutMs: 60000, failOnStartupError: false,
+  }
+  let document = updateMcpSystemOverride(emptyMcpSettingsDocument(), { serverName: base.serverName, enabled: false, toolCallTimeoutMs: 120000, failOnStartupError: false })
+  document = parseMcpSettingsDocument(serializeMcpSettingsDocument(document))
+  expect(applyMcpSystemOverride(base, document).enabled).toBe(false)
+  document = updateMcpSystemOverride(document, { serverName: base.serverName, toolCallTimeoutMs: 180000, failOnStartupError: false })
+  expect(applyMcpSystemOverride(base, document).enabled).toBe(false)
+  document = updateMcpSystemOverride(document, { serverName: base.serverName, enabled: true, toolCallTimeoutMs: 180000, failOnStartupError: false })
+  expect(applyMcpSystemOverride(base, document).enabled).toBe(true)
 })

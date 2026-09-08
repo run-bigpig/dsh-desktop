@@ -1,3 +1,4 @@
+import { blenderMcpRecord, migrateBlenderMcpDefaults } from './blender.ts'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Context, Service, type Fiber, type FiberState } from '@deepseek-ai/cordis'
@@ -80,6 +81,7 @@ export class McpSettingsGateway extends TypertRemoteService {
   protected async [Service.init](): Promise<void> {
     this.document = await this.readDocument()
     this.syncAll()
+    await this.setSystem(blenderMcpRecord())
     this.ctx.effect(() => async () => {
       for (const name of [...this.fibers.keys()]) await this.dropFiber(name)
     }, 'desktop-mcp: dispose children')
@@ -114,10 +116,15 @@ export class McpSettingsGateway extends TypertRemoteService {
       if (!isReservedMcpServerName(request.serverName) || !this.systemRecords.has(request.serverName)) {
         throw new Error(`mcp-settings: no system server named ${JSON.stringify(request.serverName)}`)
       }
-      if ((request.url !== undefined || request.headers !== undefined) && request.serverName !== 'ta-mcp-server') {
+      if (request.serverName === 'starweave-design' && [request.transport, request.command, request.args, request.env, request.cwd, request.url, request.headers].some(value => value !== undefined)) {
         throw new Error(`mcp-settings: connection settings for ${JSON.stringify(request.serverName)} are runtime-managed`)
       }
-      this.document = updateMcpSystemOverride(this.document, request)
+      if (request.serverName === 'starweave-design' && request.enabled === false) {
+        throw new Error('mcp-settings: design connection is managed by the active design session')
+      }
+      const document = updateMcpSystemOverride(this.document, request)
+      applyMcpSystemOverride(this.systemRecords.get(request.serverName)!, document)
+      this.document = document
       await this.persist()
       await this.syncSystem(request.serverName)
       return { ok: true }
@@ -194,7 +201,7 @@ export class McpSettingsGateway extends TypertRemoteService {
       if (!isReservedMcpServerName(record.serverName)) {
         throw new Error(`mcp-settings: ${JSON.stringify(record.serverName)} is not a system server`)
       }
-      const next = { ...record, enabled: true }
+      const next = record
       const previous = this.systemRecords.get(record.serverName)
       this.systemRecords.set(record.serverName, next)
       if (previous === undefined || !sameRecord(
@@ -213,6 +220,11 @@ export class McpSettingsGateway extends TypertRemoteService {
     })
   }
 
+  systemEnabled(serverName: string): boolean {
+    const record = this.systemRecords.get(serverName)
+    return record !== undefined && applyMcpSystemOverride(record, this.document).enabled
+  }
+
   systemPhase(serverName: string): McpServerFiberPhase {
     return fiberPhase(this.fibers.get(serverName))
   }
@@ -220,7 +232,10 @@ export class McpSettingsGateway extends TypertRemoteService {
   private async syncSystem(serverName: string): Promise<void> {
     await this.dropFiber(serverName)
     const record = this.systemRecords.get(serverName)
-    if (record !== undefined) this.mount(applyMcpSystemOverride(record, this.document))
+    if (record !== undefined) {
+      const effective = applyMcpSystemOverride(record, this.document)
+      if (effective.enabled) this.mount(effective)
+    }
   }
 
   private async syncRecord(record: McpServerRecord): Promise<void> {
@@ -249,9 +264,10 @@ export class McpSettingsGateway extends TypertRemoteService {
   private async readDocument(): Promise<McpSettingsDocument> {
     try {
       const text = await readFile(this.filename, 'utf8')
-      const document = parseMcpSettingsDocument(text)
+      const parsed = parseMcpSettingsDocument(text)
+      const document = migrateBlenderMcpDefaults(parsed)
       const normalized = serializeMcpSettingsDocument(document)
-      if (text.includes('"openpencil-mcp"') && normalized !== text) {
+      if (document !== parsed || (text.includes('"openpencil-mcp"') && normalized !== text)) {
         await writeFileAtomic(this.filename, normalized, { mode: 0o600, dirMode: 0o700 })
       }
       return document

@@ -22,8 +22,7 @@ import {
   Input,
   StateDot,
 } from "@deepseek-ai/dsh-client-ui-primitives";
-import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView, type PlatformStatusResponse } from "./api.ts";
-import { arePlatformStatusesEqual, getPlatformPollIntervalMs } from "./platform-polling.ts";
+import { api, type ConfigView, type QuotaView, type TestProviderView, type TestSearchView, type ProviderView, type SearchRoutingPolicy, type VersionCheckView } from "./api.ts";
 import { text, surface, state as stateColor, button as buttonColor } from "./theme.ts";
 import { ProviderModal } from "./ProviderModal.tsx";
 import { ExternalLinkIcon, PROVIDER_CAPABILITY_KEY } from "./provider-ui-meta.tsx";
@@ -417,26 +416,6 @@ export function WebToolsSection(props: SectionProps) {
     }
   }, [config?.providerAttemptTimeoutMs]);
 
-  const [platformState, setPlatformState] = useState<PlatformStatusResponse | null>(null);
-  const platformStateRef = useRef<PlatformStatusResponse | null>(null);
-  platformStateRef.current = platformState;
-  const isFetchingPlatform = useRef(false);
-
-  const loadPlatformStatus = async () => {
-    if (isFetchingPlatform.current) return;
-    isFetchingPlatform.current = true;
-    try {
-      const p = await api.platformStatus();
-      if (mounted.current && !arePlatformStatusesEqual(platformStateRef.current, p)) {
-        setPlatformState(p);
-      }
-    } catch {
-      // Non-blocking
-    } finally {
-      isFetchingPlatform.current = false;
-    }
-  };
-
   const load = async () => {
     const token = ++loadToken.current;
     try {
@@ -447,8 +426,6 @@ export function WebToolsSection(props: SectionProps) {
     } catch (e) {
       if (token === loadToken.current) setError(e instanceof Error ? e.message : String(e));
     }
-
-    await loadPlatformStatus();
   };
 
   const loadQuotas = async (force = false) => {
@@ -466,40 +443,7 @@ export function WebToolsSection(props: SectionProps) {
     void loadQuotas();
     void api.versionCheck().then(setVersionInfo).catch(() => {});
 
-    let timer: ReturnType<typeof setTimeout> | undefined;
-    const scheduleNextPoll = () => {
-      if (!mounted.current) return;
-      const isVisible = typeof document === "undefined" || document.visibilityState === "visible";
-      const interval = getPlatformPollIntervalMs(isVisible, platformStateRef.current);
-      if (interval > 0) {
-        timer = setTimeout(async () => {
-          await loadPlatformStatus();
-          scheduleNextPoll();
-        }, interval);
-      }
-    };
-
-    scheduleNextPoll();
-
-    const onVisibilityChange = () => {
-      if (document.visibilityState === "visible") {
-        void loadPlatformStatus();
-        if (timer) clearTimeout(timer);
-        scheduleNextPoll();
-      } else {
-        if (timer) clearTimeout(timer);
-      }
-    };
-
-    if (typeof document !== "undefined") {
-      document.addEventListener("visibilitychange", onVisibilityChange);
-    }
-
     return () => {
-      if (timer) clearTimeout(timer);
-      if (typeof document !== "undefined") {
-        document.removeEventListener("visibilitychange", onVisibilityChange);
-      }
       loadToken.current += 1;
       mounted.current = false;
     };
@@ -527,32 +471,9 @@ export function WebToolsSection(props: SectionProps) {
 
   const setEnabled = (enabled: boolean) => void save({ enabled });
 
-  // Dedicated Browser Profile Login
-  const loginPlatform = async (platform: "xiaohongshu" | "x") => {
-    try {
-      await api.platformLogin(platform);
-      await loadPlatformStatus();
-    } catch (err: any) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
-
-  const resetPlatformSession = async (platform: "xiaohongshu" | "x") => {
-    try {
-      await api.platformReset(platform);
-      await loadPlatformStatus();
-    } catch (err: any) {
-      setError(err instanceof Error ? err.message : String(err));
-    }
-  };
   const toggleProvider = (name: string, enabled: boolean) => {
     const providerEnabled = Object.fromEntries(config.providers.map((p) => [p.name, p.name === name ? enabled : p.enabled]));
     void save({ providerEnabled });
-  };
-  const togglePlatform = (name: "xiaohongshu" | "x", enabled: boolean) => {
-    const current = config.platformEnabled ?? { xiaohongshu: true, x: true };
-    const platformEnabled = { ...current, [name]: enabled };
-    void save({ platformEnabled });
   };
   const setBaseUrl = (name: string, baseUrl: string) => {
     const providerBaseUrls: Record<string, string> = { ...(config.providers.reduce((a, p) => ({ ...a, [p.name]: p.baseUrl ?? "" }), {})) };
@@ -747,116 +668,6 @@ export function WebToolsSection(props: SectionProps) {
           </SettingsGroup>
         </section>
       )}
-
-      {/* 平台搜索源 (Platform Sources) */}
-      <section>
-        <SettingsGroup title={t("platformSourcesTitle")}>
-          {/* Xiaohongshu Row */}
-          <SettingsRow
-            icon={
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#ff2442", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: "bold" }}>
-                红
-              </div>
-            }
-            title={t("xiaohongshuTitle")}
-            subtitle={
-              (config.platformEnabled?.xiaohongshu ?? true) === false
-                ? t("platformDisabled")
-                : platformState?.platforms?.xiaohongshu?.authenticated
-                  ? `${t("platformAccountPrefix")}${platformState.platforms.xiaohongshu.account?.name ?? t("platformConnected")}`
-                  : platformState?.platforms?.xiaohongshu?.sessionEstablished
-                    ? t("platformVerifying")
-                    : t("platformNotLoggedIn")
-            }
-            trailing={
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {(config.platformEnabled?.xiaohongshu ?? true) && (
-                  platformState?.platforms?.xiaohongshu?.authenticated ? (
-                    <>
-                      <StateDot state="done" size={6} />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void resetPlatformSession("xiaohongshu")}
-                      >
-                        {t("clearSessionButton")}
-                      </Button>
-                    </>
-                  ) : platformState?.platforms?.xiaohongshu?.sessionEstablished ? (
-                    <StateDot state="ongoing" size={6} />
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void loginPlatform("xiaohongshu")}
-                    >
-                      {t("loginButton")}
-                    </Button>
-                  )
-                )}
-                <Switch
-                  checked={config.platformEnabled?.xiaohongshu ?? true}
-                  onChange={(v) => togglePlatform("xiaohongshu", v)}
-                  label={t("xiaohongshuTitle")}
-                />
-              </div>
-            }
-          />
-
-          {/* Twitter / X Row */}
-          <SettingsRow
-            icon={
-              <div style={{ width: 22, height: 22, borderRadius: 6, background: "#000", color: "#fff", display: "inline-flex", alignItems: "center", justifyContent: "center", fontSize: 11, fontWeight: "bold" }}>
-                𝕏
-              </div>
-            }
-            title={t("xTitle")}
-            subtitle={
-              (config.platformEnabled?.x ?? true) === false
-                ? t("platformDisabled")
-                : platformState?.platforms?.x?.authenticated
-                  ? `${t("platformAccountPrefix")}${platformState.platforms.x.account?.handle ?? t("platformConnected")}`
-                  : platformState?.platforms?.x?.sessionEstablished
-                    ? t("platformVerifying")
-                    : t("platformNotLoggedIn")
-            }
-            trailing={
-              <div style={{ display: "inline-flex", alignItems: "center", gap: 10 }}>
-                {(config.platformEnabled?.x ?? true) && (
-                  platformState?.platforms?.x?.authenticated ? (
-                    <>
-                      <StateDot state="done" size={6} />
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => void resetPlatformSession("x")}
-                      >
-                        {t("clearSessionButton")}
-                      </Button>
-                    </>
-                  ) : platformState?.platforms?.x?.sessionEstablished ? (
-                    <StateDot state="ongoing" size={6} />
-                  ) : (
-                    <Button
-                      size="sm"
-                      variant="outline"
-                      onClick={() => void loginPlatform("x")}
-                    >
-                      {t("loginButton")}
-                    </Button>
-                  )
-                )}
-                <Switch
-                  checked={config.platformEnabled?.x ?? true}
-                  onChange={(v) => togglePlatform("x", v)}
-                  label={t("xTitle")}
-                />
-              </div>
-            }
-            isLast
-          />
-        </SettingsGroup>
-      </section>
 
       {/* Providers: unified group container */}
       <section>

@@ -1,12 +1,12 @@
 import {
-  useCallback, useEffect, useMemo, useRef, useState, type CSSProperties, type ReactNode,
+  useCallback, useEffect, useMemo, useRef, type ReactNode,
 } from 'react'
 import {
-  IconChevronDownOutline14, IconChevronLeftOutline14, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16,
+  IconChevronDownOutline14, IconChevronRightOutline14, IconFolderClose16, IconFolderOpen16,
   IconRefreshOutline14, IconSearchOutline16, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type {
-  GitSnapshot, WorkspaceDirectorySnapshot, WorkspaceEntry, WorkspaceFileSnapshot, WorkspaceFileWriteRequest,
+  WorkspacePanelRequest, GitSnapshot, WorkspaceDirectorySnapshot, WorkspaceEntry, WorkspaceFileSnapshot, WorkspaceFileWriteRequest,
   WorkspaceFileWriteResult, WorkspaceSearchSnapshot,
 } from '@run-bigpig/dsh-desktop-plugin-host/types'
 import type { WorkbenchLocaleKey } from '../locales.ts'
@@ -16,7 +16,10 @@ import {
   diffTab, loadingFileTab, tabFromFile, WorkspacePreview, type PreviewTab, type WorkspacePreviewCopy,
 } from './WorkspacePreview.tsx'
 import css from './WorkspaceWorkbench.module.css'
+import { LoadingCover } from './LoadingCover.tsx'
 import { WORKSPACE_DRAG_MIME } from './SessionWorkbench.tsx'
+
+import { useSessionScroll, useSessionState, type SessionMemory } from './session-memory.ts'
 
 type Translate = (key: WorkbenchLocaleKey) => string
 
@@ -24,6 +27,7 @@ export interface WorkspaceWorkbenchProps {
   readonly sessionId: string
   readonly scope: string
   readonly activePanel: 'files' | 'git'
+  readonly visible?: boolean
   readonly controller: WorkbenchController
   readonly listDirectory: (directory: string, signal: AbortSignal) => Promise<WorkspaceDirectorySnapshot>
   readonly search: (query: string, signal: AbortSignal) => Promise<WorkspaceSearchSnapshot>
@@ -32,22 +36,28 @@ export interface WorkspaceWorkbenchProps {
   readonly gitSnapshot: GitSnapshot | null
   readonly gitActions?: GitWorkbenchActions
   readonly onGitSnapshot: (snapshot: GitSnapshot) => void
+  readonly onOpenCanvas?: (path: string, reloadFromDisk?: boolean) => Promise<void>
   readonly onPreviewVisibility: (visible: boolean) => void
   readonly t: Translate
 }
 
 export function WorkspaceWorkbench({
-  sessionId, scope, activePanel, controller, listDirectory, search, readFile, writeFile,
-  gitSnapshot, gitActions, onGitSnapshot, onPreviewVisibility, t,
+  sessionId, scope, activePanel, visible = true, controller, listDirectory, search, readFile, writeFile,
+  gitSnapshot, gitActions, onGitSnapshot, onPreviewVisibility, onOpenCanvas, t,
 }: WorkspaceWorkbenchProps): ReactNode {
+  const memory = controller.memory(sessionId, `workspace:${scope}`)
   const stored = useMemo(() => readScope(scope), [scope])
-  const [explorerWidth, setExplorerWidth] = useState(stored.explorerWidth)
-  const [explorerCollapsed, setExplorerCollapsed] = useState(stored.explorerCollapsed)
-  const [tabs, setTabs] = useState<readonly PreviewTab[]>([])
+  const explorerWidth = stored.explorerWidth
+  const [previewShown, setPreviewShown] = useSessionState(memory, 'previewShown', false)
+  const [canvasError, setCanvasError] = useSessionState<{ path: string; message: string } | null>(memory, 'canvasError', null)
+  const explorerCollapsed = stored.explorerCollapsed
+  const [tabs, setTabs] = useSessionState<readonly PreviewTab[]>(memory, 'tabs', [])
   const tabsRef = useRef<readonly PreviewTab[]>([])
   tabsRef.current = tabs
-  const [activeId, setActiveId] = useState<string | null>(null)
+  const [activeId, setActiveId] = useSessionState<string | null>(memory, 'active', null)
+  const [requestedFile, setRequestedFile] = useSessionState<WorkspacePanelRequest | null>(memory, 'requestedFile', null)
   const hydrated = useRef(false)
+  const requests = useRef(new Map<string, AbortController>())
   const activeRef = useRef<string | null>(null)
   activeRef.current = activeId
 
@@ -55,79 +65,118 @@ export function WorkspaceWorkbench({
     setTabs(current => current.map(tab => tab.id === id ? update(tab) : tab))
   }, [])
 
-  const openFile = useCallback((path: string, force = false): void => {
+  const openFile = useCallback((path: string, force = false, draft?: PersistedFileTab['draft']): void => {
+    if (/\.fig$/iu.test(path) && onOpenCanvas) {
+      void onOpenCanvas(path).catch(error => { setCanvasError({ path, message: messageOf(error) }) })
+      return
+    }
+    setPreviewShown(true)
     const id = `file:${path}`
     setActiveId(id)
     if (!force && tabsRef.current.some(tab => tab.id === id)) return
     setTabs(current => current.some(tab => tab.id === id) ? current : [...current, loadingFileTab(path)])
+    requests.current.get(id)?.abort()
     const abort = new AbortController()
+    requests.current.set(id, abort)
     void readFile(path, abort.signal).then(snapshot => {
-      setTabs(current => current.map(tab => tab.id === id ? tabFromFile(snapshot) : tab))
+      if (abort.signal.aborted) return
+      const file = tabFromFile(snapshot)
+      const restored = draft === undefined ? file : { ...file, content: draft.content, mtime: draft.baseMtime, dirty: true, changedOnDisk: snapshot.mtime !== draft.baseMtime }
+      setTabs(current => current.map(tab => tab.id === id ? restored : tab))
     }, reason => {
+      if (abort.signal.aborted) return
       setTabs(current => current.map(tab => tab.id === id ? { ...tab, loading: false, error: messageOf(reason) } : tab))
     })
-  }, [readFile])
+  }, [readFile, stored.tabs, onOpenCanvas])
 
   const openDiff = useCallback((path: string, staged: boolean): void => {
     if (gitActions === undefined) return
+    setPreviewShown(true)
     const id = `diff:${staged ? 'staged' : 'worktree'}:${path}`
     setActiveId(id)
     setTabs(current => current.some(tab => tab.id === id) ? current.map(tab => tab.id === id ? { ...tab, loading: true, error: null } : tab) : [...current, diffTab(path, staged, null, true)])
+    requests.current.get(id)?.abort()
     const abort = new AbortController()
+    requests.current.set(id, abort)
     void gitActions.diff(path, staged, abort.signal).then(content => {
+      if (abort.signal.aborted) return
       setTabs(current => current.map(tab => tab.id === id ? diffTab(path, staged, content) : tab))
     }, reason => {
+      if (abort.signal.aborted) return
       setTabs(current => current.map(tab => tab.id === id ? diffTab(path, staged, null, false, messageOf(reason)) : tab))
     })
   }, [gitActions])
 
+  useEffect(() => () => {
+    for (const abort of requests.current.values()) abort.abort()
+    requests.current.clear()
+  }, [])
+
   useEffect(() => {
     if (hydrated.current) return
     hydrated.current = true
-    for (const item of stored.tabs) openFile(item.value)
+    if (tabsRef.current.length > 0) {
+      for (const tab of tabsRef.current) if (tab.loading) openFile(tab.path, true)
+      return
+    }
+    const show = memory.get('previewShown', false)
+    for (const item of stored.tabs) openFile(item.value, false, item.draft)
+    setPreviewShown(show)
     const persistedIds = stored.tabs.map(item => `file:${item.value}`)
     if (stored.activeId !== null && persistedIds.includes(stored.activeId)) setActiveId(stored.activeId)
   }, [openFile, stored.tabs])
 
+  useEffect(() => {
+    if (!visible || !requestedFile?.path) return
+    openFile(requestedFile.path)
+    setRequestedFile(null)
+  }, [visible, requestedFile, openFile, setRequestedFile])
+
   useEffect(() => { onPreviewVisibility(tabs.length > 0) }, [onPreviewVisibility, tabs.length])
 
   useEffect(() => {
-    const timer = window.setTimeout(() => {
+    const persist = (): void => {
       writeScope(scope, {
         explorerWidth,
         explorerCollapsed,
-        tabs: tabs.filter(tab => tab.id.startsWith('file:')).map(tab => ({ kind: 'file', value: tab.path })),
+        tabs: tabs.filter(tab => tab.id.startsWith('file:')).map(tab => ({ kind: 'file', value: tab.path, ...(tab.dirty && tab.content !== null ? { draft: { content: tab.content, baseMtime: tab.mtime } } : {}) })),
         activeId,
       })
-    }, 150)
-    return () => { window.clearTimeout(timer) }
+    }
+    const timer = window.setTimeout(persist, 150)
+    return () => { window.clearTimeout(timer); persist() }
   }, [activeId, explorerCollapsed, explorerWidth, scope, tabs])
 
   useEffect(() => {
+    if (!visible) return
+    const abort = new AbortController()
     const timer = window.setInterval(() => {
       const id = activeRef.current
       if (id === null || !id.startsWith('file:')) return
       const path = id.slice(5)
-      const abort = new AbortController()
+      const baseMtime = tabsRef.current.find(tab => tab.id === id)?.mtime
       void readFile(path, abort.signal).then(snapshot => {
+        if (abort.signal.aborted) return
         replaceTab(id, tab => {
-          if (snapshot.mtime === tab.mtime) return tab
+          if (tab.mtime !== baseMtime || snapshot.mtime === tab.mtime) return tab
           return tab.dirty ? { ...tab, changedOnDisk: true } : tabFromFile(snapshot)
         })
       }, () => {})
     }, 3_000)
-    return () => { window.clearInterval(timer) }
-  }, [readFile, replaceTab])
+    return () => { window.clearInterval(timer); abort.abort() }
+  }, [readFile, replaceTab, visible])
 
   useEffect(() => {
-    if (activePanel !== 'git' || gitActions === undefined) return
+    if (!visible || activePanel !== 'git' || gitActions === undefined) return
+    const abort = new AbortController()
     const timer = window.setInterval(() => {
-      void gitActions.snapshot(new AbortController().signal).then(onGitSnapshot, () => {})
+      void gitActions.snapshot(abort.signal).then(snapshot => { if (!abort.signal.aborted) onGitSnapshot(snapshot) }, () => {})
     }, 30_000)
-    return () => { window.clearInterval(timer) }
-  }, [activePanel, gitActions, onGitSnapshot])
+    return () => { window.clearInterval(timer); abort.abort() }
+  }, [activePanel, gitActions, onGitSnapshot, visible])
 
   const closeTabs = (ids: readonly string[]): void => {
+    for (const id of ids) { requests.current.get(id)?.abort(); requests.current.delete(id) }
     setTabs(current => {
       const removing = new Set(ids)
       const remaining = current.filter(tab => !removing.has(tab.id))
@@ -150,40 +199,54 @@ export function WorkspaceWorkbench({
     const tab = tabs.find(candidate => candidate.id === id)
     if (tab === undefined || tab.content === null || !id.startsWith('file:')) return
     const result = await writeFile({ path: tab.path, content: tab.content, baseMtime: tab.mtime }, new AbortController().signal)
-    replaceTab(id, current => ({ ...current, mtime: result.mtime, dirty: false, changedOnDisk: false }))
+    replaceTab(id, current => ({ ...current, mtime: result.mtime, dirty: current.content !== tab.content, changedOnDisk: false }))
     return result
   }
 
   const previewCopy = previewCopyOf(t)
-  const hasPreview = tabs.length > 0
+  const hasPreview = previewShown && tabs.length > 0
   return (
-    <div className={css.workbench} data-preview={hasPreview || undefined} data-collapsed={explorerCollapsed || undefined} style={{ '--workbench-explorer-width': `${explorerWidth}px` } as CSSProperties}>
-      <section className={css.sidePanel}>
-        {activePanel === 'files' ? (
+    <div className={css.workbench}>
+      {canvasError && <div role="alert">{canvasError.message}<button type="button" onClick={() => {
+        if (!window.confirm('保留当前恢复快照并重新读取磁盘上的设计文件？')) return
+        void onOpenCanvas?.(canvasError.path, true).then(() => { setCanvasError(null) }, error => { setCanvasError({ path: canvasError.path, message: messageOf(error) }) })
+      }}>重新读取磁盘文件</button><button type="button" onClick={() => { setCanvasError(null) }}>×</button></div>}
+      <section className={css.sidePanel} hidden={hasPreview}>
+        {activePanel === 'files' && <div className={css.gitOverview}>
+          <button type="button" onClick={() => { controller.select(sessionId, 'git') }}>Git · {gitSnapshot ? gitSnapshot.repository ? `${gitSnapshot.branch ?? t('detached')} · ${gitSnapshot.files.length} ${t('changes')}` : t('noRepository') : t('refreshGit')}</button>
+          {gitSnapshot?.files.slice(0, 5).map(file => <button type="button" key={file.path} onClick={() => { openDiff(file.path, file.worktree === ' ') }}>{file.path}</button>)}
+        </div>}
+        <div className={css.retainedPanel} hidden={activePanel !== 'files'}>
           <WorkspaceExplorer
+            memory={memory}
             sessionId={sessionId}
+            visible={visible && activePanel === 'files'}
             controller={controller}
             listDirectory={listDirectory}
             search={search}
             onOpenFile={openFile}
             t={t}
           />
-        ) : gitSnapshot !== null && gitActions !== undefined ? (
+        </div>
+        {gitSnapshot !== null && gitActions !== undefined ? (
+          <div className={css.retainedPanel} hidden={activePanel !== 'git'}>
           <GitWorkbench
+            memory={memory}
+            visible={visible && activePanel === 'git'}
             snapshot={gitSnapshot}
             actions={gitActions}
             onSnapshot={onGitSnapshot}
             onOpenDiff={openDiff}
             copy={gitCopyOf(t)}
           />
+          </div>
         ) : null}
       </section>
       {hasPreview && <>
-        {!explorerCollapsed && <PanelResizeHandle width={explorerWidth} onWidth={width => { setExplorerWidth(Math.min(500, Math.max(220, width))) }} />}
-        <button className={css.collapseButton} type="button" aria-label={explorerCollapsed ? t('expandPanel') : t('collapsePanel')} onClick={() => { setExplorerCollapsed(value => !value) }}>
-          {explorerCollapsed ? <IconChevronRightOutline14 /> : <IconChevronLeftOutline14 />}
-        </button>
+        <div className={css.previewHeader}><button type="button" onClick={() => { setPreviewShown(false) }}>← {t(activePanel)}</button></div>
         <WorkspacePreview
+          memory={memory}
+          visible={visible}
           tabs={tabs}
           activeId={activeId}
           copy={previewCopy}
@@ -198,21 +261,26 @@ export function WorkspaceWorkbench({
   )
 }
 
-function WorkspaceExplorer({ sessionId, controller, listDirectory, search, onOpenFile, t }: {
+function WorkspaceExplorer({ memory, sessionId, visible, controller, listDirectory, search, onOpenFile, t }: {
+  readonly memory: SessionMemory
   readonly sessionId: string
   readonly controller: WorkbenchController
+  readonly visible: boolean
   readonly listDirectory: WorkspaceWorkbenchProps['listDirectory']
   readonly search: WorkspaceWorkbenchProps['search']
   readonly onOpenFile: (path: string) => void
   readonly t: Translate
 }): ReactNode {
-  const [directories, setDirectories] = useState<ReadonlyMap<string, DirectoryView>>(() => new Map())
+  const scrollRef = useSessionScroll(memory, 'explorer.scroll', visible)
+  const [directories, setDirectories] = useSessionState<ReadonlyMap<string, DirectoryView>>(memory, 'explorer.directories', () => new Map())
   const directoriesRef = useRef<ReadonlyMap<string, DirectoryView>>(new Map())
-  const [expanded, setExpanded] = useState<ReadonlySet<string>>(() => new Set())
+  const [expanded, setExpanded] = useSessionState<ReadonlySet<string>>(memory, 'explorer.expanded', () => new Set())
   const expandedRef = useRef<ReadonlySet<string>>(new Set())
-  const [selected, setSelected] = useState<string | null>(null)
-  const [query, setQuery] = useState('')
-  const [searchState, setSearchState] = useState<SearchView>({ phase: 'idle' })
+  const [selected, setSelected] = useSessionState<string | null>(memory, 'explorer.selected', null)
+  const [query, setQuery] = useSessionState(memory, 'explorer.query', '')
+  const [searchState, setSearchState] = useSessionState<SearchView>(memory, 'explorer.searchState', { phase: 'idle' })
+  directoriesRef.current = directories
+  expandedRef.current = expanded
   const controllers = useRef(new Map<string, AbortController>())
 
   const update = useCallback((change: (current: ReadonlyMap<string, DirectoryView>) => ReadonlyMap<string, DirectoryView>): void => {
@@ -237,7 +305,8 @@ function WorkspaceExplorer({ sessionId, controller, listDirectory, search, onOpe
   }, [listDirectory, update])
 
   useEffect(() => {
-    void load('')
+    if (!visible) return
+    void load('', directoriesRef.current.get('')?.phase === 'ready')
     const timer = window.setInterval(() => {
       for (const directory of ['', ...expandedRef.current]) void load(directory, true)
     }, 3_000)
@@ -246,9 +315,10 @@ function WorkspaceExplorer({ sessionId, controller, listDirectory, search, onOpe
       for (const abort of controllers.current.values()) abort.abort()
       controllers.current.clear()
     }
-  }, [load])
+  }, [load, visible])
 
   useEffect(() => {
+    if (!visible) return
     const trimmed = query.trim()
     if (trimmed === '') { setSearchState({ phase: 'idle' }); return }
     const abort = new AbortController()
@@ -261,7 +331,7 @@ function WorkspaceExplorer({ sessionId, controller, listDirectory, search, onOpe
       })
     }, 150)
     return () => { window.clearTimeout(timer); abort.abort() }
-  }, [query, search])
+  }, [query, search, visible])
 
   const reveal = async (path: string): Promise<void> => {
     const parts = path.split('/')
@@ -276,17 +346,18 @@ function WorkspaceExplorer({ sessionId, controller, listDirectory, search, onOpe
   }
 
   const root = directories.get('')
+  const loading = query.trim() === '' && (!root || root.phase === 'loading')
   return (
-    <div className={css.explorer}>
+    <div ref={scrollRef} className={css.explorer}>
       <div className={css.explorerToolbar}>
         <span title={root?.snapshot?.rootName}>{root?.snapshot?.rootName ?? t('workspace')}</span>
         <Tooltip label={t('refresh')} side="bottom" delayMs={400}><button type="button" aria-label={t('refresh')} onClick={() => { for (const directory of ['', ...expandedRef.current]) void load(directory) }}><IconRefreshOutline14 /></button></Tooltip>
       </div>
       <label className={css.search}><IconSearchOutline16 size={14} /><input value={query} placeholder={t('searchFiles')} onChange={event => { setQuery(event.currentTarget.value) }} /></label>
-      <div className={css.tree} role="tree" aria-label={t('files')}>
+      <div data-workspace-scroll="tree" className={css.tree} role="tree" aria-label={t('files')} aria-busy={loading}>
+        <LoadingCover loading={loading} label={t('loading')} />
         {query.trim() !== '' ? <SearchResults state={searchState} selected={selected} onOpen={path => { void reveal(path) }} t={t} /> : (
           <>
-            {root?.phase === 'loading' && <StatusRow>{t('loading')}</StatusRow>}
             {root?.phase === 'error' && <StatusRow>{root.message ?? t('loadFailed')}</StatusRow>}
             {root?.phase === 'ready' && root.snapshot !== undefined && root.snapshot.entries.map(entry => (
               <TreeRow key={entry.path} entry={entry} depth={0} selected={selected} expanded={expanded} directories={directories} sessionId={sessionId} controller={controller} load={load} onExpand={next => { expandedRef.current = next; setExpanded(next) }} onOpen={path => { setSelected(path); onOpenFile(path) }} t={t} />
@@ -361,21 +432,9 @@ function SearchResults({ state, selected, onOpen, t }: { state: SearchView; sele
   return <>{state.snapshot.hits.map(hit => <button className={css.searchResult} data-selected={selected === hit.path || undefined} type="button" key={hit.path} onClick={() => { onOpen(hit.path) }}><FileGlyph name={hit.name} /><span><strong>{hit.name}</strong><small>{directoryOf(hit.path)}</small></span></button>)}{state.snapshot.truncated && <StatusRow>{t('searchTruncated')}</StatusRow>}</>
 }
 
-function PanelResizeHandle({ width, onWidth }: { width: number; onWidth: (width: number) => void }): ReactNode {
-  return <div className={css.resizeHandle} role="separator" aria-orientation="vertical" onDoubleClick={() => { onWidth(260) }} onPointerDown={event => {
-    const start = event.clientX
-    const initial = width
-    event.currentTarget.setPointerCapture(event.pointerId)
-    const move = (moveEvent: PointerEvent): void => { onWidth(initial + moveEvent.clientX - start) }
-    const up = (): void => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up) }
-    window.addEventListener('pointermove', move)
-    window.addEventListener('pointerup', up)
-  }} />
-}
-
 interface DirectoryView { readonly phase: 'loading' | 'ready' | 'error'; readonly snapshot?: WorkspaceDirectorySnapshot; readonly message?: string }
 type SearchView = { readonly phase: 'idle' | 'loading' } | { readonly phase: 'ready'; readonly snapshot: WorkspaceSearchSnapshot } | { readonly phase: 'error'; readonly message: string }
-interface PersistedFileTab { readonly kind: 'file'; readonly value: string }
+interface PersistedFileTab { readonly kind: 'file'; readonly value: string; readonly draft?: { readonly content: string; readonly baseMtime: number } }
 interface PersistedScope { readonly explorerWidth: number; readonly explorerCollapsed: boolean; readonly tabs: readonly PersistedFileTab[]; readonly activeId: string | null }
 const DEFAULT_SCOPE: PersistedScope = { explorerWidth: 260, explorerCollapsed: false, tabs: [], activeId: null }
 const PERSIST_KEY = 'dsh-session-workbench-scopes-v1'
@@ -383,12 +442,12 @@ const PERSIST_KEY = 'dsh-session-workbench-scopes-v1'
 function readScope(scope: string): PersistedScope {
   try {
     const parsed = JSON.parse(localStorage.getItem(PERSIST_KEY) ?? '{}') as { scopes?: Record<string, { explorerWidth?: unknown; explorerCollapsed?: unknown; tabs?: unknown; activeId?: unknown }> }
-    const value = parsed.scopes?.[scope]
+    const value = JSON.parse(localStorage.getItem('starweave-workspace-v2:' + scope) ?? 'null') ?? parsed.scopes?.[scope]
     if (value === undefined) return DEFAULT_SCOPE
     return {
       explorerWidth: Math.min(500, Math.max(220, Number(value.explorerWidth) || 260)),
       explorerCollapsed: value.explorerCollapsed === true,
-      tabs: Array.isArray(value.tabs) ? value.tabs.filter(isPersistedFileTab).slice(0, 20) : [],
+      tabs: Array.isArray(value.tabs) ? value.tabs.filter(isPersistedFileTab) : [],
       activeId: typeof value.activeId === 'string' && value.activeId.startsWith('file:') ? value.activeId : null,
     }
   } catch { return DEFAULT_SCOPE }
@@ -396,17 +455,14 @@ function readScope(scope: string): PersistedScope {
 
 function isPersistedFileTab(value: unknown): value is PersistedFileTab {
   if (typeof value !== 'object' || value === null) return false
-  const item = value as { kind?: unknown; value?: unknown }
+  const item = value as Partial<PersistedFileTab>
   return item.kind === 'file' && typeof item.value === 'string'
+    && (item.draft === undefined || (item.draft !== null && typeof item.draft.content === 'string' && typeof item.draft.baseMtime === 'number' && Number.isFinite(item.draft.baseMtime)))
 }
 
 function writeScope(scope: string, value: PersistedScope): void {
   try {
-    const parsed = JSON.parse(localStorage.getItem(PERSIST_KEY) ?? '{}') as { order?: string[]; scopes?: Record<string, PersistedScope> }
-    const order = [scope, ...(parsed.order ?? []).filter(item => item !== scope)].slice(0, 12)
-    const scopes = { ...(parsed.scopes ?? {}), [scope]: value }
-    for (const key of Object.keys(scopes)) if (!order.includes(key)) delete scopes[key]
-    localStorage.setItem(PERSIST_KEY, JSON.stringify({ order, scopes }))
+    localStorage.setItem('starweave-workspace-v2:' + scope, JSON.stringify(value))
   } catch { /* best effort */ }
 }
 

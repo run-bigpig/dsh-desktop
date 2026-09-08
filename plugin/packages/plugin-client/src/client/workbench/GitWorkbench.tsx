@@ -3,6 +3,7 @@ import {
   Button, IconBranchOutline16, IconPlusOutline16, IconRefreshOutline14, IconTrashOutline16, Modal, Tooltip,
 } from '@deepseek-ai/dsh-client-ui-primitives'
 import type { GitFileState, GitSnapshot } from '@run-bigpig/dsh-desktop-plugin-host/types'
+import { useSessionScroll, useSessionState, type SessionMemory } from './session-memory.ts'
 import css from './GitWorkbench.module.css'
 
 export interface GitWorkbenchActions {
@@ -54,24 +55,27 @@ interface ChangeRow {
 }
 
 export function GitWorkbench({
-  snapshot, actions, onSnapshot, onOpenDiff, copy,
+  snapshot, actions, onSnapshot, onOpenDiff, copy, visible = true, memory,
 }: {
+  readonly memory?: SessionMemory
+  readonly visible?: boolean
   readonly snapshot: GitSnapshot
   readonly actions: GitWorkbenchActions
   readonly onSnapshot: (snapshot: GitSnapshot) => void
   readonly onOpenDiff: (path: string, staged: boolean) => void
   readonly copy: GitWorkbenchCopy
 }): ReactNode {
+  const scrollRef = useSessionScroll(memory, 'git.scroll', visible)
   const groups = useMemo(() => groupChanges(snapshot.files), [snapshot.files])
-  const [selected, setSelected] = useState<ReadonlySet<string>>(() => new Set())
-  const [busy, setBusy] = useState(false)
-  const [commitMessage, setCommitMessage] = useState('')
-  const [error, setError] = useState<string | null>(null)
+  const [selected, setSelected] = useSessionState<ReadonlySet<string>>(memory, 'git.selected', () => new Set())
+  const [busy, setBusy] = useSessionState(memory, 'git.busy', false)
+  const [commitMessage, setCommitMessage] = useSessionState(memory, 'git.commitMessage', '')
+  const [error, setError] = useSessionState<string | null>(memory, 'git.error', null)
   const [discardRows, setDiscardRows] = useState<readonly ChangeRow[] | null>(null)
-  const [viewMode, setViewMode] = useState<'list' | 'tree'>(() => {
-    try { return localStorage.getItem('dsh-workbench-git-view') === 'tree' ? 'tree' : 'list' } catch { return 'list' }
-  })
+  const [viewMode, setViewMode] = useSessionState<'list' | 'tree'>(memory, 'git.view', 'list')
   const lastFocusRefresh = useRef(-Infinity)
+
+  useEffect(() => { if (!visible) setDiscardRows(null) }, [visible])
 
   const mutate = (operation: (signal: AbortSignal) => Promise<GitSnapshot>): Promise<void> => {
     const controller = new AbortController()
@@ -91,6 +95,7 @@ export function GitWorkbench({
   }, [groups])
 
   useEffect(() => {
+    if (!visible) return
     const refreshOnFocus = (): void => {
       const now = Date.now()
       if (now - lastFocusRefresh.current < 5_000) return
@@ -115,7 +120,7 @@ export function GitWorkbench({
   const stagedCount = groups.staged.length
 
   return (
-    <div className={css.panel}>
+    <div ref={scrollRef} className={css.panel}>
       <div className={css.toolbar}>
         <div className={css.branch}>
           <IconBranchOutline16 size={14} />
@@ -150,11 +155,11 @@ export function GitWorkbench({
             title={copy.discard}
             onClick={() => { setDiscardRows(selectedRows) }}
           ><IconTrashOutline16 size={13} /></button>
-          <button type="button" data-active={viewMode === 'list' || undefined} title={copy.viewList} onClick={() => { setViewMode('list'); storeViewMode('list') }}>≡</button>
-          <button type="button" data-active={viewMode === 'tree' || undefined} title={copy.viewTree} onClick={() => { setViewMode('tree'); storeViewMode('tree') }}>⌘</button>
+          <button type="button" data-active={viewMode === 'list' || undefined} title={copy.viewList} onClick={() => { setViewMode('list') }}>≡</button>
+          <button type="button" data-active={viewMode === 'tree' || undefined} title={copy.viewTree} onClick={() => { setViewMode('tree') }}>⌘</button>
         </div>
       </div>
-      <div className={css.statusList}>
+      <div data-workspace-scroll="changes" className={css.statusList}>
         {groups.staged.length + groups.unstaged.length + groups.untracked.length === 0
           ? <div className={css.clean}>{copy.clean}</div>
           : (
@@ -363,5 +368,4 @@ function directoryOf(path: string): string { const index = path.lastIndexOf('/')
 function uniquePaths(rows: readonly ChangeRow[]): string[] { return [...new Set(rows.filter(row => !conflicted(row)).map(row => row.path))] }
 function toggleSet(current: ReadonlySet<string>, id: string): Set<string> { const next = new Set(current); if (next.has(id)) next.delete(id); else next.add(id); return next }
 function toggleRows(current: ReadonlySet<string>, rows: readonly ChangeRow[]): Set<string> { const next = new Set(current); const remove = rows.every(row => next.has(row.id)); for (const row of rows) remove ? next.delete(row.id) : next.add(row.id); return next }
-function storeViewMode(mode: 'list' | 'tree'): void { try { localStorage.setItem('dsh-workbench-git-view', mode) } catch { /* best effort */ } }
 function messageOf(reason: unknown, fallback: string): string { return reason instanceof Error && reason.message !== '' ? reason.message : fallback }

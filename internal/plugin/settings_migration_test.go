@@ -192,7 +192,7 @@ func TestFirstInstallOpenAISettings(t *testing.T) {
 		if err != nil {
 			t.Fatal(err)
 		}
-		for _, want := range []string{"openai:", "baseURL: http://10.225.40.100:3000/v1", "apiKeyEnv: STARWEAVE_OPENAI_API_KEY", desktopWelcomeNoticeVersion} {
+		for _, want := range []string{"ui-theme:\n  preference: dark", "openai:", "baseURL: http://10.225.40.100:3000/v1", "apiKeyEnv: STARWEAVE_OPENAI_API_KEY", desktopWelcomeNoticeVersion} {
 			if !strings.Contains(string(data), want) {
 				t.Fatalf("missing %q", want)
 			}
@@ -232,8 +232,30 @@ func TestFirstInstallOpenAISettings(t *testing.T) {
 			t.Fatal(err)
 		}
 		data, _ := os.ReadFile(path)
-		if strings.Contains(string(data), "llm-pi-ai") {
+		if strings.Contains(string(data), "llm-pi-ai") || strings.Contains(string(data), "ui-theme") {
 			t.Fatal("profile installation received new defaults")
 		}
 	})
+}
+
+func TestExistingThemePreferenceIsPreserved(t *testing.T) {
+	for _, preference := range []string{"light", "dark", "system"} {
+		t.Run(preference, func(t *testing.T) {
+			path := filepath.Join(t.TempDir(), "settings.yaml")
+			original := "ui-theme:\n  preference: " + preference + "\n  fontSize: 16\n"
+			if err := os.WriteFile(path, []byte(original), 0600); err != nil {
+				t.Fatal(err)
+			}
+			if err := initializeDesktopWelcomeNotice(path); err != nil {
+				t.Fatal(err)
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				t.Fatal(err)
+			}
+			if !strings.Contains(string(data), original) {
+				t.Fatal("existing theme was overwritten")
+			}
+		})
+	}
 }

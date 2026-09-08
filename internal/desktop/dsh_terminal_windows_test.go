@@ -16,6 +16,7 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 	config := dshTerminalConfig{
 		Node:             filepath.Join(root, "toolchain", "node.exe"),
 		PNPM:             filepath.Join(root, "toolchain", "pnpm", "pnpm.exe"),
+		UV:               filepath.Join(root, "toolchain", "uv", "uv.exe"),
 		PNPMStore:        filepath.Join(root, "pnpm-store"),
 		CLI:              filepath.Join(root, "runtime", "bin.js"),
 		HarnessHome:      filepath.Join(root, "harness-home"),
@@ -54,12 +55,11 @@ func TestLaunchDSHTerminalUsesShellExecute(t *testing.T) {
 	}
 	for _, expected := range []string{
 		`set "DSH_HOME=` + config.HarnessHome + `"`,
-		`set "STARWEAVE_DESIGN_STATE_DIR=` + config.StateDirectory + `"`,
 		`set "DSH_DESKTOP_NODE=` + config.Node + `"`,
 		`set "DSH_DESKTOP_CLI=` + config.CLI + `"`,
 		`set "PNPM_HOME=` + filepath.Dir(config.PNPM) + `"`,
 		`set "PNPM_CONFIG_STORE_DIR=` + config.PNPMStore + `"`,
-		`set "PATH=` + filepath.Join(config.StateDirectory, "terminal-bin") + `;` + filepath.Dir(config.Node) + `;` + filepath.Dir(config.PNPM) + `;%PATH%"`,
+		`set "PATH=` + filepath.Join(config.StateDirectory, "terminal-bin") + `;` + filepath.Dir(config.Node) + `;` + filepath.Dir(config.PNPM) + `;` + filepath.Dir(config.UV) + `;%PATH%"`,
 		`cd /d "` + config.WorkingDirectory + `"`,
 		"title DeepSeek Harness dsh",
 	} {

@@ -15,7 +15,7 @@ import (
 	"github.com/run-bigpig/dsh-desktop/internal/state"
 )
 
-type Toolchain struct{ Git, Node, PNPM, NodeVersion, PNPMVersion string }
+type Toolchain struct{ Git, Node, PNPM, UV, NodeVersion, PNPMVersion, UVVersion string }
 type Progress func(state.Phase, string)
 type Manager struct {
 	paths    appconfig.Paths

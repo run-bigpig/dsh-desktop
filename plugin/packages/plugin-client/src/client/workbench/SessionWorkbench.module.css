@@ -1,4 +1,5 @@
 .headerLauncher {
+  position: relative;
   box-sizing: border-box;
   display: inline-flex;
   align-items: center;
@@ -12,6 +13,16 @@
   color: var(--dsw-alias-label-primary);
   font: inherit;
   cursor: pointer;
+}
+
+.pendingDot {
+  position: absolute;
+  top: 1px;
+  right: 1px;
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: var(--dsw-alias-state-business-primary);
 }
 
 .headerLauncherIcon {
@@ -41,8 +52,9 @@
 
 .drawer {
   position: relative;
+  box-sizing: border-box;
   display: grid;
-  grid-template-rows: auto auto minmax(0, 1fr);
+  grid-template-rows: auto minmax(0, 1fr);
   width: 100%;
   height: 100%;
   min-width: 0;
@@ -52,22 +64,88 @@
   color: var(--dsw-alias-label-primary);
 }
 
+/* The workbench replaces details through its native slot. Limit this sizing
+   override to its mounted lifetime; the official frame still controls collapse. */
+.workbenchFrame:not([data-details-collapsed]) {
+  grid-template-columns: var(--starweave-workbench-sidebar) minmax(0, 1fr) var(--starweave-workbench-width) !important;
+}
+
+.workbenchFrame {
+  /* Commit the final geometry once: native WebViews and canvas renderers must
+     not chase interpolated grid widths while the composer keeps reflowing. */
+  transition: none;
+}
+
+.workbenchFrame > [data-side='details'] {
+  display: none;
+}
+
+/* Adapt the official toolbar through its stable composer/slot markers.
+   The card width changes with details even when the window width does not. */
+.workbenchFrame :global([data-composer-card]) {
+  container: workbench-composer / inline-size;
+}
+
+@container workbench-composer (max-width: 560px) {
+  .workbenchFrame :global([data-composer-card] > div:has(> div > [data-slot='conversation.input.left'])) {
+    flex-wrap: nowrap;
+    gap: 8px;
+  }
+
+  .workbenchFrame :global([data-composer-card] div:has(> [data-slot='conversation.input.left'])) {
+    flex: 0 0 auto;
+    gap: 8px;
+  }
+
+  .workbenchFrame :global([data-composer-card] div:has(> [data-slot='conversation.input.model'])) {
+    flex: 1 1 0;
+    gap: 6px;
+  }
+
+  .workbenchFrame :global([data-slot='conversation.input.model'] > div) {
+    flex: 1 1 0;
+    min-width: 0;
+  }
+
+  .workbenchFrame :global([data-slot='conversation.input.model'] > div > button) {
+    max-width: 100%;
+  }
+
+  /* The full model and effort remain available in the trigger's label/tooltip. */
+  .workbenchFrame :global([data-slot='conversation.input.model'] > div > button > span + span) {
+    display: none;
+  }
+}
+
+@container workbench-composer (max-width: 320px) {
+  .workbenchFrame :global([data-composer-card] > div:has(> div > [data-slot='conversation.input.left'])) {
+    flex-wrap: wrap;
+    row-gap: 6px;
+  }
+
+  .workbenchFrame :global([data-composer-card] div:has(> [data-slot='conversation.input.left'])),
+  .workbenchFrame :global([data-composer-card] div:has(> [data-slot='conversation.input.model'])) {
+    flex: 1 1 100%;
+  }
+}
+
 .header {
   display: flex;
-  align-items: flex-start;
+  align-items: center;
   justify-content: space-between;
   gap: 16px;
-  padding: 18px 18px 14px;
+  padding: 6px 10px;
   border-bottom: 1px solid var(--dsw-alias-border-l2-darkmode-thin);
 }
 
 .headingGroup {
+  flex: 1;
   min-width: 0;
 }
 
 .headingGroup h2 {
   margin: 2px 0 3px;
-  font-size: 18px;
+  font-size: 12px;
   font-weight: 650;
   line-height: 24px;
   letter-spacing: -0.01em;
@@ -422,4 +500,46 @@
     width: calc(100vw - 72px);
     min-width: 0;
   }
+}
+
+.drawerResize {
+  position: absolute;
+  inset: 0 auto 0 0;
+  width: 6px;
+  z-index: 2;
+  cursor: col-resize;
+  touch-action: none;
+}
+
+.drawerResize:hover,
+.drawerResize:focus-visible {
+  background: var(--dsw-alias-state-business-primary);
+  outline: none;
+}
+
+.sessionContent {
+  position: relative;
+  height: 100%;
+  min-width: 0;
+  min-height: 0;
+}
+
+.content > .sessionContent {
+  opacity: 1;
+  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  @starting-style { opacity: 0; }
+}
+
+.workbenchFrame:has(.headerLauncher:focus-visible) .content > .sessionContent {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content > .sessionContent { transition: none; }
+}
+
+.drawer[hidden],
+.sessionContent[hidden],
+.imagePanel[hidden] {
+  display: none;
 }

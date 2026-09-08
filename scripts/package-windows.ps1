@@ -1,5 +1,5 @@
 param(
-  [string]$Version = "0.2.11",
+  [string]$Version = "0.2.21",
   [string]$ReleaseAPI = "https://api.github.com/repos/run-bigpig/dsh-desktop/releases/latest"
 )
 
@@ -35,24 +35,12 @@ $seedManifest = Get-Content $seedManifestPath -Raw | ConvertFrom-Json
 $desktopFingerprint = Get-WindowsDesktopFingerprint -RepoRoot $repoRoot -Version $Version -ReleaseAPI $ReleaseAPI
 $sourceSeedFingerprint = Get-WindowsSeedFingerprint $repoRoot
 if (
-  $seedManifest.schemaVersion -ne 2 -or
-  -not ($seedManifest.PSObject.Properties.Name -contains "sourceFingerprint") -or
-  -not ($seedManifest.PSObject.Properties.Name -contains "designRelease") -or
-  $null -eq $seedManifest.designRelease -or
-  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "tag") -or
-  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "sha256") -or
-  -not ($seedManifest.designRelease.PSObject.Properties.Name -contains "commit") -or
-  $seedManifest.designRelease.tag -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$' -or
-  $seedManifest.designRelease.sha256 -notmatch '^[0-9a-f]{64}$' -or
-  $seedManifest.designRelease.commit -notmatch '^[0-9a-f]{40}$'
+  $seedManifest.schemaVersion -ne 3 -or
+  -not ($seedManifest.PSObject.Properties.Name -contains "sourceFingerprint")
 ) {
-  throw "Windows seed stage predates the StarWeave UI release contract; run task seed:windows"
+  throw "Windows seed stage predates the embedded Design UI contract; run task seed:windows"
 }
-$seedFingerprint = Get-SHA256Text ((@(
-  "source=$sourceSeedFingerprint",
-  "designTag=$($seedManifest.designRelease.tag)",
-  "designSHA256=$($seedManifest.designRelease.sha256)"
-) -join "`n"))
+$seedFingerprint = Get-SHA256Text ("source=" + $sourceSeedFingerprint)
 if ($desktopManifest.fingerprint -ne $desktopFingerprint -or $desktopManifest.version -ne $Version -or $desktopManifest.releaseAPI -ne $ReleaseAPI) {
   throw "Windows desktop stage is stale; run task build:windows"
 }
@@ -73,7 +61,7 @@ if ($desktopManifest.executableSHA256 -ne $desktopHash) {
 if (-not (Test-Path (Join-Path $stage "resources/toolchain/node/node.exe"))) {
   throw "Windows stage is missing embedded Node"
 }
-foreach ($requiredToolchainFile in "node/LICENSE","node/node.exe","pnpm/pnpm.exe","pnpm/dist/pnpm.mjs","pnpm/dist/pnpmrc","pnpm/dist/worker.js") {
+foreach ($requiredToolchainFile in "node/LICENSE","node/node.exe","pnpm/pnpm.exe","pnpm/dist/pnpm.mjs","pnpm/dist/pnpmrc","pnpm/dist/worker.js","uv/uv.exe","uv/uvx.exe","uv/uvw.exe","uv/LICENSE-MIT","uv/LICENSE-APACHE") {
   if (-not (Test-Path (Join-Path $stage ("resources/toolchain/" + $requiredToolchainFile)))) {
     throw "Windows stage is missing runtime toolchain file: $requiredToolchainFile"
   }
@@ -110,25 +98,18 @@ foreach ($package in $pluginPackages) {
 }
 foreach ($requiredDesignFile in @(
   "plugin-host/lib/design.js",
-  "plugin-host/web/starweave-ui/index.html",
-  "plugin-host/web/starweave-ui/canvaskit.wasm",
-  "plugin-host/web/starweave-ui/starweave-ui-build.json",
+  "plugin-host/web/starweave-design/starweave-design-embed.js",
+  "plugin-host/web/starweave-design/starweave-design-embed.css",
+  "plugin-host/web/starweave-design/canvaskit.wasm",
+  "plugin-host/web/starweave-design/Inter-Regular.ttf",
+  "plugin-host/presets/design/skills/open-pencil/SKILL.md",
+  "plugin-host/skills/thinkingdata-analysis-orchestrator/SKILL.md",
   "plugin-bundle/LICENSES/open-pencil-MIT.txt"
 )) {
   if (-not (Test-Path -LiteralPath (Join-Path $pluginRoot $requiredDesignFile))) {
     throw "Windows stage is missing StarWeave Design resource: $requiredDesignFile; run task seed:windows"
   }
 }
-$designBuildManifest = Get-Content (Join-Path $pluginRoot "plugin-host/web/starweave-ui/starweave-ui-build.json") -Raw | ConvertFrom-Json
-if (
-  $designBuildManifest.schemaVersion -ne 1 -or
-  $designBuildManifest.tag -cne $seedManifest.designRelease.tag -or
-  $designBuildManifest.commit -cne $seedManifest.designRelease.commit -or
-  ("v" + [string]$designBuildManifest.version) -cne $seedManifest.designRelease.tag
-) {
-  throw "Windows stage contains a StarWeave UI release manifest mismatch; run task seed:windows"
-}
-
 $compilerVersion = (& makensis.exe /VERSION).Trim()
 if ($LASTEXITCODE -ne 0 -or -not $compilerVersion) { throw "Unable to determine the NSIS compiler version" }
 $installerSourceFingerprint = Get-SourceFingerprint -RepoRoot $repoRoot -Paths @(

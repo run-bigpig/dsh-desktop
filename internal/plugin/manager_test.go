@@ -52,6 +52,7 @@ func TestCommandEnvironmentDoesNotRequireGit(t *testing.T) {
 	manager := &Manager{tools: update.Toolchain{
 		Node: filepath.Join("toolchain", "node", "node.exe"),
 		PNPM: filepath.Join("toolchain", "pnpm", "pnpm.exe"),
+		UV:   filepath.Join("toolchain", "uv", "uv.exe"),
 	}}
 	var commandPath string
 	for _, item := range manager.commandEnvironment(t.TempDir()) {
@@ -63,6 +64,7 @@ func TestCommandEnvironmentDoesNotRequireGit(t *testing.T) {
 	want := strings.Join([]string{
 		filepath.Join("toolchain", "node"),
 		filepath.Join("toolchain", "pnpm"),
+		filepath.Join("toolchain", "uv"),
 	}, string(os.PathListSeparator))
 	if commandPath != want {
 		t.Fatalf("PATH = %q, want %q", commandPath, want)
