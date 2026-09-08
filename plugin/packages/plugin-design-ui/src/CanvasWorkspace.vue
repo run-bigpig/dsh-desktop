@@ -17,7 +17,11 @@ const canvasRef = ref<HTMLCanvasElement | null>(null)
 const { hitTestSectionTitle, hitTestComponentLabel, hitTestFrameTitle } = useCanvas(
   canvasRef,
   editor,
-  { onReady: () => editor.zoomToFit() }
+  { onReady: () => {
+    editor.zoomToFit()
+    // The public callback follows font loading and the first render.
+    if (canvasRef.value) canvasRef.value.dataset.starweaveRendered = 'true'
+  } }
 )
 const { cursorOverride } = useCanvasInput(
   canvasRef,

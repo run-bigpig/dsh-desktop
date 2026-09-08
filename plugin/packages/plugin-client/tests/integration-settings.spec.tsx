@@ -262,7 +262,7 @@ it('provides a Blender enable switch without extra configuration descriptions', 
   render(<McpSettingsTab {...{
     list: vi.fn().mockResolvedValue({ servers: [{
       serverName: 'blender', origin: 'system', enabled: false, fiberPhase: null, toolCount: 0,
-      transport: 'stdio', command: 'uvx', cwd: '', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'],
+      transport: 'stdio', command: 'uvx', cwd: '', args: ['blender-mcp'],
       envKeys: [], headerKeys: [], toolCallTimeoutMs: 120000, failOnStartupError: false,
     }] }), upsert: vi.fn(), updateSystem, remove: vi.fn(), t: (key: keyof typeof mcpEn) => mcpEn[key],
   } as unknown as McpSettingsTabProps} />)
@@ -274,7 +274,7 @@ it('provides a Blender enable switch without extra configuration descriptions', 
   expect(toggle.disabled).toBe(false)
   fireEvent.click(toggle)
   fireEvent.click(screen.getByRole('button', { name: mcpEn.save }))
-  await waitFor(() => expect(updateSystem).toHaveBeenCalledWith({ serverName: 'blender', enabled: true, transport: 'stdio', command: 'uvx', cwd: '', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'], toolCallTimeoutMs: 120000, failOnStartupError: false }))
+  await waitFor(() => expect(updateSystem).toHaveBeenCalledWith({ serverName: 'blender', enabled: true, transport: 'stdio', command: 'uvx', cwd: '', args: ['blender-mcp'], toolCallTimeoutMs: 120000, failOnStartupError: false }))
 })
 
 it.each(['settings', 'system'] as const)('uses the same editable connection fields and validation for %s MCPs', async origin => {

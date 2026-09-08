@@ -213,6 +213,6 @@ GitHub Actions 的 [Windows Package](.github/workflows/windows-package.yml) 工�
 
 `ta-mcp-server` 默认关闭，可在设置 → 插件 → MCP → 编辑中启用或关闭，状态在重启后保留。普通 MCP 与内置 TA、Blender 共用配置表单和校验；内置名称固定，传输方式、命令、参数、工作目录、环境变量或 HTTP 地址及请求头均可编辑。环境变量与请求头留空时保留已存值。
 
-预置 [Blender MCP](https://github.com/ahujasid/blender-mcp) `1.9.1`，默认关闭。首次启用时，内置 uv 下载受管理的 Python 3.11 和服务依赖，无需系统 Python。MCP 服务连接本机 `127.0.0.1:9876`，遥测默认关闭；Blender 应用本身不包含在安装包中。
+预置 [Blender MCP](https://github.com/ahujasid/blender-mcp)，默认关闭。启动命令为 `uvx`，参数单独填写 `blender-mcp`；内置 uv 按需准备 Python 和服务依赖。MCP 服务连接本机 `127.0.0.1:9876`，遥测默认关闭；Blender 应用本身不包含在安装包中。升级时，已保存的旧版默认启动参数会自动迁移，启用状态和自定义连接配置会保留。
 
-在 dsh 终端执行 `uvx --python 3.11 --from blender-mcp==1.9.1 blender-mcp install-addon` 安装官方 Blender 插件，然后在 Blender 中启用 **MCP for Blender**，在其侧栏点击 **Start MCP Server**。在 MCP 设置中编辑 Blender 条目即可启用或关闭服务。
+在 dsh 终端执行 `uvx blender-mcp install-addon` 安装官方 Blender 插件，然后在 Blender 中启用 **MCP for Blender**，在其侧栏点击 **Start MCP Server**。在 MCP 设置中编辑 Blender 条目即可启用或关闭服务。

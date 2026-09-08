@@ -137,6 +137,7 @@ func (p *Process) Start(ctx context.Context) (string, error) {
 			p.store.SetRuntimeInfo(state.Failed, err.Error(), "")
 			return "", err
 		case raw := <-ready:
+			p.store.SetRuntimeInfo(state.Verifying, "正在验证 Harness 页面", "")
 			if err := ProbeBootManifest(p.client, raw, minDuration(8*time.Second, p.cfg.StartupTimeout)); err != nil {
 				_ = p.Stop(context.Background())
 				p.store.SetRuntimeInfo(state.Failed, err.Error(), "")

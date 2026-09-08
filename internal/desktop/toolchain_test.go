@@ -102,3 +102,23 @@ func TestInstallBundledToolchainDetachesLegacyGit(t *testing.T) {
 		t.Fatalf("legacy Git directory was not detached: %v", err)
 	}
 }
+
+func TestPackagedToolchainSkipsPrivateCopyAndDetachesLegacyGit(t *testing.T) {
+	root := t.TempDir()
+	paths := appconfig.NewPaths(filepath.Join(root, "private"))
+	legacyGit := filepath.Join(paths.Toolchain, "git")
+	if err := os.MkdirAll(legacyGit, 0o700); err != nil {
+		t.Fatal(err)
+	}
+	packagedRoot := filepath.Join(root, "install", "resources", "toolchain")
+	tools := update.Toolchain{Node: filepath.Join(packagedRoot, "node", "node.exe")}
+	if err := ensurePrivateToolchain(paths, tools, packagedRoot); err != nil {
+		t.Fatal(err)
+	}
+	if _, err := os.Stat(legacyGit); !os.IsNotExist(err) {
+		t.Fatalf("legacy Git directory was not detached: %v", err)
+	}
+	if _, err := os.Stat(filepath.Join(paths.Toolchain, "node")); !os.IsNotExist(err) {
+		t.Fatalf("packaged toolchain was copied into private storage: %v", err)
+	}
+}

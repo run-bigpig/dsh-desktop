@@ -48,6 +48,7 @@ function check(value, label) { assert.ok(value, label); checks.push(label); cons
       const style = document.createElement('link'); style.rel = 'stylesheet'; style.href = new URL(connection.stylePath, connection.baseUrl); document.head.append(style)
       const api = await import(new URL(connection.scriptPath, connection.baseUrl).href)
       window.handle = await api.mount(document.querySelector('#root'), connection)
+      await window.handle.present(AbortSignal.timeout(15000))
     }, connection)
     return page
   }
@@ -62,6 +63,16 @@ function check(value, label) { assert.ok(value, label); checks.push(label); cons
     await owner.locator('.bridge-state[data-phase="connected"]').waitFor()
     await server.waitForReady(connection.sessionId, AbortSignal.timeout(5000))
     check(true, 'first canvas initializes through the production server')
+    check(await owner.locator('[data-starweave-rendered]').count() === 1, 'presentation waits for the document canvas first render')
+    await owner.setViewportSize({ width: 520, height: 900 })
+    await owner.evaluate(() => window.handle.present(AbortSignal.timeout(15000)))
+    check((await owner.locator('.editor-workspace').boundingBox()).width === 520, 'retained editor settles at the narrow details width')
+    await owner.setViewportSize({ width: 1400, height: 900 })
+    await owner.evaluate(() => window.handle.present(AbortSignal.timeout(15000)))
+    check(await owner.evaluate(async () => {
+      const abort = new AbortController(); abort.abort()
+      try { await window.handle.present(abort.signal); return false } catch { return true }
+    }), 'cancelled presentation does not wait or reveal a stale editor')
     const shape = await tool('create_shape', { type: 'RECTANGLE', x: 0, y: 0, width: 240, height: 160, name: 'Owner rectangle' })
     await owner.locator('[data-save-state="saved"]').waitFor()
     const light = owner.locator('.bridge-state')

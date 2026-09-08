@@ -19,6 +19,8 @@
   <main class="app-frame">
     <section class="boot-view" aria-label="星织启动进度">
       <div class="convergence-stage" id="convergenceStage">
+        <canvas class="particle-field" id="particleField" aria-hidden="true"></canvas>
+
         <div class="weave-field" aria-hidden="true">
           <i class="weave-thread thread-1"></i>
           <i class="weave-thread thread-2"></i>
@@ -105,10 +107,6 @@
           <i class="core-signal signal-three"></i>
         </span>
 
-        <div class="core-signature" aria-hidden="true">
-          <span>STARWEAVE</span><strong>CORE</strong><i></i><em>AUTONOMOUS AGENT FABRIC</em>
-        </div>
-
         <p id="progressText" aria-live="polite">星织启动中 · 06%</p>
       </div>
     </section>
@@ -164,5 +162,6 @@
     </section>
   </main>
   <script src="app.js"></script>
+  <script src="particles.js" type="module"></script>
 </body>
 </html>

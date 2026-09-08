@@ -8,7 +8,10 @@ import { acquireSession, releaseSession, type DesignConnection } from './runtime
 import { desktopFontsReady, loadDesktopFont, loadDesktopFonts } from './desktop-fonts.ts'
 import './style.css'
 
-export interface DesignEmbedHandle { unmount: () => void }
+export interface DesignEmbedHandle {
+  unmount: () => void
+  present: (signal: AbortSignal) => Promise<void>
+}
 
 export async function mount(element: HTMLElement, connection: DesignConnection): Promise<DesignEmbedHandle> {
   const baseUrl = new URL(connection.baseUrl)
@@ -30,6 +33,36 @@ export async function mount(element: HTMLElement, connection: DesignConnection):
   const app = createApp(App, { session })
   app.mount(element)
   return {
+    present: signal => new Promise<void>((resolve, reject) => {
+      let frame = 0
+      let previous = ''
+      let stable = 0
+      const finish = (error?: unknown): void => {
+        cancelAnimationFrame(frame)
+        clearTimeout(timeout)
+        signal.removeEventListener('abort', abort)
+        if (error) reject(error)
+        else resolve()
+      }
+      const abort = (): void => finish(signal.reason)
+      const timeout = setTimeout(() => finish(new Error('画布显示准备超时，请重试')), 15_000)
+      const check = (): void => {
+        if (session.bridgePhase === 'error' || session.bridgePhase === 'standby') { finish(); return }
+        const canvas = element.querySelector<HTMLCanvasElement>('[data-starweave-rendered]')
+        const bounds = canvas?.getBoundingClientRect()
+        const signature = canvas && bounds && bounds.width > 0 && bounds.height > 0 && session.bridgePhase === 'connected'
+          ? `${session.generation}:${bounds.width}:${bounds.height}` : ''
+        stable = signature && signature === previous ? stable + 1 : 0
+        previous = signature
+        // Allow ResizeObserver, the renderer and the compositor to finish at
+        // the attached size, including a retained editor returning offscreen.
+        if (stable >= 2) { finish(); return }
+        frame = requestAnimationFrame(check)
+      }
+      if (signal.aborted) { abort(); return }
+      signal.addEventListener('abort', abort, { once: true })
+      frame = requestAnimationFrame(check)
+    }),
     unmount: () => {
       window.removeEventListener(desktopFontsReady, refreshFonts)
       app.unmount()

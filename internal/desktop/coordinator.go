@@ -112,11 +112,30 @@ func NewCoordinator(root string, logWriter io.Writer) (*Coordinator, error) {
 	return c, nil
 }
 
-func (c *Coordinator) EnsurePrivateToolchain() error { return installBundledToolchain(c.paths) }
+func (c *Coordinator) EnsurePrivateToolchain() error {
+	packagedRoot := ""
+	if executable, err := os.Executable(); err == nil {
+		packagedRoot = filepath.Join(filepath.Dir(executable), "resources", "toolchain")
+	}
+	return ensurePrivateToolchain(c.paths, c.tools, packagedRoot)
+}
 
 func (c *Coordinator) SetWindow(window *application.WebviewWindow) { c.window.SetWindow(window) }
 
+func ensurePrivateToolchain(paths appconfig.Paths, tools update.Toolchain, packagedRoot string) error {
+	removeLegacyToolchainGit(paths)
+	if packagedRoot != "" && appconfig.IsOwnedPath(packagedRoot, tools.Node) {
+		return nil
+	}
+	return installBundledToolchainFiles(paths)
+}
+
 func installBundledToolchain(paths appconfig.Paths) error {
+	removeLegacyToolchainGit(paths)
+	return installBundledToolchainFiles(paths)
+}
+
+func removeLegacyToolchainGit(paths appconfig.Paths) {
 	legacyGit := filepath.Join(paths.Toolchain, "git")
 	if _, err := os.Stat(legacyGit); err == nil {
 		cleanupRoot := filepath.Join(paths.Root, "cleanup")
@@ -129,6 +148,9 @@ func installBundledToolchain(paths appconfig.Paths) error {
 			}
 		}
 	}
+}
+
+func installBundledToolchainFiles(paths appconfig.Paths) error {
 	executableName := func(name string) string {
 		if runtime.GOOS == "windows" {
 			return name + ".exe"
@@ -285,6 +307,7 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		return nil
 	}
 	c.mu.Unlock()
+	c.store.SetRuntimeInfo(state.Deploying, "正在部署 Harness 运行时", "")
 	activation, switchedRuntime, err := c.activateBundledRuntime()
 	if err != nil {
 		c.store.SetRuntimeInfo(state.Failed, err.Error(), "")
@@ -298,6 +321,7 @@ func (c *Coordinator) Start(ctx context.Context) error {
 		url, err = c.startActive(ctx)
 	}
 	if err != nil {
+		c.store.SetRuntimeInfo(state.Failed, err.Error(), "")
 		c.showRecovery()
 		return err
 	}
@@ -336,6 +360,7 @@ func (c *Coordinator) startActive(ctx context.Context) (string, error) {
 		return "", err
 	}
 	c.plugins.SetRuntime(runtimeDir, snap.Active.Current.Commit)
+	c.store.SetRuntimeInfo(state.Plugins, "正在准备内置插件", "")
 	if err := c.plugins.EnsureDesktopPlugin(ctx); err != nil {
 		return "", err
 	}

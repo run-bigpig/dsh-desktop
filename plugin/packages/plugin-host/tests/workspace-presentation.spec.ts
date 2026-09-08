@@ -58,6 +58,38 @@ it('lets the Agent close the current session panel without destroying its resour
   expect(desktopRequest).not.toHaveBeenCalled()
 })
 
+it('rejects obsolete browser close calls before reaching the desktop gateway', async () => {
+  const { gateway, tool, exec } = await fixture()
+  await expect(tool('workspace_browser').execute({ action: 'close', tabId: 'stale-tab' }, exec)).rejects.toThrow()
+  expect(desktopRequest).not.toHaveBeenCalled()
+  expect(gateway.pendingRequests().sessions).toEqual([])
+})
+
+it('keeps repeated panel dismissal within the owning session', async () => {
+  const { gateway, tool, exec, agent } = await fixture()
+  const other = { session: { id: 'b', header: { cwd: '/other' } } } as Agent
+  gateway.request(other, 'browser', 'other-tab')
+  const otherRequest = gateway.pendingRequests().sessions.find(session => session.sessionId === 'b')
+  gateway.request(agent, 'browser', 'current-tab')
+  for (let attempt = 0; attempt < 2; attempt++) {
+    await expect(tool('close_workspace_panel').execute({}, exec)).resolves.toBe('已请求关闭当前会话侧边栏。')
+    expect(gateway.pendingRequests().sessions.find(session => session.sessionId === 'a')?.request).toMatchObject({ action: 'close', sessionId: 'a' })
+    expect(gateway.pendingRequests().sessions.find(session => session.sessionId === 'b')).toEqual(otherRequest)
+  }
+  expect(desktopRequest).not.toHaveBeenCalled()
+})
+
+it('does not dismiss the panel for a cancelled close request', async () => {
+  const { gateway, tool, exec, agent } = await fixture()
+  gateway.request(agent, 'browser', 'current-tab')
+  const before = gateway.pendingRequests()
+  const abort = new AbortController()
+  abort.abort()
+  await expect(tool('close_workspace_panel').execute({}, { ...exec, signal: abort.signal })).rejects.toThrow()
+  expect(gateway.pendingRequests()).toEqual(before)
+  expect(desktopRequest).not.toHaveBeenCalled()
+})
+
 it('rejects foreign browser targets and failed or cancelled navigation without revealing', async () => {
   const { gateway, tool, exec } = await fixture()
   vi.mocked(desktopRequest).mockResolvedValueOnce([{ id: 'owned' }])

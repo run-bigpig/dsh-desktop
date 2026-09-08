@@ -1,11 +1,29 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, waitFor } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { WorkspaceWorkbench } from '../src/client/workbench/WorkspaceWorkbench.tsx'
 import { WorkbenchController } from '../src/client/workbench/session-state.ts'
 import { workbenchEn } from '../src/client/locales.ts'
 
 afterEach(() => { cleanup(); localStorage.clear() })
+
+it('keeps cached directory rows visible while reopening refreshes them', async () => {
+  const snapshot = { rootName: 'workspace', directory: '', entries: [{ path: 'draft.txt', name: 'draft.txt', kind: 'file' as const, size: 4, mtime: 1 }] }
+  let finish!: (value: typeof snapshot) => void
+  const refresh = new Promise<typeof snapshot>(resolve => { finish = resolve })
+  const listDirectory = vi.fn().mockResolvedValueOnce(snapshot).mockReturnValue(refresh)
+  const props = { sessionId: 'a', scope: 'a:/workspace', activePanel: 'files' as const, controller: new WorkbenchController(),
+    listDirectory, search: vi.fn(), readFile: vi.fn(), writeFile: vi.fn(), gitSnapshot: null,
+    onGitSnapshot: vi.fn(), onPreviewVisibility: vi.fn(), t: (key: keyof typeof workbenchEn) => workbenchEn[key] }
+  const view = render(<WorkspaceWorkbench {...props} visible />)
+  await view.findByRole('treeitem')
+  view.rerender(<WorkspaceWorkbench {...props} visible={false} />)
+  view.rerender(<WorkspaceWorkbench {...props} visible />)
+  expect(view.getByRole('treeitem').textContent).toContain('draft.txt')
+  expect(view.getByRole('tree').getAttribute('aria-busy')).toBe('false')
+  await act(async () => { finish({ ...snapshot, entries: [] }); await refresh })
+  expect(view.queryByRole('treeitem')).toBeNull()
+})
 
 it('retains unsaved file content across session remounts without writing another session', async () => {
   const controller = new WorkbenchController()

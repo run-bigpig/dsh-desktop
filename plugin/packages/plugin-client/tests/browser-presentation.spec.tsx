@@ -1,5 +1,5 @@
 // @vitest-environment jsdom
-import { act, cleanup, fireEvent, render, screen } from '@testing-library/react'
+import { act, cleanup, fireEvent, render, screen, waitFor } from '@testing-library/react'
 import { afterEach, expect, it, vi } from 'vitest'
 import { BrowserWorkbench, nextBrowserLayoutSequence } from '../src/client/workbench/BrowserWorkbench.tsx'
 import { SessionMemory } from '../src/client/workbench/session-memory.ts'
@@ -54,14 +54,32 @@ it('switches the native page and address to Xiaohongshu and ignores an older Bai
   await act(async () => { finish(JSON.stringify([baidu])); await oldList })
   expect(memory.get('browser.active', null)).toBe('xiaohongshu')
   expect((screen.getByRole('textbox') as HTMLInputElement).value).toBe(xhs.url)
-  expect(command.mock.calls.map(([request]) => request).filter((request: any) => request.op === 'layout' && request.visible).at(-1)).toMatchObject({ tabId: xhs.id })
+  await waitFor(() => expect(command.mock.calls.map(([request]) => request).filter((request: any) => request.op === 'layout' && request.visible).at(-1)).toMatchObject({ tabId: xhs.id }))
   fireEvent.click(screen.getByRole('button', { name: '切换网页' }))
   fireEvent.click(screen.getByRole('menuitem', { name: '百度' }))
   expect(memory.get('browser.active', null)).toBe('baidu')
   await act(async () => { memory.set('browser.active', xhs.id, null) })
   expect(memory.get('browser.active', null)).toBe('xiaohongshu')
-  expect(command.mock.calls.map(([request]) => request).filter((request: any) => request.op === 'layout' && request.visible).at(-1)).toMatchObject({ tabId: xhs.id })
+  await waitFor(() => expect(command.mock.calls.map(([request]) => request).filter((request: any) => request.op === 'layout' && request.visible).at(-1)).toMatchObject({ tabId: xhs.id }))
   view.unmount()
   vi.restoreAllMocks()
+  vi.unstubAllGlobals()
+})
+
+it('does not reveal a native page when closed before preparation finishes', async () => {
+  vi.stubGlobal('ResizeObserver', class { observe() {} disconnect() {} })
+  const memory = new SessionMemory()
+  const tab = { id: 'page', title: 'Page', url: 'https://example.com/' }
+  memory.set('browser.tabs', [tab], [])
+  memory.set('browser.active', tab.id, null)
+  let finish!: () => void
+  const pending = new Promise<string>(resolve => { finish = () => resolve('true') })
+  const command = vi.fn((request: { op: string; visible?: boolean }) => request.op === 'list' ? Promise.resolve(JSON.stringify([tab])) : pending)
+  const t = ((key: keyof typeof workbenchZh) => workbenchZh[key]) as WorkbenchDrawerProps['t']
+  const view = render(<BrowserWorkbench memory={memory} visible command={command} t={t} />)
+  expect(command.mock.calls.find(([request]) => request.op === 'layout')?.[0]).toMatchObject({ visible: false })
+  view.rerender(<BrowserWorkbench memory={memory} visible={false} command={command} t={t} />)
+  await act(async () => { finish(); await pending })
+  expect(command.mock.calls.some(([request]) => request.op === 'layout' && request.visible)).toBe(false)
   vi.unstubAllGlobals()
 })

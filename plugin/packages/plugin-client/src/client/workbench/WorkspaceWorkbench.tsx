@@ -16,6 +16,7 @@ import {
   diffTab, loadingFileTab, tabFromFile, WorkspacePreview, type PreviewTab, type WorkspacePreviewCopy,
 } from './WorkspacePreview.tsx'
 import css from './WorkspaceWorkbench.module.css'
+import { LoadingCover } from './LoadingCover.tsx'
 import { WORKSPACE_DRAG_MIME } from './SessionWorkbench.tsx'
 
 import { useSessionScroll, useSessionState, type SessionMemory } from './session-memory.ts'
@@ -305,7 +306,7 @@ function WorkspaceExplorer({ memory, sessionId, visible, controller, listDirecto
 
   useEffect(() => {
     if (!visible) return
-    void load('')
+    void load('', directoriesRef.current.get('')?.phase === 'ready')
     const timer = window.setInterval(() => {
       for (const directory of ['', ...expandedRef.current]) void load(directory, true)
     }, 3_000)
@@ -345,6 +346,7 @@ function WorkspaceExplorer({ memory, sessionId, visible, controller, listDirecto
   }
 
   const root = directories.get('')
+  const loading = query.trim() === '' && (!root || root.phase === 'loading')
   return (
     <div ref={scrollRef} className={css.explorer}>
       <div className={css.explorerToolbar}>
@@ -352,10 +354,10 @@ function WorkspaceExplorer({ memory, sessionId, visible, controller, listDirecto
         <Tooltip label={t('refresh')} side="bottom" delayMs={400}><button type="button" aria-label={t('refresh')} onClick={() => { for (const directory of ['', ...expandedRef.current]) void load(directory) }}><IconRefreshOutline14 /></button></Tooltip>
       </div>
       <label className={css.search}><IconSearchOutline16 size={14} /><input value={query} placeholder={t('searchFiles')} onChange={event => { setQuery(event.currentTarget.value) }} /></label>
-      <div data-workspace-scroll="tree" className={css.tree} role="tree" aria-label={t('files')}>
+      <div data-workspace-scroll="tree" className={css.tree} role="tree" aria-label={t('files')} aria-busy={loading}>
+        <LoadingCover loading={loading} label={t('loading')} />
         {query.trim() !== '' ? <SearchResults state={searchState} selected={selected} onOpen={path => { void reveal(path) }} t={t} /> : (
           <>
-            {root?.phase === 'loading' && <StatusRow>{t('loading')}</StatusRow>}
             {root?.phase === 'error' && <StatusRow>{root.message ?? t('loadFailed')}</StatusRow>}
             {root?.phase === 'ready' && root.snapshot !== undefined && root.snapshot.entries.map(entry => (
               <TreeRow key={entry.path} entry={entry} depth={0} selected={selected} expanded={expanded} directories={directories} sessionId={sessionId} controller={controller} load={load} onExpand={next => { expandedRef.current = next; setExpanded(next) }} onOpen={path => { setSelected(path); onOpenFile(path) }} t={t} />

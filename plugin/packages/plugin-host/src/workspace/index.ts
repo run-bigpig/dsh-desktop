@@ -83,7 +83,7 @@ export class WorkspaceGateway extends TypertRemoteService {
     })), 'desktop-workspace: reveal session panel')
     this.ctx.effect(() => this.ctx.tools.register(defineTool({
       name: 'close_workspace_panel',
-      description: '关闭当前会话右侧的 details 工作台。用户说关闭浏览器、关闭画布、关闭文件/Git 侧栏、收起右侧面板或不再展示时，必须调用本工具。只关闭侧边栏并保留浏览器标签、画布和文件状态；如果用户明确要关闭浏览器标签本身，另用 workspace_browser(action=close)。',
+      description: '关闭当前会话右侧的 details 工作台。用户说关闭浏览器、关闭画布、关闭文件/Git 侧栏、收起右侧面板或不再展示时，必须调用本工具。只关闭侧边栏并保留浏览器标签、画布和文件状态，无需查询或传入浏览器 tabId。',
       parameters: {},
       output: { schema: { type: 'string' }, render: (_args, value) => [{ type: 'text', text: value }] },
       execute: async (_args, exec) => {
@@ -95,9 +95,9 @@ export class WorkspaceGateway extends TypertRemoteService {
     })), 'desktop-workspace: close session panel')
     this.ctx.effect(() => this.ctx.tools.register(defineTool({
       name: 'workspace_browser',
-      description: '操作当前会话的隔离浏览器。create 创建标签页，list 获取真实 tabId，navigate/back/forward/reload/close 导航，screenshot 截图，cdp 调用此标签页的 DOM、Accessibility、Runtime、Input 方法。用户明确要求打开网页时，create 或 navigate 必须设置 reveal=true，以便展示对应标签；后台查资料不设置 reveal。已有标签也可通过 open_workspace_panel(panel=browser, tabId=真实标签ID) 展示。会话身份由 Host 绑定，禁止猜测其他会话或标签 ID。',
+      description: '操作当前会话的隔离浏览器。create 创建标签页，list 获取真实 tabId，navigate/back/forward/reload 导航，screenshot 截图，cdp 调用此标签页的 DOM、Accessibility、Runtime、Input 方法。关闭浏览器时调用 close_workspace_panel 收起当前会话侧边栏。用户明确要求打开网页时，create 或 navigate 必须设置 reveal=true，以便展示对应标签；后台查资料不设置 reveal。已有标签也可通过 open_workspace_panel(panel=browser, tabId=真实标签ID) 展示。会话身份由 Host 绑定，禁止猜测其他会话或标签 ID。',
       parameters: {
-        action: { type: 'string', enum: ['create', 'list', 'navigate', 'back', 'forward', 'reload', 'close', 'screenshot', 'cdp'], required: true },
+        action: { type: 'string', enum: ['create', 'list', 'navigate', 'back', 'forward', 'reload', 'screenshot', 'cdp'], required: true },
         tabId: { type: 'string', description: 'list/create 返回的当前会话标签 ID' },
         url: { type: 'string', description: 'http/https 地址' },
         presentation: { type: 'string', description: '可选展示步骤标识；重复请求复用，仅真正的新展示步骤更换' },

@@ -19,6 +19,7 @@ import type { DesignConnection } from '../design/DesignConversationView.tsx'
 import type { CanvasResources } from '../design/canvas-resources.ts'
 import { ImageStudio } from '../image/ImageStudio.tsx'
 import { WorkspaceWorkbench } from './WorkspaceWorkbench.tsx'
+import { LoadingCover } from './LoadingCover.tsx'
 import css from './SessionWorkbench.module.css'
 
 export const WORKSPACE_DRAG_MIME = 'application/x-dsh-workspace-file-reference+json'
@@ -117,7 +118,7 @@ export function WorkbenchDrawer({
   }, [open, openDetails, closeDetails, sessionId, summary?.blank])
 
   useLayoutEffect(() => {
-    if (!open || summary?.blank !== false) return
+    if (summary?.blank !== false) return
     // Extend only the active details occupant's geometry, like desktop chrome.
     // Harness still owns the frame, panel visibility and session lifecycle.
     let frame = drawerRef.current?.parentElement
@@ -149,7 +150,7 @@ export function WorkbenchDrawer({
       root.style.removeProperty('--starweave-workbench-sidebar')
       root.style.removeProperty('--starweave-workbench-width')
     }
-  }, [open, width, sessionId, summary?.blank])
+  }, [width, sessionId, summary?.blank])
 
   const visible = open && current !== undefined && summary?.blank === false
 
@@ -267,7 +268,6 @@ function RetainedSessionContent({
     <div className={css.sessionContent} hidden={!visible}>
       <div className={css.sessionContent} hidden={!workspaceVisible}>
         {tab === 'git' && git.phase === 'error' && <p role="alert">{git.message}<button type="button" onClick={() => { setGitRetry(value => value + 1) }}>{t('retry')}</button></p>}
-        {tab === 'git' && (git.phase === 'idle' || git.phase === 'loading') && <p role="status">{t('loading')}</p>}
         <WorkspaceWorkbench
           sessionId={sessionId}
           scope={`${sessionId}:${cwd}`}
@@ -285,6 +285,7 @@ function RetainedSessionContent({
           onPreviewVisibility={ignorePreviewVisibility}
           t={t}
         />
+        <LoadingCover loading={tab === 'git' && (git.phase === 'idle' || git.phase === 'loading')} label={t('gitLoading')} />
       </div>
       {tab === 'browser' && <BrowserWorkbench memory={memory} visible={visible} command={actions.browserCommand} t={t} />}
       {tab === 'canvas' && <DesignSurface connect={actions.connectCanvas} resources={canvasResources} visible={visible} />}

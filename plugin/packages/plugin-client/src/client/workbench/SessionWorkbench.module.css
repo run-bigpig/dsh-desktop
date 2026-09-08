@@ -70,7 +70,9 @@
   grid-template-columns: var(--starweave-workbench-sidebar) minmax(0, 1fr) var(--starweave-workbench-width) !important;
 }
 
-.workbenchFrame:has([data-workbench-resizing]) {
+.workbenchFrame {
+  /* Commit the final geometry once: native WebViews and canvas renderers must
+     not chase interpolated grid widths while the composer keeps reflowing. */
   transition: none;
 }
 
@@ -516,9 +518,24 @@
 }
 
 .sessionContent {
+  position: relative;
   height: 100%;
   min-width: 0;
   min-height: 0;
+}
+
+.content > .sessionContent {
+  opacity: 1;
+  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
+  @starting-style { opacity: 0; }
+}
+
+.workbenchFrame:has(.headerLauncher:focus-visible) .content > .sessionContent {
+  transition: none;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .content > .sessionContent { transition: none; }
 }
 
 .drawer[hidden],

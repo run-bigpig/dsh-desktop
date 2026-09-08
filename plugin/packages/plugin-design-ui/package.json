@@ -1,6 +1,6 @@
 {
   "name": "@run-bigpig/dsh-desktop-plugin-design-ui",
-  "version": "0.1.118",
+  "version": "0.1.122",
   "private": true,
   "type": "module",
   "scripts": {

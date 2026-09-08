@@ -1,10 +1,11 @@
-import { mkdtemp, readFile, rm } from 'node:fs/promises'
+import { mkdtemp, readFile, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { Context } from '@deepseek-ai/cordis'
 import { expect, it, vi } from 'vitest'
 import { McpSettingsGateway } from '../src/mcp/index.ts'
-import { blenderMcpRecord } from '../src/mcp/blender.ts'
+import { blenderMcpRecord, migrateBlenderMcpDefaults } from '../src/mcp/blender.ts'
+import type { McpSettingsDocument } from '../src/mcp/document.ts'
 
 const lifecycle = vi.hoisted(() => ({ starts: [] as string[], stops: [] as string[] }))
 vi.mock('@deepseek-ai/dsh-mcp-client', async importOriginal => ({
@@ -15,6 +16,37 @@ vi.mock('@deepseek-ai/dsh-mcp-client', async importOriginal => ({
     ctx.effect(() => () => { lifecycle.stops.push(config.serverName) })
   },
 }))
+
+it('migrates saved Blender defaults through startup without changing enablement or other settings', async () => {
+  const directory = await mkdtemp(join(tmpdir(), 'starweave-mcp-defaults-'))
+  const path = join(directory, 'mcp.json')
+  const ctx = new Context()
+  ctx.reflect.provide('tools', { schemas: () => [] })
+  const record = {
+    serverName: 'blender', transport: 'stdio', command: 'uvx',
+    args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'],
+    env: { UV_PYTHON_PREFERENCE: 'only-managed', BLENDER_PORT: '9999', DISABLE_TELEMETRY: 'true' },
+    enabled: false, toolCallTimeoutMs: 90000, failOnStartupError: false,
+  }
+  try {
+    await writeFile(path, JSON.stringify({ version: 2, servers: [], systemOverrides: [record] }))
+    await ctx.plugin(McpSettingsGateway, { path })
+    expect((await ctx.mcpSettings.list()).servers[0]).toMatchObject({ command: 'uvx', args: ['blender-mcp'], enabled: false, toolCallTimeoutMs: 90000 })
+    const saved = JSON.parse(await readFile(path, 'utf8')) as McpSettingsDocument
+    expect(saved.systemOverrides[0]).toEqual({ ...record, args: undefined, env: { BLENDER_PORT: '9999', DISABLE_TELEMETRY: 'true' } })
+    expect(migrateBlenderMcpDefaults(saved)).toBe(saved)
+  } finally { await ctx.fiber.dispose(); await rm(directory, { recursive: true, force: true }) }
+})
+
+it('preserves custom Blender launch commands and Python selections', () => {
+  for (const settings of [
+    { command: 'custom-uvx', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'] },
+    { command: 'uvx', args: ['--python', '3.12', 'blender-mcp'] },
+  ]) {
+    const document: McpSettingsDocument = { version: 2, servers: [], systemOverrides: [{ serverName: 'blender', enabled: true, toolCallTimeoutMs: 120000, failOnStartupError: false, ...settings }] }
+    expect(migrateBlenderMcpDefaults(document)).toBe(document)
+  }
+})
 
 it('mounts enabled built-ins through Cordis, disposes them on disable and restores choices after restart', async () => {
   const directory = await mkdtemp(join(tmpdir(), 'starweave-mcp-'))
@@ -51,7 +83,7 @@ it('mounts enabled built-ins through Cordis, disposes them on disable and restor
     await restarted.updateSystem({ serverName: 'blender', enabled: false, ...tune })
     expect(restarted.systemEnabled('blender')).toBe(false)
     expect(lifecycle.stops).toContain('blender')
-    expect(blenderMcpRecord()).toMatchObject({ enabled: false, failOnStartupError: false, command: 'uvx', args: ['--python', '3.11', '--from', 'blender-mcp==1.9.1', 'blender-mcp'] })
+    expect(blenderMcpRecord()).toMatchObject({ enabled: false, failOnStartupError: false, command: 'uvx', args: ['blender-mcp'] })
   } finally {
     await Promise.all(contexts.map(ctx => ctx.fiber.dispose()))
     await rm(directory, { recursive: true, force: true })

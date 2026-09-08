@@ -1,4 +1,4 @@
-import { blenderMcpRecord } from './blender.ts'
+import { blenderMcpRecord, migrateBlenderMcpDefaults } from './blender.ts'
 import { readFile } from 'node:fs/promises'
 import { resolve } from 'node:path'
 import { Context, Service, type Fiber, type FiberState } from '@deepseek-ai/cordis'
@@ -264,9 +264,10 @@ export class McpSettingsGateway extends TypertRemoteService {
   private async readDocument(): Promise<McpSettingsDocument> {
     try {
       const text = await readFile(this.filename, 'utf8')
-      const document = parseMcpSettingsDocument(text)
+      const parsed = parseMcpSettingsDocument(text)
+      const document = migrateBlenderMcpDefaults(parsed)
       const normalized = serializeMcpSettingsDocument(document)
-      if (text.includes('"openpencil-mcp"') && normalized !== text) {
+      if (document !== parsed || (text.includes('"openpencil-mcp"') && normalized !== text)) {
         await writeFileAtomic(this.filename, normalized, { mode: 0o600, dirMode: 0o700 })
       }
       return document

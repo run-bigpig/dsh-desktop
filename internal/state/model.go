@@ -6,7 +6,11 @@ type Phase string
 
 const (
 	Idle        Phase = "idle"
+	Preparing   Phase = "preparing"
+	Deploying   Phase = "deploying"
+	Plugins     Phase = "plugins"
 	Starting    Phase = "starting"
+	Verifying   Phase = "verifying"
 	Ready       Phase = "ready"
 	Checking    Phase = "checking"
 	Building    Phase = "building"

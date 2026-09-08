@@ -1,0 +1,29 @@
+.cover {
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background: var(--dsw-alias-bg-base);
+  color: var(--dsw-alias-label-secondary);
+  font-size: 12px;
+  text-align: center;
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity 140ms cubic-bezier(0.23, 1, 0.32, 1);
+}
+.cover[data-loading] {
+  opacity: 1;
+  pointer-events: auto;
+  transition: none;
+}
+.hint { opacity: 0; transition: opacity 100ms ease; }
+.cover[data-loading] .hint {
+  opacity: 1;
+  transition-delay: 200ms;
+  @starting-style { opacity: 0; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .cover, .hint { transition: none; }
+}

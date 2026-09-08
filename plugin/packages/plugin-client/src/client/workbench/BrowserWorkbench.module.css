@@ -9,7 +9,7 @@
 .tab > button:first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .navigation { display: flex; align-items: center; flex: none; gap: 4px; padding: 6px 8px; border-bottom: 1px solid var(--dsw-alias-border-l2-darkmode-thin); }
 .navigation input { min-width: 0; flex: 1; border: 1px solid var(--dsw-alias-border-l2-darkmode-thin); border-radius: 7px; background: var(--dsw-alias-bg-base); color: inherit; padding: 6px 9px; font: inherit; }
-.viewport { flex: 1; min-height: 0; overflow: hidden; }
+.viewport { position: relative; flex: 1; min-height: 0; overflow: hidden; }
 .empty { padding: 28px; color: var(--dsw-alias-label-secondary); text-align: center; }
 .error { padding: 8px 12px; color: var(--dsw-alias-state-error-label); overflow-wrap: anywhere; }
 

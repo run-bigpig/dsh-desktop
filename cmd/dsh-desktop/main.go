@@ -228,6 +228,7 @@ func main() {
 	menu.Add("退出").OnClick(func(*application.Context) { quitting.Store(true); app.Quit() })
 	tray.SetMenu(menu)
 	go func() {
+		coordinator.Store().SetRuntimeInfo(state.Preparing, "正在准备桌面运行环境", "")
 		if err := coordinator.EnsurePrivateToolchain(); err != nil {
 			logger.Warn("unable to cache embedded toolchain", "error", err)
 		}
